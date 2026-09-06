@@ -181,6 +181,32 @@ class AdminCalendarsTest extends TestCase
     }
 
     #[Test]
+    public function hiding_a_calendar_can_be_undone(): void
+    {
+        $account = CalendarAccount::factory()->create(['household_id' => $this->household->id]);
+        $calendar = Calendar::factory()->create(['calendar_account_id' => $account->id, 'is_visible' => true]);
+
+        $component = Livewire::test('admin.calendars');
+        $component->call('toggleVisible', $calendar->id);
+        $component->call('toggleVisible', $calendar->id);
+
+        $this->assertTrue($calendar->fresh()->is_visible);
+    }
+
+    #[Test]
+    public function visibility_is_a_labelled_switch(): void
+    {
+        $account = CalendarAccount::factory()->create(['household_id' => $this->household->id]);
+        Calendar::factory()->create(['calendar_account_id' => $account->id, 'is_visible' => true]);
+
+        Livewire::test('admin.calendars')
+            ->assertSee('Show on display')
+            // role=switch so assistive tech announces it as a toggle, not a button.
+            ->assertSee('role="switch"', escape: false)
+            ->assertSee('aria-checked', escape: false);
+    }
+
+    #[Test]
     public function disconnecting_removes_the_account_and_its_events(): void
     {
         $account = CalendarAccount::factory()->create(['household_id' => $this->household->id]);

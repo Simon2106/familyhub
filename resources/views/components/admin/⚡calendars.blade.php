@@ -233,9 +233,35 @@ new #[Layout('layouts::app')] class extends Component
                             <div class="flex items-center gap-3">
                                 <span class="size-4 shrink-0 rounded-full" style="background-color: {{ $calendar->colour }};"></span>
                                 <span class="min-w-0 flex-1 truncate font-medium">{{ $calendar->name }}</span>
-                                <button type="button" wire:click="toggleVisible({{ $calendar->id }})"
-                                        class="touch-target shrink-0 rounded-lg px-3 text-sm font-semibold {{ $calendar->is_visible ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400' }}">
-                                    {{ $calendar->is_visible ? 'Shown' : 'Hidden' }}
+                            </div>
+
+                            {{-- Alpine flips the switch under the finger; Livewire persists it. --}}
+                            <div
+                                x-data="{ on: @js($calendar->is_visible) }"
+                                class="mt-1 flex touch-target items-center justify-between gap-3 pl-7"
+                            >
+                                <span :id="$id('switch-label')" class="text-sm text-slate-500 dark:text-slate-400">
+                                    Show on display
+                                </span>
+
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    :aria-checked="on ? 'true' : 'false'"
+                                    :aria-labelledby="$id('switch-label')"
+                                    x-on:click="on = ! on; $wire.toggleVisible({{ $calendar->id }})"
+                                    class="grid touch-target shrink-0 place-items-center"
+                                >
+                                    {{-- The 44px target is the button; the track is the visible part. --}}
+                                    <span
+                                        class="relative block h-7 w-12 rounded-full transition-colors duration-150"
+                                        :class="on ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'"
+                                    >
+                                        <span
+                                            class="absolute top-1 left-1 block size-5 rounded-full bg-white shadow transition-transform duration-150"
+                                            :class="on && 'translate-x-5'"
+                                        ></span>
+                                    </span>
                                 </button>
                             </div>
 
