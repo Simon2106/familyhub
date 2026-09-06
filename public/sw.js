@@ -39,8 +39,10 @@ self.addEventListener('fetch', (event) => {
     if (url.origin !== self.location.origin) return;
 
     // Never intercept Livewire's own traffic — a stale component update would
-    // desync the page in ways that are very hard to debug.
-    if (url.pathname.startsWith('/livewire/')) return;
+    // desync the page in ways that are very hard to debug. Livewire 4 serves
+    // this from a hashed prefix (/livewire-<hash>/update), not a literal
+    // /livewire/, so match the pattern rather than the plain string.
+    if (/^\/livewire[^/]*\//.test(url.pathname)) return;
 
     // Navigations: always go to the network, fall back to the offline card.
     if (request.mode === 'navigate') {

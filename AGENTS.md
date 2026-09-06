@@ -17,6 +17,11 @@ conventions. The points most easily got wrong:
   from data already on the page must not hit the server. Day and tab switching
   on the wall display currently cost zero round trips; keep it that way.
 - **Touch targets are 44px minimum** (`.touch-target`). No hover-only UI.
+- **The display pairing token stays in the URL and must not be stripped.** iOS
+  scopes cookies and localStorage per context, so an installed PWA cannot
+  inherit Safari's pairing — the token in `start_url` is what re-pairs it.
+- Livewire 4's update endpoint is `/livewire-<hash>/update`, not `/livewire/`.
+  Match it by pattern when filtering requests or writing service-worker rules.
 - Phase 6 ships **Home Assistant only** — the VoiceMonkey driver in the original
   brief was dropped.
 

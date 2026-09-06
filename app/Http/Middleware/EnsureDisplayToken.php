@@ -10,15 +10,27 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Gates the wall display without ever showing it a login form.
  *
- * The iPad is opened once at /display?token=..., which mints a year-long
- * encrypted cookie and drops the token from the URL. The blade view also keeps
- * the token in localStorage, so if the cookie is ever lost (Safari clearing
- * site data, a reinstalled PWA) the device can re-authorise itself without
- * anyone climbing up to the wall.
+ * The iPad is opened at /display?token=..., which mints a year-long encrypted
+ * cookie and renders the display in the same response — no redirect, and the
+ * token deliberately stays in the URL.
+ *
+ * That last part is not an oversight. iOS gives a home-screen web app its own
+ * cookie jar and its own localStorage, entirely separate from Safari's, so a
+ * pairing done in Safari does not carry into the installed PWA. Keeping the
+ * token in the URL means "Add to Home Screen" captures it, and the PWA
+ * re-pairs itself inside its own storage on first launch. Stripping it would
+ * leave the PWA permanently unpaired.
+ *
+ * The trade-off is that the token sits in the address bar. That is acceptable
+ * here: the wall iPad runs in Guided Access with no visible chrome, and the
+ * token only ever grants read access to a household calendar.
  */
 class EnsureDisplayToken
 {
     public const COOKIE = 'fh_display';
+
+    /** A wall display must never quietly log itself out. */
+    public const COOKIE_LIFETIME = 60 * 24 * 365;
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -29,23 +41,42 @@ class EnsureDisplayToken
         }
 
         if ($this->tokenMatches($request->query('token'), $expected)) {
-            // Redirect to strip the token from the URL and from Safari's history,
-            // so a shoulder-surfed address bar does not leak it.
-            return redirect()
-                ->to($request->url())
-                ->withCookie(Cookie::make(self::COOKIE, $expected, minutes: 60 * 24 * 365));
+            // Make the pairing visible to this same request, not just the next one.
+            $request->cookies->set(self::COOKIE, $expected);
+
+            // Queued rather than attached by hand, so it survives whatever kind
+            // of response the component returns.
+            Cookie::queue(Cookie::make(self::COOKIE, $expected, minutes: self::COOKIE_LIFETIME));
+
+            return $this->authorised($request, $next, $expected);
         }
 
         if ($this->tokenMatches($request->cookie(self::COOKIE), $expected)) {
-            return $next($request);
+            return $this->authorised($request, $next, $expected);
         }
 
         // An authenticated parent browsing from a phone can preview the display.
         if ($request->user()) {
-            return $next($request);
+            return $this->authorised($request, $next, $expected);
         }
 
         return response()->view('display-unpaired', status: 403);
+    }
+
+    /**
+     * Hand the token to the view so the page can mirror it into localStorage.
+     *
+     * Anyone reaching this point is already authorised to see the display, so
+     * this exposes nothing new — and it means a device paired by cookie alone
+     * still has a copy to re-pair from later.
+     *
+     * @param  Closure(Request): Response  $next
+     */
+    protected function authorised(Request $request, Closure $next, string $token): Response
+    {
+        $request->attributes->set('display_token', $token);
+
+        return $next($request);
     }
 
     protected function tokenMatches(mixed $given, string $expected): bool

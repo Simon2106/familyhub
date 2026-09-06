@@ -25,16 +25,35 @@
             </div>
         </div>
 
-        {{-- If this device was paired before and only lost its cookie, it still
-             has the token in localStorage and can let itself back in. --}}
+        {{-- If this context was paired before and only lost its cookie, it
+             still has the token in localStorage and can let itself back in.
+
+             The guard on a token already being in the URL is what stops a
+             wrong or revoked token from looping: if we arrived here *with* a
+             token, that token was rejected, so retrying it is pointless. --}}
         <script>
             (function () {
+                var url = new URL(window.location.href);
+
+                if (url.searchParams.get('token')) {
+                    // We got here despite presenting a token, so it is stale.
+                    // Drop it rather than retrying it forever.
+                    try {
+                        window.localStorage.removeItem('familyhub.display_token');
+                    } catch (e) {
+                        // Nothing to clean up.
+                    }
+                    return;
+                }
+
                 try {
                     var token = window.localStorage.getItem('familyhub.display_token');
-                    if (!token || new URL(window.location.href).searchParams.get('token')) return;
+                    if (!token) return;
 
                     document.getElementById('recovering').classList.remove('hidden');
-                    window.location.replace('{{ route('display') }}?token=' + encodeURIComponent(token));
+
+                    url.searchParams.set('token', token);
+                    window.location.replace(url.toString());
                 } catch (e) {
                     // No storage access; the on-screen instructions stand.
                 }

@@ -14,7 +14,10 @@
 {{-- Dates and phone numbers must not become tappable links on the wall. --}}
 <meta name="format-detection" content="telephone=no,date=no,address=no,email=no">
 
-<link rel="manifest" href="{{ route('pwa.manifest') }}">
+{{-- use-credentials so the manifest fetch carries the pairing cookie; without
+     it the browser fetches anonymously and the display manifest 403s. --}}
+<link rel="manifest" href="{{ $manifestUrl ?? route('pwa.manifest') }}"
+      @if ($manifestCredentials ?? false) crossorigin="use-credentials" @endif>
 <link rel="apple-touch-icon" href="{{ asset('icons/icon-180.png') }}">
 <link rel="icon" href="{{ asset('icons/icon-192.png') }}">
 

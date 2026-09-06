@@ -99,16 +99,27 @@ of whatever Carbon instance it is handed and silently discards the zone.
 php artisan familyhub:display-token
 ```
 
-Open the printed URL **once** on the iPad. The token is exchanged for a
-year-long cookie and stripped from the address bar; a copy is kept in
-`localStorage` so the iPad can re-pair itself if Safari ever clears its cookies.
+Open the printed URL on the iPad. The token is exchanged for a year-long cookie
+and the display renders in the same response — no redirect — with the token left
+in the URL.
+
+**The token stays in the URL on purpose.** iOS gives a home-screen web app its
+own cookie jar *and* its own `localStorage`, both separate from Safari's, so a
+pairing done in Safari does not carry into the installed PWA. Leaving the token
+in the URL means "Add to Home Screen" captures it, and the PWA re-pairs itself
+inside its own storage on first launch. The display also serves its own manifest
+whose `start_url` carries the token, so every relaunch re-pairs.
+
+The page mirrors the token into `localStorage`, so a context that later loses
+its cookie re-pairs itself without anyone reaching up to the wall. That recovery
+is per-context: Safari recovers Safari, the PWA recovers the PWA.
 
 `php artisan familyhub:display-token --new` rotates the token. Any paired iPad
 will need re-pairing.
 
-**Troubleshooting:** the middleware only ever answers 403 (wrong or missing
-token), 503 (no token configured, or no household seeded) or a redirect. It
-never returns 404. So a 404 from `/display?token=...` means the token was
+**Troubleshooting:** the middleware only ever answers 200 (paired), 403 (wrong
+or missing token) or 503 (no token configured, or no household seeded). It never
+returns 404 and no longer redirects. So a 404 from `/display?token=...` means the token was
 *accepted* and something behind it failed — almost always a database that was
 migrated but never seeded. Run `php artisan familyhub:seed-demo --household-only`.
 

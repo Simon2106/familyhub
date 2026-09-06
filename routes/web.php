@@ -38,6 +38,33 @@ Route::get('/', function () {
     return Auth::check() ? redirect()->route('app') : redirect()->route('login');
 });
 
+/*
+| The wall display gets its own manifest: the installed PWA must relaunch at a
+| URL carrying the pairing token, because iOS scopes cookies per context and a
+| start_url of plain /display would open unpaired. Gated by the same middleware,
+| so the token is never served to anyone who does not already have it.
+*/
+Route::get('/display/manifest.webmanifest', function () {
+    $token = request()->attributes->get('display_token');
+
+    return response()->json([
+        'name' => config('app.name').' Display',
+        'short_name' => config('app.name'),
+        'description' => 'The family wall calendar.',
+        'start_url' => route('display', $token ? ['token' => $token] : []),
+        'scope' => '/display',
+        'display' => 'standalone',
+        'orientation' => 'any',
+        'background_color' => '#0f172a',
+        'theme_color' => '#0f172a',
+        'icons' => [
+            ['src' => asset('icons/icon-192.png'), 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any'],
+            ['src' => asset('icons/icon-512.png'), 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'],
+            ['src' => asset('icons/icon-512.png'), 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'maskable'],
+        ],
+    ])->withHeaders(['Content-Type' => 'application/manifest+json']);
+})->middleware('display.token')->name('pwa.manifest.display');
+
 Route::livewire('/display', 'display.wall')
     ->middleware('display.token')
     ->name('display');
