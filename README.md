@@ -106,6 +106,12 @@ year-long cookie and stripped from the address bar; a copy is kept in
 `php artisan familyhub:display-token --new` rotates the token. Any paired iPad
 will need re-pairing.
 
+**Troubleshooting:** the middleware only ever answers 403 (wrong or missing
+token), 503 (no token configured, or no household seeded) or a redirect. It
+never returns 404. So a 404 from `/display?token=...` means the token was
+*accepted* and something behind it failed — almost always a database that was
+migrated but never seeded. Run `php artisan familyhub:seed-demo --household-only`.
+
 ### 2. Add to Home Screen
 
 Safari → Share → **Add to Home Screen**. Launch it from the icon, not from
@@ -154,6 +160,19 @@ php artisan route:cache
 php artisan view:cache
 npm run build
 ```
+
+Seed the household on first deploy, or `/display` will pair and then fail:
+
+```sh
+php artisan migrate --force
+php artisan familyhub:seed-demo --household-only
+```
+
+The app trusts proxy headers (`trustProxies(at: '*')`) because Forge terminates
+TLS at nginx and forwards plain HTTP. Without it the pairing redirect downgrades
+to `http://` and the Secure pairing cookie is dropped. Only trust `*` while the
+app is reachable solely through its own nginx, which is the standard Forge
+droplet layout.
 
 Phase 2 adds Horizon and the scheduler under supervisor; until there are queued
 jobs to run, neither is needed.

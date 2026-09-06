@@ -12,6 +12,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Forge/nginx terminates TLS and forwards over plain HTTP. Without
+        // this, Request::url() reports http:// and the display-pairing
+        // redirect downgrades the scheme — which drops the Secure pairing
+        // cookie and leaves the iPad stuck on "not paired".
+        $middleware->trustProxies(at: '*');
+
         $middleware->alias([
             'display.token' => \App\Http\Middleware\EnsureDisplayToken::class,
         ]);

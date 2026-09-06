@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use App\Exceptions\HouseholdNotProvisioned;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -71,6 +72,7 @@ class Household extends Model
      */
     public static function current(): self
     {
-        return once(fn () => static::query()->orderBy('id')->firstOrFail());
+        return once(fn () => static::query()->orderBy('id')->first()
+            ?? throw new HouseholdNotProvisioned);
     }
 }

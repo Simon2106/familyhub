@@ -65,6 +65,40 @@ class DisplayAccessTest extends TestCase
     }
 
     #[Test]
+    public function a_mismatched_token_is_a_403_never_a_404(): void
+    {
+        // A 404 from /display?token=... means the token was ACCEPTED and
+        // something behind the middleware failed — never that the token was wrong.
+        $this->get('/display?token=wrong')
+            ->assertForbidden()
+            ->assertSee("isn't paired yet", escape: false);
+    }
+
+    #[Test]
+    public function pairing_an_unseeded_install_explains_itself_instead_of_404ing(): void
+    {
+        Household::query()->delete();
+
+        $this->withCookie(EnsureDisplayToken::COOKIE, 'test-display-token')
+            ->get('/display')
+            ->assertStatus(503)
+            ->assertSee('paired correctly')
+            ->assertSee('familyhub:seed-demo --household-only');
+    }
+
+    #[Test]
+    public function the_pairing_redirect_keeps_https_behind_a_proxy(): void
+    {
+        // Forge terminates TLS and forwards plain HTTP. A redirect that
+        // downgrades to http:// drops the Secure pairing cookie, leaving the
+        // iPad in a permanent "not paired" loop.
+        $this->get('https://hub.example.test/display?token=test-display-token', [
+            'X-Forwarded-Proto' => 'https',
+            'X-Forwarded-For' => '10.0.0.1',
+        ])->assertRedirect('https://hub.example.test/display');
+    }
+
+    #[Test]
     public function it_fails_loudly_when_no_token_is_configured(): void
     {
         config(['familyhub.display.token' => '']);
