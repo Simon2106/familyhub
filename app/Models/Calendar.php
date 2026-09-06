@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['calendar_account_id', 'member_id', 'external_id', 'name', 'colour', 'is_visible', 'is_writable', 'sync_token', 'ctag', 'last_synced_at'])]
+#[Fillable(['calendar_account_id', 'member_id', 'external_id', 'name', 'colour', 'is_visible', 'is_writable', 'sync_token', 'ctag', 'supports_sync_collection', 'last_synced_at'])]
 class Calendar extends Model
 {
     use HasFactory;
@@ -19,6 +19,7 @@ class Calendar extends Model
         return [
             'is_visible' => 'boolean',
             'is_writable' => 'boolean',
+            'supports_sync_collection' => 'boolean',
             'last_synced_at' => 'datetime',
         ];
     }

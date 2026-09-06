@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['calendar_id', 'external_id', 'recurrence_id', 'title', 'start_at', 'end_at', 'all_day', 'location', 'notes', 'rrule', 'source_hash', 'status'])]
+#[Fillable(['calendar_id', 'external_id', 'recurrence_id', 'href', 'etag', 'title', 'start_at', 'end_at', 'all_day', 'location', 'notes', 'rrule', 'source_hash', 'status', 'needs_push', 'pushed_at'])]
 class Event extends Model
 {
     use HasFactory;
@@ -22,6 +22,8 @@ class Event extends Model
             'start_at' => UtcDateTime::class,
             'end_at' => UtcDateTime::class,
             'all_day' => 'boolean',
+            'needs_push' => 'boolean',
+            'pushed_at' => 'datetime',
         ];
     }
 

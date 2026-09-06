@@ -4,7 +4,9 @@ A family wall-calendar app for a single household — a self-hosted replacement 
 Skylight / Hearth. It runs on an always-on wall-mounted iPad (Safari PWA in Guided
 Access) and on family phones.
 
-**Stack:** Laravel 13 · Livewire 4 · Alpine · Tailwind 4 · MySQL · Redis
+**Stack:** Laravel 13 · Livewire 4 · Alpine · Tailwind 4 · MySQL · Redis · Horizon
+
+**Calendars:** Apple iCloud only, over CalDAV. Google is out of scope — see `BRIEF.md`.
 
 > The original brief specified Laravel 11 + Livewire 3 + Breeze. That was changed
 > to Laravel 13 + Livewire 4 because Laravel 11 left its security-fix window in
@@ -19,7 +21,7 @@ Access) and on family phones.
 | Phase | Scope | State |
 | ----- | ----- | ----- |
 | **1** | Foundation, models, wall display, PWA | **Done** |
-| 2 | Calendar sync — Google OAuth + iCloud CalDAV, two-way | Not started |
+| **2** | iCloud CalDAV sync, two-way | **Done** |
 | 3 | Capture — inbound email, photo/PDF/URL, Claude extraction, review queue | Not started |
 | 4 | Kids — chores, routines, rewards | Not started |
 | 5 | Meals & shopping | Not started |
@@ -38,6 +40,22 @@ Access) and on family phones.
 
 Day and tab switching on the wall are pure Alpine — **zero** server round trips.
 Livewire re-renders on a 60-second poll to pick up edits made from phones.
+
+### What Phase 2 ships
+
+- CalDAV against iCloud with an app-specific password; **credentials are entered
+  in `/admin` and stored encrypted**, never in `.env`
+- **Multiple Apple IDs** can be connected side by side
+- Discovery: principal → calendar-home → calendars, filtering out reminder lists
+- `sync-collection` incremental sync with a `calendar-query` fallback, and
+  automatic recovery when iCloud rejects a stale token
+- Recurring events with `RECURRENCE-ID` overrides, all-day events, `DURATION`,
+  cancellations and deletions
+- Two-way: create, edit and delete from the phone, pushed with `If-Match` /
+  `If-None-Match` so a concurrent edit is refused rather than clobbered
+- Horizon-backed queues, a 5-minute poll and a nightly full pass
+- `/admin/calendars`: per-account status, last sync, errors, force resync,
+  per-calendar member assignment and visibility
 
 ---
 
@@ -185,8 +203,17 @@ to `http://` and the Secure pairing cookie is dropped. Only trust `*` while the
 app is reachable solely through its own nginx, which is the standard Forge
 droplet layout.
 
-Phase 2 adds Horizon and the scheduler under supervisor; until there are queued
-jobs to run, neither is needed.
+Calendar syncing needs Horizon and the scheduler running under supervisor:
+
+```sh
+php artisan horizon        # queue supervisor (Forge: a daemon)
+* * * * * cd /path && php artisan schedule:run >> /dev/null 2>&1
+```
+
+Horizon's dashboard is at `/horizon`, gated on being signed in. Laravel's
+generated gate ships an empty allowlist that locks everyone out in production;
+`HorizonServiceProvider::gate()` replaces it, which is safe here because there is
+no public signup and every login is a parent.
 
 ---
 
@@ -195,27 +222,43 @@ jobs to run, neither is needed.
 These cover later phases. The `.env` keys already exist and are documented in
 `.env.example`.
 
-### Google Calendar OAuth — *Phase 2*
-
-1. Google Cloud Console → new project → enable the **Google Calendar API**
-2. OAuth consent screen → **External**, publishing status **Testing** is fine for
-   a household; add each family Google account as a test user
-3. Credentials → Create → **OAuth client ID** → Web application
-4. Authorised redirect URI: `https://hub.yourdomain.com/admin/calendars/google/callback`
-5. Put the client ID and secret in `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
-
-Push notifications (`events.watch`) require a publicly reachable HTTPS endpoint;
-a 5-minute poll is the fallback.
-
-### iCloud CalDAV — *Phase 2*
+### iCloud CalDAV
 
 1. [appleid.apple.com](https://appleid.apple.com) → Sign-In and Security
 2. **App-Specific Passwords** → generate one, label it "FamilyHub"
-3. Add the account in `/admin` with the Apple ID and that password — never the
-   real Apple ID password
+3. In FamilyHub, go to **Settings → Calendars → Add an iCloud account** and
+   enter the Apple ID with that password — never the real Apple ID password
+4. Repeat for each family Apple ID you want to sync
 
-Credentials are stored encrypted (`CalendarAccount::$credentials` is an
-`encrypted:array` cast) and never appear in JSON output.
+Credentials are verified against iCloud before anything is written to the
+database, then stored encrypted (`CalendarAccount::$credentials` is an
+`encrypted:array` cast) and never rendered back or exposed in JSON.
+
+**There is nothing to put in `.env`.** The only iCloud settings there are
+transport-level (`ICLOUD_CALDAV_URL`, timeouts, sync window).
+
+Google Calendar is deliberately not implemented; see the amendments in `BRIEF.md`.
+
+#### How syncing runs
+
+| | |
+| --- | --- |
+| Every 5 minutes | `sync:calendars` — incremental, using each calendar's sync token |
+| Nightly at 03:30 | `sync:calendars --force` — full pass, catches anything a token missed |
+| On demand | **Sync now** / **Force resync** per account in `/admin/calendars` |
+
+Jobs run on the `sync` queue, which Horizon prioritises over `default`. Both jobs
+use `WithoutOverlapping`, so a slow sync cannot race itself on sync tokens.
+
+iCloud offers no push channel we can subscribe to, so polling is the only option.
+`sync-collection` keeps each poll cheap: the server returns only what changed.
+
+#### Sync window
+
+A full pass asks iCloud for `CALDAV_WINDOW_BACK` days of history and
+`CALDAV_WINDOW_FORWARD` days ahead (90 / 400 by default). Events outside that
+window are never requested — and, importantly, are never deleted locally for
+being absent from a response that never covered them.
 
 ### Postmark inbound email — *Phase 3*
 
@@ -257,7 +300,11 @@ written to a calendar without a person accepting it.
   here — `list` is a reserved word in PHP and cannot be a class name.
 - `Event` identity is `(calendar_id, external_id, recurrence_id)`, enforced through
   a `uid_hash` column because a 512-char `external_id` overflows MySQL's
-  3072-byte index limit.
+  3072-byte index limit. One `.ics` resource can hold a recurring master *and*
+  its modified occurrences, which all share a UID — hence `recurrence_id`.
+- CalDAV code lives in `app/Services/CalDav/`. `CalDavClient` is pure transport
+  and knows nothing about our models, so it can be faked wholesale in tests
+  (see `tests/Support/FakeICloud.php`).
 
 ## Artisan commands
 
@@ -265,5 +312,5 @@ written to a calendar without a person accepting it.
 | ------- | ------- |
 | `familyhub:seed-demo` | Seed the household from `.env` (`--fresh` wipes first, `--household-only` skips demo events) |
 | `familyhub:display-token` | Show the wall display pairing URL (`--new` rotates the token) |
-| `sync:calendars` | *Phase 2* |
+| `sync:calendars` | Sync connected iCloud accounts (`--force` full pass, `--account=` one account, `--now` inline) |
 | `capture:process` | *Phase 3* |

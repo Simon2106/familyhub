@@ -24,5 +24,12 @@ conventions. The points most easily got wrong:
   Match it by pattern when filtering requests or writing service-worker rules.
 - Phase 6 ships **Home Assistant only** — the VoiceMonkey driver in the original
   brief was dropped.
+- **Calendars are iCloud-only** (CalDAV). Google is out of scope. iCloud
+  credentials are entered in `/admin`, never `.env`, and several Apple IDs can be
+  connected at once. See `BRIEF.md` for the full amended brief.
+- CalDAV lives in `app/Services/CalDav/`. `CalDavClient` is transport only —
+  keep model knowledge out of it. Fake iCloud with `tests/Support/FakeICloud.php`;
+  note that `Http::fake()` MERGES stubs rather than replacing them, so that
+  helper drives everything from statics read at request time.
 
 Run `php artisan test` and `npm test` before calling anything done.

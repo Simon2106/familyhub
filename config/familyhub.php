@@ -70,6 +70,26 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | CalDAV (Apple iCloud)
+    |--------------------------------------------------------------------------
+    | Apple ID and app-specific password are NOT configured here — they are
+    | entered per account in /admin and stored encrypted. Only non-secret
+    | transport settings live in config.
+    */
+
+    'caldav' => [
+        'icloud_url' => env('ICLOUD_CALDAV_URL', 'https://caldav.icloud.com'),
+        'timeout' => (int) env('CALDAV_TIMEOUT', 30),
+        'user_agent' => 'FamilyHub/1.0 (CalDAV)',
+
+        // How far either side of today a fallback calendar-query asks for.
+        // sync-collection is used instead wherever the server supports it.
+        'window_days_back' => (int) env('CALDAV_WINDOW_BACK', 90),
+        'window_days_forward' => (int) env('CALDAV_WINDOW_FORWARD', 400),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Later phases
     |--------------------------------------------------------------------------
     | Declared here so config:cache covers them from the start.

@@ -15,15 +15,22 @@ class CalendarAccountFactory extends Factory
     {
         return [
             'household_id' => Household::factory(),
-            'provider' => CalendarAccount::PROVIDER_GOOGLE,
+            'provider' => CalendarAccount::PROVIDER_ICLOUD,
             'label' => 'Test account',
             'external_account_id' => $this->faker->unique()->safeEmail(),
             'status' => 'ok',
+            'principal_url' => '/12345678/principal/',
+            'calendar_home_url' => '/12345678/calendars/',
+            'credentials' => [
+                'username' => $this->faker->unique()->safeEmail(),
+                'password' => 'abcd-efgh-ijkl-mnop',
+                'base_url' => 'https://caldav.icloud.com',
+            ],
         ];
     }
 
-    public function icloud(): static
+    public function broken(string $error = 'Authentication failed'): static
     {
-        return $this->state(fn () => ['provider' => CalendarAccount::PROVIDER_ICLOUD]);
+        return $this->state(fn () => ['status' => 'error', 'last_error' => $error]);
     }
 }

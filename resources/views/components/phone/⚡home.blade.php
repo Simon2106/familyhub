@@ -6,6 +6,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
@@ -29,6 +30,13 @@ new #[Layout('layouts::app')] class extends Component
     public function members(): Collection
     {
         return $this->household()->members()->get();
+    }
+
+    /** Re-read the agenda after the editor writes through to iCloud. */
+    #[On('events-changed')]
+    public function refreshAgenda(): void
+    {
+        unset($this->eventsByDay);
     }
 
     /** @return Collection<string, Collection<int, Event>> keyed by date */
@@ -104,6 +112,13 @@ new #[Layout('layouts::app')] class extends Component
         </div>
     </header>
 
+    <div x-data="{ show: false, message: '' }"
+         x-on:saved.window="message = $event.detail.message; show = true; setTimeout(() => show = false, 2500)"
+         x-show="show" x-cloak x-transition
+         class="fixed inset-x-4 top-4 z-[60] rounded-xl bg-slate-900 px-4 py-3 text-white shadow-lg dark:bg-white dark:text-slate-900">
+        <span x-text="message"></span>
+    </div>
+
     <div class="pane-scroll min-h-0 flex-1 px-4 pb-4">
         @forelse ($this->eventsByDay as $date => $events)
             @php $day = Carbon::parse($date, $tz); @endphp
@@ -116,17 +131,20 @@ new #[Layout('layouts::app')] class extends Component
             <ul class="mb-2 space-y-2">
                 @foreach ($events as $event)
                     @php $colour = $event->calendar?->member?->colour ?? '#94a3b8'; @endphp
-                    <li class="flex items-center gap-3 rounded-2xl bg-white p-3 dark:bg-slate-900">
-                        <span class="w-14 shrink-0 text-sm font-semibold tabular-nums text-slate-500 dark:text-slate-400">
-                            {{ $event->all_day ? 'All day' : $event->start_at->timezone($tz)->format('H:i') }}
-                        </span>
-                        <span class="h-10 w-1 shrink-0 rounded-full" style="background-color: {{ $colour }};"></span>
-                        <span class="min-w-0 flex-1">
-                            <span class="block truncate font-medium">{{ $event->title }}</span>
-                            <span class="block truncate text-sm text-slate-500 dark:text-slate-400">
-                                {{ $event->calendar?->member?->name }}@if ($event->location) · {{ $event->location }} @endif
+                    <li>
+                        <button type="button" wire:click="$dispatch('edit-event', { eventId: {{ $event->id }} })"
+                                class="flex w-full items-center gap-3 rounded-2xl bg-white p-3 text-left dark:bg-slate-900">
+                            <span class="w-14 shrink-0 text-sm font-semibold tabular-nums text-slate-500 dark:text-slate-400">
+                                {{ $event->all_day ? 'All day' : $event->start_at->timezone($tz)->format('H:i') }}
                             </span>
-                        </span>
+                            <span class="h-10 w-1 shrink-0 rounded-full" style="background-color: {{ $colour }};"></span>
+                            <span class="min-w-0 flex-1">
+                                <span class="block truncate font-medium">{{ $event->title }}</span>
+                                <span class="block truncate text-sm text-slate-500 dark:text-slate-400">
+                                    {{ $event->calendar?->member?->name }}@if ($event->location) · {{ $event->location }} @endif
+                                </span>
+                            </span>
+                        </button>
                     </li>
                 @endforeach
             </ul>
@@ -143,4 +161,16 @@ new #[Layout('layouts::app')] class extends Component
             <button type="submit" class="touch-target w-full rounded-xl text-sm font-medium text-slate-400">Sign out</button>
         </form>
     </div>
+
+    {{-- Compose. Sits above the scroll area so it is always in thumb reach. --}}
+    <button type="button" wire:click="$dispatch('edit-event')"
+            class="fixed right-5 bottom-8 z-30 grid size-14 place-items-center rounded-full bg-blue-600 text-white shadow-lg active:bg-blue-700"
+            style="margin-bottom: env(safe-area-inset-bottom);"
+            aria-label="Add an event">
+        <svg class="size-7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+        </svg>
+    </button>
+
+    <livewire:phone.event-editor />
 </div>

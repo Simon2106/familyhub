@@ -80,4 +80,5 @@ Route::post('/logout', LogoutController::class)
 Route::middleware('auth')->group(function () {
     Route::livewire('/app', 'phone.home')->name('app');
     Route::livewire('/admin', 'admin.settings')->name('admin');
+    Route::livewire('/admin/calendars', 'admin.calendars')->name('admin.calendars');
 });

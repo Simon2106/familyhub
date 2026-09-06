@@ -33,6 +33,21 @@ new #[Layout('layouts::app')] class extends Component
         return Household::current()->members()->get();
     }
 
+    public function calendarSummary(): string
+    {
+        $accounts = Household::current()->calendarAccounts()->withCount('calendars')->get();
+
+        if ($accounts->isEmpty()) {
+            return 'No accounts connected yet.';
+        }
+
+        $broken = $accounts->where('status', 'error')->count();
+
+        return trans_choice('{1}:count account|[2,*]:count accounts', $accounts->count(), ['count' => $accounts->count()])
+            .', '.$accounts->sum('calendars_count').' calendars'
+            .($broken ? " · {$broken} needing attention" : '');
+    }
+
     public function saveHousehold(): void
     {
         $this->validate(['householdName' => 'required|string|max:120']);
@@ -222,12 +237,20 @@ new #[Layout('layouts::app')] class extends Component
             </a>
         </section>
 
-        {{-- Later phases --}}
-        <section class="rounded-2xl border border-dashed border-slate-300 p-4 dark:border-slate-700">
-            <h2 class="font-semibold text-slate-500 dark:text-slate-400">Calendar accounts</h2>
-            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Google and iCloud syncing arrives in Phase 2, along with per-account sync status and a force-resync button.
-            </p>
+        {{-- Calendars --}}
+        <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
+            <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <h2 class="font-semibold">iCloud calendars</h2>
+                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        {{ $this->calendarSummary() }}
+                    </p>
+                </div>
+                <a href="{{ route('admin.calendars') }}" wire:navigate
+                   class="grid touch-target shrink-0 place-items-center rounded-xl px-4 font-semibold text-blue-600 dark:text-blue-400">
+                    Manage
+                </a>
+            </div>
         </section>
     </div>
 </div>

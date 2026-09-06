@@ -9,14 +9,17 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['household_id', 'provider', 'label', 'external_account_id', 'credentials', 'sync_token', 'status', 'last_synced_at', 'last_error'])]
+#[Fillable(['household_id', 'provider', 'label', 'external_account_id', 'principal_url', 'calendar_home_url', 'credentials', 'sync_token', 'status', 'last_synced_at', 'last_error'])]
 #[Hidden(['credentials'])]
 class CalendarAccount extends Model
 {
     use HasFactory;
 
-    public const PROVIDER_GOOGLE = 'google';
-
+    /**
+     * iCloud is the only provider. Google is out of scope per the brief; the
+     * column stays a string so another provider can be added without a
+     * migration if that changes.
+     */
     public const PROVIDER_ICLOUD = 'icloud';
 
     protected function casts(): array
@@ -43,5 +46,11 @@ class CalendarAccount extends Model
     public function isHealthy(): bool
     {
         return $this->status === 'ok';
+    }
+
+    /** The Apple ID, without exposing the app-specific password alongside it. */
+    public function appleId(): ?string
+    {
+        return $this->external_account_id;
     }
 }
