@@ -1,0 +1,102 @@
+<?php
+
+use App\Models\ChecklistItem;
+use App\Models\Household;
+use Illuminate\Support\Collection;
+use Livewire\Attributes\Computed;
+use Livewire\Component;
+
+/**
+ * Household lists on the wall. Ticking is optimistic in Alpine so the checkbox
+ * responds under the finger; Livewire only persists afterwards.
+ */
+new class extends Component
+{
+    #[Computed]
+    public function checklists(): Collection
+    {
+        return Household::current()->checklists()->with('items')->get();
+    }
+
+    public function toggle(int $itemId): void
+    {
+        $item = ChecklistItem::query()
+            ->whereHas('checklist', fn ($q) => $q->where('household_id', Household::current()->id))
+            ->findOrFail($itemId);
+
+        $item->toggle();
+
+        unset($this->checklists);
+    }
+
+    public function clearDone(int $checklistId): void
+    {
+        ChecklistItem::query()
+            ->where('checklist_id', $checklistId)
+            ->whereHas('checklist', fn ($q) => $q->where('household_id', Household::current()->id))
+            ->where('is_done', true)
+            ->delete();
+
+        unset($this->checklists);
+    }
+}; ?>
+
+<div class="pane-scroll h-full">
+    @if ($this->checklists->isEmpty())
+        <div class="grid h-full place-items-center">
+            <p class="text-slate-400">No lists yet.</p>
+        </div>
+    @else
+        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            @foreach ($this->checklists as $checklist)
+                <section class="rounded-2xl bg-white p-3 dark:bg-slate-900" wire:key="list-{{ $checklist->id }}">
+                    <header class="flex items-center gap-2 px-1 pb-2">
+                        <h2 class="flex-1 truncate text-base font-semibold">{{ $checklist->name }}</h2>
+                        @if ($checklist->items->where('is_done', true)->isNotEmpty())
+                            <button
+                                type="button"
+                                wire:click="clearDone({{ $checklist->id }})"
+                                wire:confirm="Remove the ticked items from {{ $checklist->name }}?"
+                                class="touch-target rounded-lg px-2 text-sm font-medium text-slate-400"
+                            >
+                                Clear done
+                            </button>
+                        @endif
+                    </header>
+
+                    <ul>
+                        @foreach ($checklist->items as $item)
+                            <li wire:key="item-{{ $item->id }}">
+                                <button
+                                    type="button"
+                                    x-data="{ done: @js($item->is_done) }"
+                                    x-on:click="done = !done; $wire.toggle({{ $item->id }})"
+                                    class="flex w-full touch-target items-center gap-3 rounded-xl px-1 text-left"
+                                >
+                                    <span
+                                        class="grid size-7 shrink-0 place-items-center rounded-lg border-2 transition-colors"
+                                        :class="done
+                                            ? 'border-blue-600 bg-blue-600 text-white'
+                                            : 'border-slate-300 dark:border-slate-600'"
+                                    >
+                                        <svg x-show="done" class="size-4" fill="none" stroke="currentColor" stroke-width="3"
+                                             stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="m5 12 5 5L20 7" />
+                                        </svg>
+                                    </span>
+
+                                    <span class="min-w-0 flex-1" :class="done && 'text-slate-400 line-through'">
+                                        <span class="block truncate">{{ $item->title }}</span>
+                                        @if ($item->quantity)
+                                            <span class="block text-sm text-slate-400">{{ $item->quantity }}</span>
+                                        @endif
+                                    </span>
+                                </button>
+                            </li>
+                        @endforeach
+                    </ul>
+                </section>
+            @endforeach
+        </div>
+    @endif
+</div>

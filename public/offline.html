@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <title>FamilyHub — offline</title>
+        <style>
+            :root { color-scheme: dark; }
+            body {
+                margin: 0;
+                min-height: 100dvh;
+                display: grid;
+                place-items: center;
+                background: #0f172a;
+                color: #f8fafc;
+                font: 500 1rem/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+                text-align: center;
+                padding: 2rem;
+            }
+            h1 { font-size: 1.5rem; margin: 0 0 0.5rem; }
+            p { margin: 0; color: #94a3b8; }
+            button {
+                margin-top: 2rem;
+                min-height: 44px;
+                padding: 0 1.5rem;
+                border: 0;
+                border-radius: 0.75rem;
+                background: #3b82f6;
+                color: #fff;
+                font: inherit;
+                font-weight: 600;
+            }
+        </style>
+    </head>
+    <body>
+        <div>
+            <h1>FamilyHub is offline</h1>
+            <p>Waiting for the network. The calendar will come back on its own.</p>
+            <button onclick="location.reload()">Try again</button>
+        </div>
+    </body>
+</html>
