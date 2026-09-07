@@ -25,10 +25,19 @@ These supersede the text they replace. Newest first.
 
 1. **Member attribution from event titles**, plus two wall-display changes.
    - The week strip runs Monday–Sunday with a **"This week"** segment to the
-     left of Monday. "This week" shows the whole current week as a list grouped
-     by day, and is the default view on load.
-   - Tapping a date shows only that day's events as per-member columns; tapping
-     the same date again returns to the week view.
+     left of Monday.
+   - **The display opens on today** — the current day selected in the strip,
+     showing today's events as per-member columns. "This week" is a tab the user
+     taps, not the default.
+   - Tapping a date shows only that day; tapping the same date again returns to
+     today.
+   - **"This week"** keeps "Coming up" on the right and turns the left panel into
+     a grid: one column per member (plus Household only when the week has
+     household events), one row per day Mon–Sun, each cell listing that member's
+     events for that day as time + title. Today's row is highlighted and empty
+     cells stay empty. Fits iPad landscape without horizontal scrolling at five
+     columns; in portrait the rows stack, with the day as a section header and
+     members as sub-groups. Tapping a day header selects that day.
    - Members have **name aliases** (Simon: "Simon", "SW") and **places** —
      named organisations with their own aliases and a type
      (school / work / club / other), e.g. Sienna → "Sandy Gate" (school,

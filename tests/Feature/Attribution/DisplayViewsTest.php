@@ -82,25 +82,81 @@ class DisplayViewsTest extends TestCase
     }
 
     #[Test]
-    public function the_week_view_is_the_default(): void
+    public function the_display_opens_on_today(): void
     {
         $this->event('SW dentist', '2026-07-09 09:00');
 
         Livewire::test('display.wall')
-            ->assertSee('This week')
-            // view starts as 'week' in the Alpine state.
-            ->assertSee("view: 'week'", escape: false);
+            // Alpine opens in day view with today selected, not on the week.
+            ->assertSee("view: 'day'", escape: false)
+            ->assertSee("today: '2026-07-08'", escape: false)
+            ->assertSee("selected: '2026-07-08'", escape: false);
     }
 
     #[Test]
-    public function the_week_view_lists_only_days_that_have_something_on(): void
+    public function this_week_is_still_reachable_as_a_tab(): void
+    {
+        Livewire::test('display.wall')
+            ->assertSee('This week')
+            ->assertSee('showWeek()', escape: false);
+    }
+
+    #[Test]
+    public function the_week_grid_has_a_row_for_every_day_including_empty_ones(): void
     {
         $this->event('SW dentist', '2026-07-09 09:00');
 
-        $withEvents = Livewire::test('display.wall')->instance()->weekWithEvents();
+        $html = Livewire::test('display.wall')->html();
 
-        $this->assertCount(1, $withEvents);
-        $this->assertSame('2026-07-09', $withEvents[0]['date']);
+        // All seven days get a row; only the cells differ.
+        foreach (['2026-07-06', '2026-07-07', '2026-07-08', '2026-07-09', '2026-07-10', '2026-07-11', '2026-07-12'] as $date) {
+            $this->assertStringContainsString('data-grid-date="'.$date.'"', $html);
+        }
+    }
+
+    #[Test]
+    public function empty_grid_cells_carry_no_placeholder_text(): void
+    {
+        // One event on one day; the other 27 member-days are empty and must
+        // stay silent rather than repeating "Nothing on" across the grid.
+        $this->event('SW dentist', '2026-07-09 09:00');
+
+        $html = Livewire::test('display.wall')->html();
+        $weekGrid = substr($html, strpos($html, 'grid-template-columns: 3.5rem'), 6000);
+
+        $this->assertStringNotContainsString('Nothing on', $weekGrid);
+    }
+
+    #[Test]
+    public function the_week_grid_gets_a_household_column_only_when_it_is_needed(): void
+    {
+        $this->event('SW dentist', '2026-07-09 09:00');
+        $this->assertFalse(Livewire::test('display.wall')->instance()->weekHasHouseholdEvents());
+
+        $this->event('Bin day', '2026-07-09 07:00');
+        $this->assertTrue(Livewire::test('display.wall')->instance()->weekHasHouseholdEvents());
+    }
+
+    #[Test]
+    public function a_household_event_next_week_does_not_add_a_column_to_this_week(): void
+    {
+        // The grid covers Mon-Sun; a column for something outside it would be
+        // empty in every row.
+        $this->event('Bin day', '2026-07-15 07:00');
+
+        $this->assertFalse(Livewire::test('display.wall')->instance()->weekHasHouseholdEvents());
+    }
+
+    #[Test]
+    public function a_day_beyond_this_week_can_still_be_opened_from_coming_up(): void
+    {
+        // "Coming up" reaches past Sunday, so the day panels have to as well —
+        // otherwise tapping one lands on a blank agenda.
+        $this->event('Next week thing', '2026-07-15 10:00');
+
+        $html = Livewire::test('display.wall')->html();
+
+        $this->assertStringContainsString("isPicked('2026-07-15')", $html);
     }
 
     #[Test]

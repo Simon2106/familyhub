@@ -30,8 +30,9 @@ Access) and on family phones.
 ### What Phase 1 ships
 
 - Household, Member, CalendarAccount, Calendar, Event, Checklist, ChecklistItem models
-- `/display` — the wall display: per-member agenda columns, week strip, upcoming
-  rail, lists, idle photo screensaver, scheduled dark mode
+- `/display` — the wall display: opens on today as per-member agenda columns,
+  with a "This week" tab showing a member-by-day grid, plus the week strip,
+  upcoming rail, lists, idle photo screensaver and scheduled dark mode
 - `/app` — phone view with a per-member filter
 - `/admin` — household and member settings, display pairing
 - `/login` — email + password, rate limited. No registration route.

@@ -155,13 +155,34 @@ new #[Layout('layouts::display')] class extends Component
         return $this->weekWithEvents === [];
     }
 
-    /** Does anything this week belong to the household rather than a person? */
+    /** Does anything in the whole horizon belong to the household? */
     #[Computed]
     public function hasHouseholdEvents(): bool
     {
         return collect($this->days)->contains(
             fn (array $day) => $day['events_by_member']->has(self::HOUSEHOLD)
         );
+    }
+
+    /**
+     * Does anything *this week* belong to the household?
+     *
+     * Decides whether the week grid gets a Household column at all — an empty
+     * one would cost a fifth of the width for nothing.
+     */
+    #[Computed]
+    public function weekHasHouseholdEvents(): bool
+    {
+        return collect($this->week)->contains(
+            fn (array $day) => ($day['events_by_member'][self::HOUSEHOLD] ?? collect())->isNotEmpty()
+        );
+    }
+
+    /** Today's date string, which is what the display opens on. */
+    #[Computed]
+    public function todayDate(): string
+    {
+        return $this->household()->todayLocal()->toDateString();
     }
 
     /** Everything from tomorrow onwards, as a flat list for the "coming up" rail. */
@@ -206,8 +227,9 @@ new #[Layout('layouts::display')] class extends Component
     wire:poll.60s
     x-data="{
         /* --- local state: never round-trips to the server --- */
-        view: 'week',          /* 'week' shows the whole week grouped by day */
-        selected: null,        /* the date being shown when view === 'day' */
+        view: 'day',           /* the display opens on today */
+        today: @js($this->todayDate),
+        selected: @js($this->todayDate),
         tab: 'home',
         now: new Date(),
         idle: false,
@@ -228,20 +250,29 @@ new #[Layout('layouts::display')] class extends Component
             }
         },
 
-        /* Tapping the day already showing returns to the week — the same tap
-           that drilled in backs out again, so there is no dead end. */
+        /* Tapping the day already showing goes back to today — the tap that
+           drilled in backs out again. On today itself there is nowhere further
+           back to go, so it simply stays put. */
         pickDay(date) {
             if (this.view === 'day' && this.selected === date) {
-                this.showWeek();
+                this.showToday();
             } else {
                 this.view = 'day';
                 this.selected = date;
             }
         },
 
+        showToday() {
+            this.view = 'day';
+            this.selected = this.today;
+        },
+
         showWeek() {
             this.view = 'week';
-            this.selected = null;
+        },
+
+        get onToday() {
+            return this.view === 'day' && this.selected === this.today;
         },
 
         isPicked(date) {
@@ -300,12 +331,12 @@ new #[Layout('layouts::display')] class extends Component
             <p class="text-sm font-medium text-slate-500 dark:text-slate-400">{{ $this->household()->name }}</p>
             <button
                 type="button"
-                x-show="view === 'day'"
+                x-show="! onToday"
                 x-cloak
-                x-on:click="showWeek()"
+                x-on:click="showToday()"
                 class="touch-target -mr-2 rounded-lg px-3 text-sm font-semibold text-blue-600 dark:text-blue-400"
             >
-                Back to the week
+                Back to today
             </button>
         </div>
     </header>
@@ -325,56 +356,162 @@ new #[Layout('layouts::display')] class extends Component
                 "
             >
                 {{-- ===================== WHOLE WEEK ===================== --}}
-                <div x-show="view === 'week'" class="pane-scroll h-full min-h-0 rounded-2xl bg-white p-3 dark:bg-slate-900">
-                    @forelse ($this->weekWithEvents as $day)
-                        <div class="mb-3 last:mb-0" wire:key="week-day-{{ $day['date'] }}">
-                            <button
-                                type="button"
-                                x-on:click="pickDay(@js($day['date']))"
-                                class="sticky top-0 z-10 flex w-full touch-target items-baseline gap-2 bg-white px-1 text-left dark:bg-slate-900"
-                            >
-                                <span class="text-sm font-semibold tracking-wide uppercase {{ $day['is_today'] ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400' }}">
-                                    {{ $day['is_today'] ? 'Today' : $day['carbon']->format('l') }}
-                                </span>
-                                <span class="text-sm text-slate-400">{{ $day['carbon']->format('j M') }}</span>
-                            </button>
+                @php
+                    $weekColumns = $members->count() + ($this->weekHasHouseholdEvents ? 1 : 0);
+                @endphp
 
-                            <ul class="mt-1 space-y-1.5">
-                                @foreach ($day['events'] as $event)
-                                    @php $eventMembers = $event->members; @endphp
-                                    <li class="flex items-center gap-3 rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800/60">
-                                        <span class="w-14 shrink-0 text-sm font-semibold tabular-nums text-slate-500 dark:text-slate-400">
-                                            {{ $event->all_day ? 'All day' : $event->start_at->timezone($day['tz'])->format('H:i') }}
-                                        </span>
+                <div x-show="view === 'week'" class="h-full min-h-0" x-cloak>
 
-                                        {{-- A stripe per attributed member, so a shared event reads as shared. --}}
-                                        <span class="flex h-9 shrink-0 gap-0.5">
-                                            @forelse ($eventMembers as $member)
-                                                <span class="w-1 rounded-full" style="background-color: {{ $member->colour }};"></span>
-                                            @empty
-                                                <span class="w-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
-                                            @endforelse
-                                        </span>
+                    {{-- Landscape: a member-by-day grid. Sized to fit five
+                         columns without sideways scrolling on an iPad. --}}
+                    <div class="pane-scroll hidden h-full min-h-0 rounded-2xl bg-white p-2 lg:block dark:bg-slate-900">
+                        <div class="grid gap-x-1"
+                             style="grid-template-columns: 3.5rem repeat({{ max($weekColumns, 1) }}, minmax(0, 1fr));">
 
-                                        <span class="min-w-0 flex-1">
-                                            <span class="block truncate font-medium">{{ $event->title }}</span>
-                                            <span class="block truncate text-sm text-slate-500 dark:text-slate-400">
-                                                {{ $eventMembers->pluck('name')->join(', ') ?: 'Household' }}@if ($event->location) · {{ $event->location }} @endif
-                                            </span>
-                                        </span>
-                                    </li>
+                            {{-- Header row --}}
+                            <div class="sticky top-0 z-10 bg-white dark:bg-slate-900"></div>
+                            @foreach ($members as $member)
+                                <div class="sticky top-0 z-10 flex items-center gap-1.5 bg-white px-1.5 pb-1 dark:bg-slate-900"
+                                     wire:key="wk-head-{{ $member->id }}">
+                                    <span class="size-2.5 shrink-0 rounded-full" style="background-color: {{ $member->colour }};"></span>
+                                    <span class="truncate text-sm font-semibold">{{ $member->name }}</span>
+                                </div>
+                            @endforeach
+                            @if ($this->weekHasHouseholdEvents)
+                                <div class="sticky top-0 z-10 flex items-center gap-1.5 bg-white px-1.5 pb-1 dark:bg-slate-900">
+                                    <span class="size-2.5 shrink-0 rounded-full bg-slate-400"></span>
+                                    <span class="truncate text-sm font-semibold">Household</span>
+                                </div>
+                            @endif
+
+                            {{-- One row per day --}}
+                            @foreach ($week as $day)
+                                @php
+                                    $rowTint = $day['is_today']
+                                        ? 'bg-blue-50 dark:bg-blue-950/40'
+                                        : 'border-t border-slate-100 dark:border-slate-800';
+                                @endphp
+
+                                <button
+                                    type="button"
+                                    data-grid-date="{{ $day['date'] }}"
+                                    x-on:click="pickDay(@js($day['date']))"
+                                    class="flex touch-target flex-col items-start justify-start px-1 py-1.5 text-left {{ $rowTint }} {{ $day['is_today'] ? 'rounded-l-lg' : '' }}"
+                                    wire:key="wk-day-{{ $day['date'] }}"
+                                >
+                                    <span class="text-xs font-semibold {{ $day['is_today'] ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400' }}">
+                                        {{ $day['carbon']->format('D') }}
+                                    </span>
+                                    <span class="text-sm leading-tight font-bold tabular-nums">{{ $day['carbon']->format('j') }}</span>
+                                </button>
+
+                                @foreach ($members as $member)
+                                    @php $cellEvents = $day['events_by_member'][$member->id] ?? collect(); @endphp
+                                    <div class="space-y-0.5 px-0.5 py-1.5 {{ $rowTint }}"
+                                         wire:key="wk-cell-{{ $day['date'] }}-{{ $member->id }}">
+                                        {{-- Empty cells stay empty; placeholder text would
+                                             be noise repeated 35 times. --}}
+                                        @foreach ($cellEvents as $event)
+                                            <div class="rounded border-l-2 bg-slate-50 px-1 py-0.5 dark:bg-slate-800/70"
+                                                 style="border-color: {{ $member->colour }};">
+                                                <span class="block text-[0.7rem] leading-tight font-semibold tabular-nums text-slate-500 dark:text-slate-400">
+                                                    {{ $event->all_day ? 'All day' : $event->start_at->timezone($day['tz'])->format('H:i') }}
+                                                </span>
+                                                <span class="block truncate text-xs leading-tight font-medium">{{ $event->title }}</span>
+                                            </div>
+                                        @endforeach
+                                    </div>
                                 @endforeach
-                            </ul>
+
+                                @if ($this->weekHasHouseholdEvents)
+                                    @php $cellEvents = $day['events_by_member'][$this::HOUSEHOLD] ?? collect(); @endphp
+                                    <div class="space-y-0.5 px-0.5 py-1.5 {{ $rowTint }} {{ $day['is_today'] ? 'rounded-r-lg' : '' }}">
+                                        @foreach ($cellEvents as $event)
+                                            <div class="rounded border-l-2 border-slate-400 bg-slate-50 px-1 py-0.5 dark:bg-slate-800/70">
+                                                <span class="block text-[0.7rem] leading-tight font-semibold tabular-nums text-slate-500 dark:text-slate-400">
+                                                    {{ $event->all_day ? 'All day' : $event->start_at->timezone($day['tz'])->format('H:i') }}
+                                                </span>
+                                                <span class="block truncate text-xs leading-tight font-medium">{{ $event->title }}</span>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                @endif
+                            @endforeach
                         </div>
-                    @empty
-                        <div class="grid h-full place-items-center">
-                            <p class="text-slate-400">Nothing on this week.</p>
-                        </div>
-                    @endforelse
+                    </div>
+
+                    {{-- Portrait: the same information stacked, day by day, with
+                         each member as a sub-group. A seven-column grid on a
+                         narrow screen would be unreadable. --}}
+                    <div class="pane-scroll h-full min-h-0 rounded-2xl bg-white p-3 lg:hidden dark:bg-slate-900">
+                        @foreach ($week as $day)
+                            @php $dayIsEmpty = $day['count'] === 0; @endphp
+
+                            <section class="mb-3 last:mb-0" wire:key="wk-stack-{{ $day['date'] }}">
+                                <button
+                                    type="button"
+                                    x-on:click="pickDay(@js($day['date']))"
+                                    class="sticky top-0 z-10 flex w-full touch-target items-center gap-2 rounded-lg px-2 text-left {{ $day['is_today'] ? 'bg-blue-50 dark:bg-blue-950/40' : 'bg-white dark:bg-slate-900' }}"
+                                >
+                                    <span class="text-sm font-semibold tracking-wide uppercase {{ $day['is_today'] ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400' }}">
+                                        {{ $day['is_today'] ? 'Today' : $day['carbon']->format('l') }}
+                                    </span>
+                                    <span class="text-sm text-slate-400">{{ $day['carbon']->format('j M') }}</span>
+                                </button>
+
+                                @unless ($dayIsEmpty)
+                                    <div class="mt-1 space-y-2 pl-2">
+                                        @foreach ($members as $member)
+                                            @php $cellEvents = $day['events_by_member'][$member->id] ?? collect(); @endphp
+                                            @if ($cellEvents->isNotEmpty())
+                                                <div wire:key="wk-stack-{{ $day['date'] }}-{{ $member->id }}">
+                                                    <p class="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                                        <span class="size-2 rounded-full" style="background-color: {{ $member->colour }};"></span>
+                                                        {{ $member->name }}
+                                                    </p>
+                                                    <ul class="mt-0.5 space-y-1">
+                                                        @foreach ($cellEvents as $event)
+                                                            <li class="flex items-baseline gap-2 rounded-lg border-l-2 bg-slate-50 px-2 py-1 dark:bg-slate-800/70"
+                                                                style="border-color: {{ $member->colour }};">
+                                                                <span class="w-12 shrink-0 text-xs font-semibold tabular-nums text-slate-500 dark:text-slate-400">
+                                                                    {{ $event->all_day ? 'All day' : $event->start_at->timezone($day['tz'])->format('H:i') }}
+                                                                </span>
+                                                                <span class="min-w-0 flex-1 truncate text-sm font-medium">{{ $event->title }}</span>
+                                                            </li>
+                                                        @endforeach
+                                                    </ul>
+                                                </div>
+                                            @endif
+                                        @endforeach
+
+                                        @php $householdCell = $day['events_by_member'][$this::HOUSEHOLD] ?? collect(); @endphp
+                                        @if ($householdCell->isNotEmpty())
+                                            <div>
+                                                <p class="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                                    <span class="size-2 rounded-full bg-slate-400"></span>
+                                                    Household
+                                                </p>
+                                                <ul class="mt-0.5 space-y-1">
+                                                    @foreach ($householdCell as $event)
+                                                        <li class="flex items-baseline gap-2 rounded-lg border-l-2 border-slate-400 bg-slate-50 px-2 py-1 dark:bg-slate-800/70">
+                                                            <span class="w-12 shrink-0 text-xs font-semibold tabular-nums text-slate-500 dark:text-slate-400">
+                                                                {{ $event->all_day ? 'All day' : $event->start_at->timezone($day['tz'])->format('H:i') }}
+                                                            </span>
+                                                            <span class="min-w-0 flex-1 truncate text-sm font-medium">{{ $event->title }}</span>
+                                                        </li>
+                                                    @endforeach
+                                                </ul>
+                                            </div>
+                                        @endif
+                                    </div>
+                                @endunless
+                            </section>
+                        @endforeach
+                    </div>
                 </div>
 
                 {{-- ===================== ONE DAY ======================== --}}
-                @foreach ($week as $day)
+                @foreach ($days as $day)
                     @php
                         // Only give the household a column on days that need one,
                         // so a normal day is not squeezed by an empty column.
