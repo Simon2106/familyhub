@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Capture;
 
+use App\Jobs\ProcessCaptureJob;
 use App\Models\Calendar;
 use App\Models\CalendarAccount;
 use App\Models\Capture;
@@ -11,8 +12,12 @@ use App\Models\Event;
 use App\Models\Household;
 use App\Models\Member;
 use App\Models\User;
+use App\Services\Capture\ItemAcceptor;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\FakeICloud;
@@ -87,7 +92,7 @@ class ReviewInboxTest extends TestCase
 
         // The whole point of the review queue.
         $this->assertSame(0, Event::count());
-        \Illuminate\Support\Facades\Http::assertNothingSent();
+        Http::assertNothingSent();
     }
 
     #[Test]
@@ -102,7 +107,7 @@ class ReviewInboxTest extends TestCase
 
         Livewire::test('capture.review')->call('accept', $item->id);
 
-        \Illuminate\Support\Facades\Http::assertSent(fn ($r) => $r->method() === 'PUT'
+        Http::assertSent(fn ($r) => $r->method() === 'PUT'
             && str_contains((string) $r->body(), 'SUMMARY:Parents evening'));
 
         $item->refresh();
@@ -259,14 +264,14 @@ class ReviewInboxTest extends TestCase
     #[Test]
     public function a_failed_capture_can_be_retried(): void
     {
-        \Illuminate\Support\Facades\Queue::fake();
+        Queue::fake();
 
         $capture = Capture::factory()->failed()->create(['household_id' => $this->household->id]);
 
         Livewire::test('capture.review')->call('retry', $capture->id);
 
         $this->assertSame('pending', $capture->fresh()->status);
-        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\ProcessCaptureJob::class);
+        Queue::assertPushed(ProcessCaptureJob::class);
     }
 
     #[Test]
@@ -318,7 +323,7 @@ class ReviewInboxTest extends TestCase
     #[Test]
     public function retrying_a_stalled_capture_clears_the_stall(): void
     {
-        \Illuminate\Support\Facades\Queue::fake();
+        Queue::fake();
 
         $capture = Capture::factory()->create([
             'household_id' => $this->household->id,
@@ -332,7 +337,7 @@ class ReviewInboxTest extends TestCase
         $this->assertSame('pending', $capture->status);
         // Judged on updated_at, so a retry that left it stale would still look stuck.
         $this->assertFalse($capture->seemsStalled());
-        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\ProcessCaptureJob::class);
+        Queue::assertPushed(ProcessCaptureJob::class);
     }
 
     #[Test]
@@ -341,8 +346,74 @@ class ReviewInboxTest extends TestCase
         $other = Capture::factory()->reviewing()->create(['household_id' => Household::factory()->create()->id]);
         $item = CaptureItem::factory()->create(['capture_id' => $other->id]);
 
-        $this->expectException(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+        $this->expectException(ModelNotFoundException::class);
 
         Livewire::test('capture.review')->call('accept', $item->id);
+    }
+
+    #[Test]
+    public function a_deadline_task_is_linked_to_the_event_it_is_for(): void
+    {
+        $capture = $this->item()->capture;
+
+        $event = $this->item([
+            'capture_id' => $capture->id,
+            'type' => 'event',
+            'title' => 'Flu vaccination',
+            'start_at' => '2026-09-25 09:00:00',
+        ]);
+
+        $task = $this->item([
+            'capture_id' => $capture->id,
+            'type' => 'task',
+            'title' => 'Complete the consent form',
+            'start_at' => '2026-09-24 00:00:00',
+            'for_event_title' => 'Flu vaccination',
+        ]);
+
+        $acceptor = app(ItemAcceptor::class);
+        $acceptor->accept($event, $this->calendar);
+        $acceptor->accept($task);
+
+        $todo = $task->fresh()->checklistItem;
+
+        $this->assertNotNull($todo->event, 'The to-do should say what it is in aid of.');
+        $this->assertSame('Flu vaccination', $todo->event->title);
+        $this->assertSame('2026-09-24', $todo->due_on->toDateString());
+    }
+
+    #[Test]
+    public function the_link_is_made_whichever_order_the_two_are_accepted_in(): void
+    {
+        $capture = $this->item()->capture;
+
+        $event = $this->item([
+            'capture_id' => $capture->id,
+            'type' => 'event',
+            'title' => 'Flu vaccination',
+            'start_at' => '2026-09-25 09:00:00',
+        ]);
+
+        $task = $this->item([
+            'capture_id' => $capture->id,
+            'type' => 'task',
+            'title' => 'Complete the consent form',
+            'start_at' => '2026-09-24 00:00:00',
+            'for_event_title' => 'flu vaccination ',
+        ]);
+
+        $acceptor = app(ItemAcceptor::class);
+
+        // Task first this time: the event it refers to does not exist yet.
+        $acceptor->accept($task);
+        $this->assertNull($task->fresh()->checklistItem->event_id);
+
+        $acceptor->accept($event, $this->calendar);
+
+        $this->assertSame(
+            $event->fresh()->event_id,
+            $task->fresh()->checklistItem->event_id,
+            'Accepting the event should fill in the link the task was waiting for.',
+        );
     }
 }

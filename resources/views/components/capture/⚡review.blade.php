@@ -428,6 +428,15 @@ new class extends Component
                                     <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Mentions: {{ $item->member_hint }}</p>
                                 @endif
 
+                                {{-- A deadline on its own is hard to judge; what
+                                     it is in aid of is the context that makes it
+                                     accept-or-reject. --}}
+                                @if ($item->for_event_title)
+                                    <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                                        For: {{ $item->for_event_title }}
+                                    </p>
+                                @endif
+
                                 @if ($item->source)
                                     {{-- Which document this came from: an item
                                          read out of the PDF carries different

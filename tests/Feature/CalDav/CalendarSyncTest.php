@@ -7,6 +7,7 @@ use App\Models\CalendarAccount;
 use App\Models\Event;
 use App\Models\Household;
 use App\Services\CalDav\CalDavManager;
+use App\Services\CalDav\SyncResult;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -44,7 +45,7 @@ class CalendarSyncTest extends TestCase
         parent::tearDown();
     }
 
-    protected function sync(bool $force = false): \App\Services\CalDav\SyncResult
+    protected function sync(bool $force = false): SyncResult
     {
         return app(CalDavManager::class)->sync($this->account)->sync($this->calendar->fresh(), $force);
     }

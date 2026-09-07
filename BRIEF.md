@@ -24,10 +24,25 @@ adding packages beyond those listed.
 
 These supersede the text they replace. Newest first.
 
-1. **The extraction model is `claude-sonnet-5`**, not the `claude-sonnet-4-6`
+1. **Deadline-aware to-dos.**
+   - Every to-do with a due date has a **surface-from date**, default 7 days
+     before due, configurable per household and overridable per task. From that
+     date it appears in the home To do panel and in the assignee's column on the
+     wall, with a **"Due in N days" / "Due tomorrow" / "Overdue"** badge and
+     increasing emphasis as the deadline nears. Before it, the to-do waits under
+     an **"Upcoming"** section on the Lists tab.
+   - **Extraction** sets `due` to the deadline and lets the default lead time
+     apply; where the document also gives the underlying event, the task is
+     linked to it so the card reads "for: Flu vaccination".
+   - **Optional calendar mirror**, per household, **off by default**: accepting a
+     dated task creates an all-day iCloud event on the surface date titled
+     "Reminder: <task> (due <date>)" in a chosen calendar, so phones get it too.
+     Ticking the task removes the mirrored event; changing the due date moves it.
+
+2. **The extraction model is `claude-sonnet-5`**, not the `claude-sonnet-4-6`
    originally named, and is configurable through `ANTHROPIC_MODEL`.
 
-2. **Household to-dos on the wall's home view.**
+3. **Household to-dos on the wall's home view.**
    - A **"To do" panel under "Coming up"** on the right, in both the today and
      This week views: the household's open to-dos with an optional due date and
      an optional assigned member (shown as their colour dot). Sorted
@@ -44,7 +59,7 @@ These supersede the text they replace. Newest first.
    - Reuses the existing **Checklist** model: the household to-do list is a
      Checklist flagged `is_home_list`. No parallel model.
 
-3. **Member attribution from event titles**, plus two wall-display changes.
+4. **Member attribution from event titles**, plus two wall-display changes.
    - The week strip runs Monday–Sunday with a **"This week"** segment to the
      left of Monday.
    - **The display opens on today** — the current day selected in the strip,
@@ -82,14 +97,14 @@ These supersede the text they replace. Newest first.
      action on the Calendars page and a `familyhub:attribute` command for
      deploys. Name aliases are seeded from first names.
 
-4. **Calendars are iCloud-only.** Phase 2 was originally "Google (OAuth) + Apple
+5. **Calendars are iCloud-only.** Phase 2 was originally "Google (OAuth) + Apple
    iCloud (CalDAV)". Google is **out of scope** unless asked for later. Phase 2
    below is iCloud only.
-5. **iCloud credentials are entered in `/admin`, not `.env`.** The app must
+6. **iCloud credentials are entered in `/admin`, not `.env`.** The app must
    support **multiple iCloud accounts**.
-6. **Phase 6 ships the Home Assistant driver only.** The VoiceMonkey driver is
+7. **Phase 6 ships the Home Assistant driver only.** The VoiceMonkey driver is
    dropped; see Phase 6.
-7. **Stack is Laravel 13 + Livewire 4 + Tailwind 4**, not the Laravel 11 +
+8. **Stack is Laravel 13 + Livewire 4 + Tailwind 4**, not the Laravel 11 +
    Livewire 3 + Breeze originally specified. Laravel 11 left its security-fix
    window in March 2026 and this app is internet-facing. Breeze is not used — it
    hard-pins Livewire 3 and Tailwind 3 — so auth is a hand-rolled login-only

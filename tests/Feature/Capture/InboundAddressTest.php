@@ -8,6 +8,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -33,7 +34,7 @@ class InboundAddressTest extends TestCase
         Queue::fake();
     }
 
-    protected function deliver(array $overrides = []): \Illuminate\Testing\TestResponse
+    protected function deliver(array $overrides = []): TestResponse
     {
         return $this->postJson('/webhooks/postmark/inbound-secret', array_merge([
             'From' => 'office@school.example',

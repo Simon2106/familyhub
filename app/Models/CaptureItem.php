@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 #[Fillable([
     'capture_id', 'capture_source_id', 'type', 'title', 'start_at', 'end_at', 'all_day', 'location', 'notes',
-    'member_hint', 'confidence', 'status', 'member_id', 'calendar_id', 'event_id',
+    'member_hint', 'for_event_title', 'confidence', 'status', 'member_id', 'calendar_id', 'event_id',
     'checklist_item_id', 'reviewed_at',
 ])]
 class CaptureItem extends Model
@@ -65,6 +65,13 @@ class CaptureItem extends Model
     public function event(): BelongsTo
     {
         return $this->belongsTo(Event::class);
+    }
+
+    /** The to-do accepting this created, if it was a task. */
+    /** @return BelongsTo<ChecklistItem, $this> */
+    public function checklistItem(): BelongsTo
+    {
+        return $this->belongsTo(ChecklistItem::class);
     }
 
     /** @param Builder<CaptureItem> $query */

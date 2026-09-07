@@ -16,6 +16,8 @@ class ExtractedItem
         public readonly ?string $location = null,
         public readonly ?string $notes = null,
         public readonly ?string $memberHint = null,
+        /** The event this deadline belongs to, named rather than referenced. */
+        public readonly ?string $forEventTitle = null,
         public readonly int $confidence = 0,
         /** Which document this was read from, for the review card. */
         public readonly ?string $sourceLabel = null,
@@ -25,8 +27,17 @@ class ExtractedItem
     public function from(string $label): self
     {
         return new self(
-            $this->type, $this->title, $this->startAt, $this->endAt, $this->allDay,
-            $this->location, $this->notes, $this->memberHint, $this->confidence, $label,
+            type: $this->type,
+            title: $this->title,
+            startAt: $this->startAt,
+            endAt: $this->endAt,
+            allDay: $this->allDay,
+            location: $this->location,
+            notes: $this->notes,
+            memberHint: $this->memberHint,
+            forEventTitle: $this->forEventTitle,
+            confidence: $this->confidence,
+            sourceLabel: $label,
         );
     }
 
@@ -42,6 +53,7 @@ class ExtractedItem
             'location' => $this->location,
             'notes' => $this->notes,
             'member_hint' => $this->memberHint,
+            'for_event_title' => $this->forEventTitle,
             'confidence' => $this->confidence,
         ];
     }

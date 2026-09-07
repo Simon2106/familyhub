@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\EnsureDisplayToken;
 use App\Models\Household;
 use App\Models\User;
 use App\Support\BuildVersion;
@@ -84,7 +85,7 @@ class BuildVersionTest extends TestCase
     #[Test]
     public function the_display_page_embeds_the_version(): void
     {
-        $this->withCookie(\App\Http\Middleware\EnsureDisplayToken::COOKIE, 'test-display-token')
+        $this->withCookie(EnsureDisplayToken::COOKIE, 'test-display-token')
             ->get('/display')
             ->assertOk()
             ->assertSee('name="build-version"', escape: false)
@@ -94,7 +95,7 @@ class BuildVersionTest extends TestCase
     #[Test]
     public function the_display_page_points_at_the_version_endpoint(): void
     {
-        $this->withCookie(\App\Http\Middleware\EnsureDisplayToken::COOKIE, 'test-display-token')
+        $this->withCookie(EnsureDisplayToken::COOKIE, 'test-display-token')
             ->get('/display')
             ->assertSee('data-endpoint="'.route('version').'"', escape: false)
             ->assertSee('data-idle-ms="30000"', escape: false)

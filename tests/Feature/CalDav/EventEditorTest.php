@@ -8,6 +8,7 @@ use App\Models\Event;
 use App\Models\Household;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
@@ -236,7 +237,7 @@ class EventEditorTest extends TestCase
         $otherCalendar = Calendar::factory()->create(['calendar_account_id' => $otherAccount->id]);
         $otherEvent = Event::factory()->create(['calendar_id' => $otherCalendar->id]);
 
-        $this->expectException(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+        $this->expectException(ModelNotFoundException::class);
 
         Livewire::test('phone.event-editor')->call('edit', $otherEvent->id);
     }

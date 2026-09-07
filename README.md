@@ -180,6 +180,39 @@ with an optional assignee shown as their colour dot.
 There is no separate to-do model. The household to-do list is an ordinary
 `Checklist` with `is_home_list` set, created on demand by `Checklist::home()`.
 
+#### Deadlines
+
+A to-do with a due date has a day it **starts being shown** — by default seven
+days before it is due, set per household in `/admin` and overridable on any
+single to-do from a phone. Until then it is not on the wall at all; it waits
+under **Upcoming** on the Lists tab, and the To do panel says how many are
+waiting so nothing feels lost.
+
+From that day it appears in the panel and in its assignee's column with a badge
+that hardens as the date closes in — `Due in 5 days` in grey, `Due tomorrow` in
+amber, `Due today` and `Overdue by 2 days` in bold red. The badge is one
+component (`<x-todo-due>`) so the wall, the phone and the Lists tab cannot
+drift apart. A to-do captured as the deadline for something else also says what
+it is for: *Complete the consent form · for Flu vaccination*.
+
+Why a lead time at all: a term's worth of letters arrives in September, and a
+panel listing every deadline until Christmas is a panel nobody reads.
+
+#### Optional calendar reminders
+
+Off by default. Turned on in `/admin` with a calendar chosen, a dated to-do also
+gets an all-day **Reminder: … (due 24 Sep)** event in iCloud on the day it
+surfaces — so a deadline reaches phones, not just the kitchen. Ticking the to-do
+removes it; changing the due date or the surface date moves it; deleting the
+to-do takes it with it.
+
+`ChecklistItemObserver` is what makes that reliable: a to-do can be ticked from
+the wall panel, the Lists tab, a phone or an accepted capture, and any one of
+those forgetting to update the mirror would leave a stale reminder on everyone's
+calendar. The observer queues `SyncTodoMirrorJob`, which makes iCloud match the
+to-do rather than trying to infer which edit just happened. A calendar that
+refuses the write is logged, not raised — the to-do itself is already saved.
+
 ### Member attribution
 
 Events are matched to family members by reading their titles and locations.

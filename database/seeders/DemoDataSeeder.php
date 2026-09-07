@@ -9,7 +9,6 @@ use App\Models\ChecklistItem;
 use App\Models\Event;
 use App\Models\Household;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Carbon;
 
 /**
  * Fills the wall display with a plausible week so the layout can be judged

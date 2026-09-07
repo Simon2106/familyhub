@@ -4,9 +4,9 @@ namespace App\Services\Capture;
 
 use Anthropic\Client;
 use App\Models\Capture;
+use App\Models\Household;
 use App\Services\Capture\Contracts\ItemExtractor;
 use Illuminate\Support\Facades\Log;
-use Carbon\CarbonImmutable;
 use RuntimeException;
 
 /**
@@ -265,7 +265,7 @@ class ClaudeItemExtractor implements ItemExtractor
      *
      * @return list<string>
      */
-    protected function householdContext(\App\Models\Household $household): array
+    protected function householdContext(Household $household): array
     {
         $lines = [];
 

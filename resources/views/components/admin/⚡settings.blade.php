@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Calendar;
 use App\Models\Household;
 use App\Services\Attribution\EventAttributor;
 use App\Support\BuildVersion;
@@ -14,6 +15,13 @@ new #[Layout('layouts::app')] class extends Component
     public string $householdName = '';
 
     public int $doneRetentionDays = 30;
+
+    /** Days before a to-do is due that it starts appearing on the wall. */
+    public int $todoLeadDays = 7;
+
+    public bool $mirrorDeadlines = false;
+
+    public string $mirrorCalendarId = '';
 
     /** Member being edited, or null when the form is closed. */
     public ?int $editingId = null;
@@ -31,14 +39,30 @@ new #[Layout('layouts::app')] class extends Component
 
     public function mount(): void
     {
-        $this->householdName = Household::current()->name;
-        $this->doneRetentionDays = Household::current()->doneRetentionDays();
+        $household = Household::current();
+
+        $this->householdName = $household->name;
+        $this->doneRetentionDays = $household->doneRetentionDays();
+        $this->todoLeadDays = $household->todoLeadDays();
+        $this->mirrorDeadlines = (bool) ($household->settings['mirror_deadline_tasks'] ?? false);
+        $this->mirrorCalendarId = (string) ($household->settings['mirror_calendar_id'] ?? '');
     }
 
     #[Computed]
     public function members(): Collection
     {
         return Household::current()->members()->with('aliases')->get();
+    }
+
+    /** Calendars a reminder could be written to. */
+    #[Computed]
+    public function writableCalendars(): Collection
+    {
+        return Calendar::query()
+            ->whereHas('account', fn ($q) => $q->where('household_id', Household::current()->id))
+            ->where('is_writable', true)
+            ->orderBy('name')
+            ->get();
     }
 
     #[Computed]
@@ -76,12 +100,19 @@ new #[Layout('layouts::app')] class extends Component
         $this->validate([
             'householdName' => 'required|string|max:120',
             'doneRetentionDays' => 'required|integer|min:1|max:3650',
+            'todoLeadDays' => 'required|integer|min:0|max:365',
+            'mirrorCalendarId' => 'nullable|integer',
         ]);
 
         $household = Household::current();
 
         $household->update(['name' => $this->householdName]);
         $household->setDoneRetentionDays($this->doneRetentionDays);
+        $household->setTodoLeadDays($this->todoLeadDays);
+        $household->setDeadlineMirror(
+            $this->mirrorDeadlines,
+            $this->mirrorCalendarId !== '' ? (int) $this->mirrorCalendarId : null,
+        );
 
         $this->dispatch('saved', message: 'Household saved.');
     }
@@ -213,6 +244,62 @@ new #[Layout('layouts::app')] class extends Component
                 </span>
             </label>
             @error('doneRetentionDays') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+
+            <label class="mt-3 flex items-center justify-between gap-3">
+                <span class="min-w-0">
+                    <span class="block text-sm font-medium">Show dated to-dos from</span>
+                    <span class="block text-sm text-slate-500 dark:text-slate-400">
+                        How long before its due date a to-do appears on the wall. Earlier ones
+                        wait under "Upcoming" on the Lists tab. Any single to-do can override this.
+                    </span>
+                </span>
+                <span class="flex shrink-0 items-center gap-2">
+                    <input wire:model="todoLeadDays" type="number" inputmode="numeric" min="0" max="365"
+                           aria-label="Days before due to show a to-do"
+                           class="touch-target w-20 rounded-xl border border-slate-300 px-3 text-center dark:border-slate-700 dark:bg-slate-950">
+                    <span class="text-sm text-slate-500 dark:text-slate-400">days early</span>
+                </span>
+            </label>
+            @error('todoLeadDays') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+
+            {{-- Off by default: it writes to a shared family calendar, which is
+                 not something to start doing without being asked. --}}
+            <label class="mt-3 flex items-center justify-between gap-3">
+                <span class="min-w-0">
+                    <span class="block text-sm font-medium">Also add deadline to-dos to the calendar</span>
+                    <span class="block text-sm text-slate-500 dark:text-slate-400">
+                        Puts an all-day "Reminder: …" in iCloud on the day the to-do appears,
+                        so phones see it too. Ticking the to-do removes it again.
+                    </span>
+                </span>
+                <input wire:model.live="mirrorDeadlines" type="checkbox"
+                       aria-label="Also add deadline to-dos to the calendar"
+                       class="size-6 shrink-0 rounded">
+            </label>
+
+            @if ($mirrorDeadlines)
+                @if ($this->writableCalendars->isEmpty())
+                    <p class="mt-2 text-sm text-amber-600 dark:text-amber-400">
+                        Connect a writable iCloud calendar first — there is nowhere to put reminders yet.
+                    </p>
+                @else
+                    <label class="mt-2 block">
+                        <span class="block text-sm font-medium">Reminder calendar</span>
+                        <select wire:model="mirrorCalendarId"
+                                class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                            <option value="">Choose a calendar…</option>
+                            @foreach ($this->writableCalendars as $calendar)
+                                <option value="{{ $calendar->id }}">{{ $calendar->name }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                @endif
+            @endif
+
+            <button type="button" wire:click="saveHousehold"
+                    class="mt-3 w-full touch-target rounded-xl bg-blue-600 font-semibold text-white">
+                Save household settings
+            </button>
 
             <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
                 Timezone: {{ Household::current()->displayTimezone() }}

@@ -2,7 +2,6 @@
 
 namespace App\Services\Capture;
 
-use App\Exceptions\CalDavException;
 use App\Models\Calendar;
 use App\Models\CaptureItem;
 use App\Models\Checklist;
@@ -10,6 +9,7 @@ use App\Models\ChecklistItem;
 use App\Models\Household;
 use App\Services\Attribution\EventAttributor;
 use App\Services\CalDav\CalDavManager;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -93,6 +93,8 @@ class ItemAcceptor
         }
 
         $item->forceFill(['event_id' => $event->id, 'calendar_id' => $calendar->id])->save();
+
+        $this->linkWaitingTasks($item);
     }
 
     protected function acceptTask(CaptureItem $item, ?int $memberId): void
@@ -100,12 +102,61 @@ class ItemAcceptor
         $todo = ChecklistItem::create([
             'checklist_id' => Checklist::home($item->capture->household)->id,
             'title' => $item->title,
+            // A captured deadline is the due date; when it starts being shown
+            // is left to the household's lead time rather than pinned here.
             'due_on' => $item->start_at?->timezone($item->capture->household->displayTimezone())->toDateString(),
             'member_id' => $memberId,
             'notes' => $item->notes,
+            'event_id' => $this->relatedEventId($item),
         ]);
 
         $item->forceFill(['checklist_item_id' => $todo->id])->save();
+    }
+
+    /**
+     * The event a deadline belongs to, if it has been accepted too.
+     *
+     * The model names the event rather than pointing at it, so the link is
+     * made here by matching that name against the capture's other items. It
+     * costs nothing when there is no match, and turns "Complete consent form"
+     * into "Complete consent form — for Flu vaccination" when there is.
+     */
+    protected function relatedEventId(CaptureItem $item): ?int
+    {
+        if (blank($item->for_event_title)) {
+            return null;
+        }
+
+        return $this->sibling($item, $item->for_event_title)?->event_id;
+    }
+
+    /**
+     * Fill in links the other way round.
+     *
+     * Items are accepted one at a time and in whatever order the reviewer
+     * taps, so the event may well arrive after the task that refers to it.
+     */
+    protected function linkWaitingTasks(CaptureItem $event): void
+    {
+        CaptureItem::query()
+            ->where('capture_id', $event->capture_id)
+            ->whereNotNull('checklist_item_id')
+            ->whereRaw('LOWER(TRIM(for_event_title)) = ?', [Str::lower(trim($event->title))])
+            ->with('checklistItem')
+            ->get()
+            ->each(fn (CaptureItem $task) => $task->checklistItem
+                ?->forceFill(['event_id' => $event->event_id])->save());
+    }
+
+    /** Another item from the same capture, found by title. */
+    protected function sibling(CaptureItem $item, string $title): ?CaptureItem
+    {
+        return CaptureItem::query()
+            ->where('capture_id', $item->capture_id)
+            ->whereKeyNot($item->getKey())
+            ->whereNotNull('event_id')
+            ->whereRaw('LOWER(TRIM(title)) = ?', [Str::lower(trim($title))])
+            ->first();
     }
 
     /** A note is kept as an undated to-do, which is where a household looks for it. */

@@ -9,6 +9,7 @@ use App\Models\Household;
 use App\Models\Member;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -106,7 +107,7 @@ class TimezoneTest extends TestCase
 
         $this->assertSame(
             '2026-07-07 07:15:00',
-            \Illuminate\Support\Facades\DB::table('events')->where('id', $event->id)->value('start_at'),
+            DB::table('events')->where('id', $event->id)->value('start_at'),
         );
 
         $this->assertSame('07:15', $event->fresh()->start_at->format('H:i'));

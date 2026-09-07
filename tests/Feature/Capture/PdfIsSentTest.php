@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Capture;
 
+use Anthropic\Client;
 use App\Models\Capture;
 use App\Models\CaptureAttachment;
 use App\Models\Household;
@@ -63,7 +64,7 @@ class PdfIsSentTest extends TestCase
         {
             public function __construct(public array &$calls)
             {
-                parent::__construct(new \Anthropic\Client(apiKey: 'unused'), new AttachmentPreparer);
+                parent::__construct(new Client(apiKey: 'unused'), new AttachmentPreparer);
             }
 
             protected function send(array $request): mixed

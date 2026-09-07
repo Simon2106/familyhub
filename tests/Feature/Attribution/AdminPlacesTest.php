@@ -2,13 +2,15 @@
 
 namespace Tests\Feature\Attribution;
 
-use App\Models\Event;
 use App\Models\Calendar;
 use App\Models\CalendarAccount;
+use App\Models\Event;
 use App\Models\Household;
 use App\Models\Member;
 use App\Models\Place;
 use App\Models\User;
+use App\Services\Attribution\EventAttributor;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
@@ -160,7 +162,7 @@ class AdminPlacesTest extends TestCase
         $place->members()->attach($this->simon->id, ['include_automatically' => true]);
 
         // Attribute first, so there is something for the delete to undo.
-        app(\App\Services\Attribution\EventAttributor::class)->applyToHousehold($this->household->fresh());
+        app(EventAttributor::class)->applyToHousehold($this->household->fresh());
         $this->assertSame([$this->simon->id], $event->fresh()->members->pluck('id')->all());
 
         Livewire::test('admin.places')->call('deletePlace', $place->id);
@@ -173,7 +175,7 @@ class AdminPlacesTest extends TestCase
     {
         $other = Place::factory()->create(['household_id' => Household::factory()->create()->id]);
 
-        $this->expectException(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+        $this->expectException(ModelNotFoundException::class);
 
         Livewire::test('admin.places')->call('edit', $other->id);
     }

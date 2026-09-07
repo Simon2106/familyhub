@@ -9,6 +9,7 @@ use App\Models\Event;
 use App\Models\Household;
 use App\Models\Member;
 use App\Models\User;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -227,7 +228,7 @@ class AdminCalendarsTest extends TestCase
             'household_id' => Household::factory()->create()->id,
         ]);
 
-        $this->expectException(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+        $this->expectException(ModelNotFoundException::class);
 
         Livewire::test('admin.calendars')->call('disconnect', $other->id);
     }

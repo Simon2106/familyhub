@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Capture;
 
+use Anthropic\Client;
 use App\Models\Capture;
 use App\Models\CaptureAttachment;
 use App\Models\Household;
@@ -46,7 +47,7 @@ class ExtractionRequestTest extends TestCase
                     // Constructed directly, not resolved: the container's
                     // binding demands a real key, and send() is overridden so
                     // this client is never used.
-                    new \Anthropic\Client(apiKey: 'test-key-unused'),
+                    new Client(apiKey: 'test-key-unused'),
                     new AttachmentPreparer,
                 );
             }

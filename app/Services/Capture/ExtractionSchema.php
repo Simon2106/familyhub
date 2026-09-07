@@ -57,12 +57,16 @@ class ExtractionSchema
                             'member_hint' => self::nullableString(
                                 'Any name, class, year group or school mentioned that says who this is for. Verbatim.'
                             ),
+                            'for_event' => self::nullableString(
+                                'For a task that is a deadline for something else in this material, '
+                                .'the exact title of that event as you gave it. Null otherwise.'
+                            ),
                             'confidence' => [
                                 'type' => 'integer',
                                 'description' => 'A whole number from 0 to 100. How sure you are of BOTH the date and that this is a real commitment. Below 80 if the year was inferred, the date was relative, or the text was unclear.',
                             ],
                         ],
-                        'required' => ['type', 'title', 'start', 'end', 'all_day', 'location', 'notes', 'member_hint', 'confidence'],
+                        'required' => ['type', 'title', 'start', 'end', 'all_day', 'location', 'notes', 'member_hint', 'for_event', 'confidence'],
                         'additionalProperties' => false,
                     ],
                 ],
@@ -149,6 +153,11 @@ class ExtractionSchema
 
         A deadline you had to compute is exactly the kind of thing to be less confident
         about. Say so.
+
+        Set the task's `for_event` to the title of the event it is a deadline for, spelled
+        exactly as you gave that event. That is what lets the to-do say what it is in aid
+        of when the vaccination itself is weeks away. Leave it null for a task that stands
+        on its own.
 
         ## Dates on tasks
 

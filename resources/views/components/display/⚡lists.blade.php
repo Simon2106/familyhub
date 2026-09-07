@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ChecklistItem;
+use Carbon\CarbonImmutable;
 use App\Models\Household;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -18,7 +19,7 @@ new class extends Component
     {
         return Household::current()
             ->checklists()
-            ->with(['items' => fn ($q) => $q->with('member')])
+            ->with(['items' => fn ($q) => $q->with(['member', 'event'])])
             ->get();
     }
 
@@ -56,6 +57,25 @@ new class extends Component
         return Household::current()->doneRetentionDays();
     }
 
+    /** Midnight in household time, which every deadline is measured against. */
+    #[Computed]
+    public function today(): CarbonImmutable
+    {
+        return Household::current()->todayLocal();
+    }
+
+    /**
+     * Resolved once and passed down.
+     *
+     * isSurfaced() would otherwise load each item's checklist and household to
+     * ask the same question, once per item.
+     */
+    #[Computed]
+    public function leadDays(): int
+    {
+        return Household::current()->todoLeadDays();
+    }
+
     public function clearDone(int $checklistId): void
     {
         ChecklistItem::query()
@@ -84,7 +104,14 @@ new class extends Component
                     </header>
 
                     @php
-                        $openItems = $checklist->items->where('is_done', false);
+                        $open = $checklist->items->where('is_done', false);
+
+                        // The Lists tab is the full picture, so a to-do held
+                        // back from the wall is here — just under its own
+                        // heading rather than mixed into today's work.
+                        $openItems = $open->filter(fn ($item) => $item->isSurfaced($this->today, $this->leadDays));
+                        $upcomingItems = $open->reject(fn ($item) => $item->isSurfaced($this->today, $this->leadDays))
+                            ->sortBy('due_on');
                         $doneItems = $checklist->items->where('is_done', true)->sortByDesc('done_at');
                     @endphp
 
@@ -114,15 +141,48 @@ new class extends Component
                                         @if ($item->quantity)
                                             <span class="block text-sm text-slate-400">{{ $item->quantity }}</span>
                                         @endif
+                                        <x-todo-due :item="$item" :today="$this->today" />
                                     </span>
                                 </button>
                             </li>
                         @endforeach
 
                         @if ($openItems->isEmpty())
-                            <li class="px-1 py-3 text-sm text-slate-400">Nothing left on this list.</li>
+                            <li class="px-1 py-3 text-sm text-slate-400">
+                                {{ $upcomingItems->isEmpty() ? 'Nothing left on this list.' : 'Nothing due yet.' }}
+                            </li>
                         @endif
                     </ul>
+
+                    {{-- Deadlines that have not surfaced yet. Kept off the wall
+                         so it stays readable, kept here so nothing captured in
+                         September is a surprise in November. --}}
+                    @if ($upcomingItems->isNotEmpty())
+                        <div x-data="{ open: false }" class="mt-2 border-t border-slate-100 pt-1 dark:border-slate-800">
+                            <button type="button" x-on:click="open = ! open"
+                                    class="flex w-full touch-target items-center gap-2 rounded-lg px-1 text-left text-sm font-semibold text-slate-400">
+                                <svg class="size-4 transition-transform" :class="open && 'rotate-90'" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="m9 6 6 6-6 6" />
+                                </svg>
+                                Upcoming ({{ $upcomingItems->count() }})
+                            </button>
+
+                            <ul x-show="open" x-cloak x-collapse>
+                                @foreach ($upcomingItems as $item)
+                                    <li wire:key="upcoming-{{ $item->id }}">
+                                        <button type="button" wire:click="toggle({{ $item->id }})"
+                                                class="flex w-full touch-target items-center gap-3 rounded-xl px-1 text-left">
+                                            <span class="grid size-7 shrink-0 place-items-center rounded-lg border-2 border-slate-200 dark:border-slate-700"></span>
+                                            <span class="min-w-0 flex-1">
+                                                <span class="block truncate text-slate-500 dark:text-slate-400">{{ $item->title }}</span>
+                                                <x-todo-due :item="$item" :today="$this->today" />
+                                            </span>
+                                        </button>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
 
                     {{-- Ticked items fade off the wall's To do panel; this is
                          where they can be found again. --}}

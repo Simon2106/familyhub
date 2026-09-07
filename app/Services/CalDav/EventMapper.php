@@ -4,8 +4,10 @@ namespace App\Services\CalDav;
 
 use App\Models\Event;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Str;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
+use Sabre\VObject\DateTimeParser;
 use Sabre\VObject\Reader;
 
 /**
@@ -139,7 +141,7 @@ class EventMapper
 
     public function newUid(): string
     {
-        return (string) \Illuminate\Support\Str::uuid().'@familyhub';
+        return (string) Str::uuid().'@familyhub';
     }
 
     protected function endOf(VEvent $vevent, CarbonImmutable $start, bool $allDay): CarbonImmutable
@@ -154,7 +156,7 @@ class EventMapper
         if ($vevent->DURATION !== null) {
             return CarbonImmutable::instance(
                 $vevent->DTSTART->getDateTime()->add(
-                    \Sabre\VObject\DateTimeParser::parseDuration((string) $vevent->DURATION)
+                    DateTimeParser::parseDuration((string) $vevent->DURATION)
                 )
             );
         }

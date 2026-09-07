@@ -2,8 +2,10 @@
 
 namespace Tests\Feature\Capture;
 
+use App\Models\Household;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionClass;
 use Tests\TestCase;
@@ -33,10 +35,10 @@ class ComponentNamingTest extends TestCase
     }
 
     #[Test]
-    #[\PHPUnit\Framework\Attributes\DataProvider('components')]
+    #[DataProvider('components')]
     public function no_public_method_is_shadowed_by_a_public_property(string $name): void
     {
-        \App\Models\Household::factory()->create();
+        Household::factory()->create();
 
         $instance = Livewire::test($name)->instance();
         $reflection = new ReflectionClass($instance);

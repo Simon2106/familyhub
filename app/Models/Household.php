@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Attributes\Fillable;
 use App\Exceptions\HouseholdNotProvisioned;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -90,11 +90,61 @@ class Household extends Model
 
     public function setDoneRetentionDays(int $days): void
     {
-        $this->update([
-            'settings' => array_merge($this->settings ?? [], [
-                'done_retention_days' => max($days, 1),
-            ]),
+        $this->putSettings(['done_retention_days' => max($days, 1)]);
+    }
+
+    /**
+     * How many days before its due date a to-do starts being shown.
+     *
+     * A form due in six weeks should be capturable today without sitting on
+     * the wall for six weeks. Zero is allowed and means "only on the day".
+     */
+    public function todoLeadDays(): int
+    {
+        $days = $this->settings['todo_lead_days'] ?? null;
+
+        return max((int) ($days ?? config('familyhub.todos.lead_days')), 0);
+    }
+
+    public function setTodoLeadDays(int $days): void
+    {
+        $this->putSettings(['todo_lead_days' => max($days, 0)]);
+    }
+
+    /** Whether accepting a dated task also puts a reminder in iCloud. */
+    public function mirrorsDeadlineTasks(): bool
+    {
+        return (bool) ($this->settings['mirror_deadline_tasks'] ?? false)
+            && $this->mirrorCalendar() !== null;
+    }
+
+    /** The calendar reminders are mirrored into, if one is still writable. */
+    public function mirrorCalendar(): ?Calendar
+    {
+        $id = $this->settings['mirror_calendar_id'] ?? null;
+
+        if (! $id) {
+            return null;
+        }
+
+        return Calendar::query()
+            ->whereHas('account', fn ($q) => $q->where('household_id', $this->id))
+            ->where('is_writable', true)
+            ->find($id);
+    }
+
+    public function setDeadlineMirror(bool $on, ?int $calendarId = null): void
+    {
+        $this->putSettings([
+            'mirror_deadline_tasks' => $on,
+            'mirror_calendar_id' => $calendarId,
         ]);
+    }
+
+    /** @param array<string, mixed> $values */
+    protected function putSettings(array $values): void
+    {
+        $this->update(['settings' => array_merge($this->settings ?? [], $values)]);
     }
 
     /**

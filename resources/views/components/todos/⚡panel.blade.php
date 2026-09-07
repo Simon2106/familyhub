@@ -31,6 +31,9 @@ new class extends Component
 
     public string $memberId = '';
 
+    /** Blank means "use the household's lead time"; a date overrides it. */
+    public string $surfaceFrom = '';
+
     public ?int $editingId = null;
 
     public function mount(bool $editable = false): void
@@ -50,10 +53,14 @@ new class extends Component
     }
 
     /**
-     * Open to-dos, plus any ticked in the last few seconds.
+     * Open to-dos that have surfaced, plus any ticked in the last few seconds.
      *
      * Keeping just-ticked items in the result is what lets them fade out
      * instead of disappearing the instant Livewire re-renders.
+     *
+     * Anything still ahead of its surface date is deliberately absent: a form
+     * due in six weeks is real work, but it is not today's, and a panel that
+     * lists it every day for six weeks stops being read.
      *
      * @return Collection<int, ChecklistItem>
      */
@@ -62,17 +69,28 @@ new class extends Component
     {
         return ChecklistItem::query()
             ->where('checklist_id', $this->list()->id)
-            ->where(fn ($q) => $q->where('is_done', false)
+            ->where(fn ($q) => $q->where('is_done', false)->surfaced()
                 ->orWhere('done_at', '>=', now()->subSeconds(self::LINGER)))
-            ->with('member')
+            ->with(['member', 'event'])
             ->inDueOrder()
             ->get();
+    }
+
+    /** How many are waiting in the wings, so the panel can say so. */
+    #[Computed]
+    public function upcomingCount(): int
+    {
+        return ChecklistItem::query()
+            ->where('checklist_id', $this->list()->id)
+            ->open()
+            ->upcoming()
+            ->count();
     }
 
     #[On('todos-changed')]
     public function refreshTodos(): void
     {
-        unset($this->todos);
+        unset($this->todos, $this->upcomingCount);
     }
 
     public function toggle(int $itemId): void
@@ -86,9 +104,15 @@ new class extends Component
         $this->dispatch('todos-changed');
     }
 
+    #[Computed]
+    public function leadDays(): int
+    {
+        return Household::current()->todoLeadDays();
+    }
+
     public function startAdding(): void
     {
-        $this->reset(['title', 'dueOn', 'memberId', 'editingId']);
+        $this->reset(['title', 'dueOn', 'memberId', 'surfaceFrom', 'editingId']);
         $this->adding = true;
     }
 
@@ -103,6 +127,7 @@ new class extends Component
         $this->editingId = $item->id;
         $this->title = $item->title;
         $this->dueOn = $item->due_on?->toDateString() ?? '';
+        $this->surfaceFrom = $item->surface_from?->toDateString() ?? '';
         $this->memberId = (string) ($item->member_id ?? '');
         $this->adding = true;
     }
@@ -112,12 +137,15 @@ new class extends Component
         $this->validate([
             'title' => 'required|string|max:200',
             'dueOn' => 'nullable|date',
+            'surfaceFrom' => 'nullable|date',
             'memberId' => 'nullable|integer',
         ]);
 
         $attributes = [
             'title' => trim($this->title),
             'due_on' => $this->dueOn !== '' ? $this->dueOn : null,
+            // An override with no due date has nothing to count back from.
+            'surface_from' => $this->dueOn !== '' && $this->surfaceFrom !== '' ? $this->surfaceFrom : null,
             'member_id' => $this->memberId !== '' ? (int) $this->memberId : null,
         ];
 
@@ -127,8 +155,8 @@ new class extends Component
             ChecklistItem::create($attributes + ['checklist_id' => $this->list()->id]);
         }
 
-        $this->reset(['adding', 'title', 'dueOn', 'memberId', 'editingId']);
-        unset($this->todos);
+        $this->reset(['adding', 'title', 'dueOn', 'surfaceFrom', 'memberId', 'editingId']);
+        unset($this->todos, $this->upcomingCount);
 
         $this->dispatch('todos-changed');
     }
@@ -141,8 +169,8 @@ new class extends Component
 
         $this->findItem($itemId)->delete();
 
-        $this->reset(['adding', 'title', 'dueOn', 'memberId', 'editingId']);
-        unset($this->todos);
+        $this->reset(['adding', 'title', 'dueOn', 'surfaceFrom', 'memberId', 'editingId']);
+        unset($this->todos, $this->upcomingCount);
 
         $this->dispatch('todos-changed');
     }
@@ -222,6 +250,23 @@ new class extends Component
                     </label>
                 </div>
 
+                {{-- Only offered once there is a deadline to count back from,
+                     and only on phones: choosing a date is fiddly on the wall
+                     and the household default is nearly always right. --}}
+                @if ($editable && $dueOn !== '')
+                    <label class="block">
+                        <span class="block text-sm font-medium text-slate-500 dark:text-slate-400">Start showing it from</span>
+                        <input
+                            wire:model="surfaceFrom"
+                            type="date"
+                            class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-base dark:border-slate-600 dark:bg-slate-950"
+                        >
+                        <span class="mt-1 block text-xs text-slate-400">
+                            Leave blank to show it {{ $this->leadDays }} {{ Str::plural('day', $this->leadDays) }} before it is due.
+                        </span>
+                    </label>
+                @endif
+
                 <div class="flex gap-2 pt-1">
                     <button type="submit" class="touch-target flex-1 rounded-xl bg-blue-600 text-lg font-semibold text-white">
                         {{ $editingId ? 'Save' : 'Add' }}
@@ -239,15 +284,7 @@ new class extends Component
 
     <ul class="pane-scroll min-h-0 flex-1">
         @forelse ($this->todos as $item)
-            @php
-                $overdue = $item->isOverdue($today);
-                $dueLabel = match (true) {
-                    $item->due_on === null => null,
-                    $item->due_on->isSameDay($today) => 'Today',
-                    $item->due_on->isSameDay($today->addDay()) => 'Tomorrow',
-                    default => $item->due_on->format('D j M'),
-                };
-            @endphp
+            @php $overdue = $item->isOverdue($today); @endphp
 
             <li
                 wire:key="todo-{{ $item->id }}"
@@ -290,11 +327,7 @@ new class extends Component
 
                         <span class="min-w-0 flex-1" :class="done && 'text-slate-400 line-through'">
                             <span class="block truncate">{{ $item->title }}</span>
-                            @if ($dueLabel)
-                                <span class="block text-sm {{ $overdue ? 'font-semibold text-red-600 dark:text-red-400' : 'text-slate-400' }}">
-                                    {{ $overdue ? 'Overdue — '.$dueLabel : $dueLabel }}
-                                </span>
-                            @endif
+                            <x-todo-due :item="$item" :today="$today" />
                         </span>
                     </button>
 
@@ -312,5 +345,13 @@ new class extends Component
         @empty
             <li class="px-1 py-3 text-sm text-slate-400">Nothing to do.</li>
         @endforelse
+
+        {{-- Held-back to-dos are on the Lists tab, not gone. Saying so is what
+             makes it safe to keep them off the wall. --}}
+        @if ($this->upcomingCount > 0)
+            <li class="px-1 py-2 text-xs text-slate-400">
+                {{ $this->upcomingCount }} more due later — under Upcoming on Lists.
+            </li>
+        @endif
     </ul>
 </div>

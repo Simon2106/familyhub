@@ -72,6 +72,17 @@ conventions. The points most easily got wrong:
 - **Household to-dos are a `Checklist` with `is_home_list`**, not a separate
   model — use `Checklist::home()`. Ticked to-dos deliberately linger in the
   panel query for a few seconds so they can fade rather than vanish mid-tap.
+- **A dated to-do is hidden until its surface date** (`scopeSurfaced` /
+  `isSurfaced()`), so any new to-do list must filter by it or it will show work
+  that is weeks away. Pass the lead days in when filtering a loaded collection —
+  `isSurfaced()` otherwise loads the checklist and household once per item.
+- **Date columns use `App\Casts\CalendarDate`, not Eloquent's `date` cast.**
+  The built-in cast writes `Y-m-d H:i:s`; MySQL's DATE column truncates it and
+  SQLite does not, so `due_on <= '2026-07-15'` is true in production and false
+  in the test suite. Same class of trap as `App\Casts\UtcDateTime`.
+- **Compare due dates as dates.** Household midnight is 23:00 UTC the previous
+  day for half the year, so subtracting a UTC-parsed date column from it is off
+  by one. `ChecklistItem::daysUntilDue()` reduces both sides to `Y-m-d` first.
 - Livewire `#[Computed]` only caches on **property** access (`$this->days`).
   Calling `$this->days()` re-runs the method, which is an easy way to
   reintroduce an N+1 in the wall display.

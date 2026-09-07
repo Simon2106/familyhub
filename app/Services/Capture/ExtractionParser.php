@@ -72,6 +72,7 @@ class ExtractionParser
             location: self::text($raw['location'] ?? null),
             notes: self::text($raw['notes'] ?? null),
             memberHint: self::text($raw['member_hint'] ?? null),
+            forEventTitle: self::text($raw['for_event'] ?? null),
             confidence: max(0, min(100, (int) ($raw['confidence'] ?? 0))),
         );
     }

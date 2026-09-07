@@ -9,7 +9,6 @@ use App\Models\Household;
 use App\Models\Member;
 use App\Models\User;
 use App\Services\Attribution\EventAttributor;
-use App\Services\CalDav\CalDavManager;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;

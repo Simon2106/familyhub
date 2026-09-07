@@ -14,7 +14,7 @@ class PreparedAttachments
     /**
      * @param  list<array<string, mixed>>  $blocks
      * @param  list<string>  $skipped  filenames that could not be sent
-     * @param  list<string>  $names    filenames matching $blocks, for logging
+     * @param  list<string>  $names  filenames matching $blocks, for logging
      */
     public function __construct(
         public readonly array $blocks = [],

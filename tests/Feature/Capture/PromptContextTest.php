@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Capture;
 
+use Anthropic\Client;
 use App\Models\Capture;
 use App\Models\Household;
 use App\Models\Member;
@@ -10,6 +11,7 @@ use App\Services\Capture\AttachmentPreparer;
 use App\Services\Capture\ClaudeItemExtractor;
 use App\Services\Capture\ExtractionSchema;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -58,7 +60,7 @@ class PromptContextTest extends TestCase
         {
             public function __construct(public array &$calls)
             {
-                parent::__construct(new \Anthropic\Client(apiKey: 'unused'), new AttachmentPreparer);
+                parent::__construct(new Client(apiKey: 'unused'), new AttachmentPreparer);
             }
 
             protected function send(array $request): mixed
@@ -206,10 +208,10 @@ class PromptContextTest extends TestCase
             'household.members.aliases', 'household.places.aliases', 'household.places.members',
         ]);
 
-        \Illuminate\Support\Facades\DB::enableQueryLog();
+        DB::enableQueryLog();
         $this->extractor()->extract($capture);
-        $queries = count(\Illuminate\Support\Facades\DB::getQueryLog());
-        \Illuminate\Support\Facades\DB::disableQueryLog();
+        $queries = count(DB::getQueryLog());
+        DB::disableQueryLog();
 
         $this->assertLessThanOrEqual(1, $queries, 'The context should come from eager-loaded relations.');
     }

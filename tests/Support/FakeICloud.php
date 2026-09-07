@@ -41,7 +41,7 @@ class FakeICloud
 
     public static function principal(): string
     {
-        return <<<XML
+        return <<<'XML'
         <?xml version="1.0" encoding="UTF-8"?>
         <multistatus xmlns="DAV:">
           <response>
@@ -57,7 +57,7 @@ class FakeICloud
 
     public static function calendarHome(): string
     {
-        return <<<XML
+        return <<<'XML'
         <?xml version="1.0" encoding="UTF-8"?>
         <multistatus xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
           <response>
@@ -74,7 +74,7 @@ class FakeICloud
     /** A home containing one event calendar, one reminders list, and the home itself. */
     public static function calendarList(): string
     {
-        return <<<XML
+        return <<<'XML'
         <?xml version="1.0" encoding="UTF-8"?>
         <A:multistatus xmlns:A="DAV:" xmlns:B="urn:ietf:params:xml:ns:caldav"
                        xmlns:C="http://calendarserver.org/ns/" xmlns:D="http://apple.com/ns/ical/">

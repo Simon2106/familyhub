@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Capture;
 
+use Anthropic\Client;
 use App\Services\Capture\AttachmentPreparer;
 use App\Services\Capture\ClaudeItemExtractor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -20,7 +21,7 @@ class ExtractionModelTest extends TestCase
     {
         // No client call is made: only interpret() is exercised.
         return new ClaudeItemExtractor(
-            $this->createMock(\Anthropic\Client::class),
+            $this->createMock(Client::class),
             new AttachmentPreparer,
         );
     }

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Capture;
 
+use App\Http\Controllers\Webhooks\PostmarkInboundController;
 use App\Models\Capture;
 use App\Models\CaptureAttachment;
 use App\Models\Household;
@@ -121,7 +122,7 @@ class AttachmentLimitsTest extends TestCase
         // email is rejected before anyone can be told why.
         $this->assertGreaterThanOrEqual(
             35_000_000,
-            \App\Http\Controllers\Webhooks\PostmarkInboundController::MAX_ATTACHMENT_BYTES,
+            PostmarkInboundController::MAX_ATTACHMENT_BYTES,
         );
     }
 }

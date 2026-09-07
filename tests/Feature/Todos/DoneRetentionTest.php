@@ -7,6 +7,7 @@ use App\Models\ChecklistItem;
 use App\Models\Household;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
@@ -186,7 +187,7 @@ class DoneRetentionTest extends TestCase
     #[Test]
     public function the_prune_is_scheduled_daily(): void
     {
-        $events = collect(app(\Illuminate\Console\Scheduling\Schedule::class)->events())
+        $events = collect(app(Schedule::class)->events())
             ->map(fn ($e) => $e->command.' @ '.$e->expression);
 
         $this->assertTrue(

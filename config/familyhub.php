@@ -77,6 +77,9 @@ return [
     */
 
     'todos' => [
+        // How early a dated to-do starts appearing on the wall.
+        'lead_days' => (int) env('FAMILYHUB_TODO_LEAD_DAYS', 7),
+
         'done_retention_days' => (int) env('FAMILYHUB_DONE_RETENTION_DAYS', 30),
     ],
 

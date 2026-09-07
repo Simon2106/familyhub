@@ -185,7 +185,14 @@ new #[Layout('layouts::display')] class extends Component
     #[Computed]
     public function todayDate(): string
     {
-        return $this->household()->todayLocal()->toDateString();
+        return $this->today->toDateString();
+    }
+
+    /** Midnight in household time, which is what every "due in N days" counts from. */
+    #[Computed]
+    public function today(): CarbonImmutable
+    {
+        return $this->household()->todayLocal();
     }
 
     /** Everything from tomorrow onwards, as a flat list for the "coming up" rail. */
@@ -207,6 +214,9 @@ new #[Layout('layouts::display')] class extends Component
      * Open, dated to-dos bucketed by date and then by member, for the day
      * columns. Undated ones live only in the To do panel.
      *
+     * A to-do only appears once it has surfaced, so a deadline six weeks out
+     * does not sit in someone's column all term.
+     *
      * @return Collection<string, Collection<int|string, Collection<int, ChecklistItem>>>
      */
     #[Computed]
@@ -220,9 +230,10 @@ new #[Layout('layouts::display')] class extends Component
                 ->where('household_id', $this->household()->id)
                 ->where('is_home_list', true))
             ->open()
+            ->surfaced()
             ->whereNotNull('due_on')
             ->whereBetween('due_on', [$from->toDateString(), $to->toDateString()])
-            ->with('member')
+            ->with(['member', 'event'])
             ->inDueOrder()
             ->get()
             ->groupBy(fn (ChecklistItem $item) => $item->due_on->toDateString())
@@ -626,6 +637,7 @@ new #[Layout('layouts::display')] class extends Component
                                                 <span class="min-w-0 flex-1">
                                                     <span class="block text-[0.7rem] leading-tight font-semibold tracking-wide text-slate-400 uppercase">To do</span>
                                                     <span class="block leading-tight font-medium">{{ $todo->title }}</span>
+                                                    <x-todo-due :item="$todo" :today="$this->today" class="text-xs leading-tight" />
                                                 </span>
                                             </div>
                                         @endforeach
@@ -670,6 +682,7 @@ new #[Layout('layouts::display')] class extends Component
                                                 <span class="min-w-0 flex-1">
                                                     <span class="block text-[0.7rem] leading-tight font-semibold tracking-wide text-slate-400 uppercase">To do</span>
                                                     <span class="block leading-tight font-medium">{{ $todo->title }}</span>
+                                                    <x-todo-due :item="$todo" :today="$this->today" class="text-xs leading-tight" />
                                                 </span>
                                             </div>
                                         @endforeach

@@ -2,6 +2,7 @@
 
 namespace App\Services\CalDav;
 
+use App\Exceptions\CalDavException;
 use App\Models\Calendar;
 use App\Models\CalendarAccount;
 use App\Models\Household;
@@ -17,7 +18,7 @@ class AccountService
     /**
      * Verify credentials before anything is stored, and return the principal URL.
      *
-     * @throws \App\Exceptions\CalDavException
+     * @throws CalDavException
      */
     public function verify(string $appleId, string $appPassword): string
     {

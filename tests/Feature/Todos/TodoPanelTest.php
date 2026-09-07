@@ -7,6 +7,7 @@ use App\Models\ChecklistItem;
 use App\Models\Household;
 use App\Models\Member;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
@@ -252,7 +253,7 @@ class TodoPanelTest extends TestCase
             'title' => 'Not yours',
         ]);
 
-        $this->expectException(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+        $this->expectException(ModelNotFoundException::class);
 
         Livewire::test('todos.panel')->call('toggle', $otherItem->id);
     }

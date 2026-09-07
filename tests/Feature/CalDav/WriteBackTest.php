@@ -9,6 +9,7 @@ use App\Models\Event;
 use App\Models\Household;
 use App\Services\CalDav\CalDavManager;
 use App\Services\CalDav\EventMapper;
+use App\Services\CalDav\EventWriter;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -48,7 +49,7 @@ class WriteBackTest extends TestCase
         parent::tearDown();
     }
 
-    protected function writer(): \App\Services\CalDav\EventWriter
+    protected function writer(): EventWriter
     {
         return app(CalDavManager::class)->writer($this->account);
     }

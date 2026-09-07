@@ -237,8 +237,8 @@ class DisplayViewsTest extends TestCase
 
         $html = Livewire::test('display.wall')->html();
 
-        $this->assertStringContainsString("pickDay(", $html);
-        $this->assertStringContainsString("showWeek()", $html);
+        $this->assertStringContainsString('pickDay(', $html);
+        $this->assertStringContainsString('showWeek()', $html);
         $this->assertStringContainsString('isPicked(', $html);
     }
 }
