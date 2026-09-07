@@ -818,7 +818,23 @@ always safe, and it backs off up to a minute while HA is down — the cache keep
 its five-minute life so the wall shows the last known state rather than emptying
 while the Pi reboots.
 
-Check the credentials without leaving a process running:
+**It stops itself when you deploy.** A daemon started before a deploy otherwise
+keeps running the old code indefinitely, including the old version of whatever
+the deploy fixed. It watches the same build id the wall display reloads on, and
+exits **0** once that changes, so no deploy script has to remember it by name.
+
+> The daemon must be configured with **`autorestart=true`**, which is Forge's
+> default for daemons. A clean exit is a successful exit, so a process manager
+> set to restart only on *unexpected* codes would treat the deploy stop as the
+> daemon finishing its work and leave it down.
+
+Detection takes up to a minute, because the build id is cached for that long.
+Backoff waits are slept in one-second slices for the same reason: an HA that has
+been down all morning is exactly when a fix is most likely to be on its way.
+
+Check the credentials without leaving a process running. It connects, seeds the
+cache and exits, **failing** if it could not get in — so it is usable in a deploy
+script or by hand:
 
 ```sh
 php artisan familyhub:ha-listen --once

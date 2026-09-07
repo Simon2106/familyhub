@@ -4,6 +4,7 @@ namespace Tests\Feature\Home;
 
 use App\Services\HomeAssistant\HomeAssistant;
 use App\Services\HomeAssistant\StateStore;
+use App\Support\BuildVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
@@ -144,5 +145,30 @@ class StateStoreTest extends TestCase
         $this->artisan('familyhub:ha-listen', ['--once' => true])
             ->expectsOutputToContain('No HA_URL and HA_TOKEN are set.')
             ->assertFailed();
+    }
+
+    #[Test]
+    public function a_once_run_that_cannot_connect_reports_failure(): void
+    {
+        // --once exists to prove the credentials work, so it has to fail when
+        // they do not; returning success would make it useless as a check.
+        config([
+            'familyhub.homeassistant.url' => 'http://127.0.0.1:1',
+            'familyhub.homeassistant.token' => 'nonsense',
+        ]);
+
+        $this->artisan('familyhub:ha-listen', ['--once' => true])->assertFailed();
+    }
+
+    #[Test]
+    public function the_listener_says_which_build_it_started_on(): void
+    {
+        config([
+            'familyhub.homeassistant.url' => 'http://127.0.0.1:1',
+            'familyhub.homeassistant.token' => 'nonsense',
+        ]);
+
+        $this->artisan('familyhub:ha-listen', ['--once' => true])
+            ->expectsOutputToContain('on build '.BuildVersion::current());
     }
 }

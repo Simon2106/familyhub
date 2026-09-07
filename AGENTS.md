@@ -83,6 +83,11 @@ conventions. The points most easily got wrong:
 - **Compare due dates as dates.** Household midnight is 23:00 UTC the previous
   day for half the year, so subtracting a UTC-parsed date column from it is off
   by one. `ChecklistItem::daysUntilDue()` reduces both sides to `Y-m-d` first.
+- **Long-running commands must watch for deploys.** `App\Support\DeployWatch`
+  compares the build id the process started on against the current one; a daemon
+  that does not do this keeps running the code it booted with forever. Exit 0
+  when it changes and let the process manager restart it — and never write a
+  deploy hook that restarts daemons by name.
 - **Nothing is written by rendering.** Chores, routines and meal plans all
   project from a rule onto a date and only create a row when something is
   ticked. Adding a nightly sweep would undo that: a missed run then means
