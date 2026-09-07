@@ -302,9 +302,7 @@ new class extends Component
 
 <div>
     @if ($this->member)
-        <div class="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm" wire:click="close" aria-hidden="true"></div>
-
-        <div class="modal-viewport z-50" role="dialog" aria-modal="true" aria-label="{{ $this->member->name }}'s day">
+        <div wire:click.self="close" class="modal-backdrop modal-viewport z-50" role="dialog" aria-modal="true" aria-label="{{ $this->member->name }}'s day">
             <div class="pane-scroll flex max-h-full w-full max-w-2xl flex-col overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl dark:bg-slate-900">
 
                 {{-- ---------------------------- WHO --------------------------- --}}

@@ -208,9 +208,7 @@ new class extends Component
          out of sight. .modal-viewport keeps it inside the visible viewport and
          clear of the tab bar, and follows the keyboard up on iOS. --}}
     @if ($adding)
-        <div class="fixed inset-0 z-50 bg-black/50" wire:click="$set('adding', false)" aria-hidden="true"></div>
-
-        <div class="modal-viewport z-50" role="dialog" aria-modal="true" aria-label="{{ $editingId ? 'Edit to-do' : 'Add a to-do' }}">
+        <div wire:click.self="$set('adding', false)" class="modal-backdrop modal-viewport z-50" role="dialog" aria-modal="true" aria-label="{{ $editingId ? 'Edit to-do' : 'Add a to-do' }}">
             <form
                 wire:submit="save"
                 data-todo-dialog

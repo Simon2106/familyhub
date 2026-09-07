@@ -72,7 +72,15 @@ class RecipeImporter
 
             if ($page !== null) {
                 $heroImage = $page['image'] ?? null;
-                $text = trim($text."\n\n".$page['text']);
+
+                // The author's own structured version first, where there is
+                // one. Reading a page's prose is guesswork next to reading the
+                // list the site published for search engines.
+                $text = trim(implode("\n\n", array_filter([
+                    $text,
+                    $this->structured($page['recipe'] ?? null),
+                    $page['text'],
+                ])));
             }
         }
 
@@ -88,7 +96,7 @@ class RecipeImporter
     /**
      * The page behind the link, or an honest note about why there isn't one.
      *
-     * @return array{0: array{title: ?string, text: string, image: ?string}|null, 1: ?string}
+     * @return array{0: array{title: ?string, text: string, image: ?string, recipe: ?array<string, mixed>}|null, 1: ?string}
      */
     protected function page(Recipe $recipe, string $sharedText): array
     {
@@ -100,10 +108,13 @@ class RecipeImporter
 
         // Instagram and TikTok answer a logged-out request with a shell of a
         // page. It fetches fine and contains nothing, which is worse than a
-        // failure because it looks like success.
-        if (mb_strlen(trim($page['text'])) < self::THIN_PAGE_CHARS && $sharedText !== '') {
+        // failure because it looks like success. A page carrying a schema.org
+        // recipe is never thin, however little prose survived stripping it.
+        if (blank($page['recipe'] ?? null)
+            && mb_strlen(trim($page['text'])) < self::THIN_PAGE_CHARS
+            && $sharedText !== '') {
             return [
-                ['title' => $page['title'], 'text' => '', 'image' => $page['image']],
+                ['title' => $page['title'], 'text' => '', 'image' => $page['image'], 'recipe' => null],
                 $this->fellBack($recipe, $sharedText, 'needed a login'),
             ];
         }
@@ -123,6 +134,94 @@ class RecipeImporter
         }
 
         return ucfirst($host)." {$why}, so this is from the text you shared.";
+    }
+
+    /**
+     * A schema.org Recipe as plain lines for the model to read.
+     *
+     * Not used directly as the answer: the site's own list is authoritative
+     * about what goes in, but "750g/1lb 10oz cannellini beans (from tins or a
+     * jar), drained" still has to become a quantity, a unit and a thing you can
+     * find in a supermarket, which is the part the model is good at.
+     *
+     * @param  array<string, mixed>|null  $recipe
+     */
+    protected function structured(?array $recipe): ?string
+    {
+        if (! is_array($recipe)) {
+            return null;
+        }
+
+        $lines = ['The site publishes this recipe as structured data. Prefer it over the page text:'];
+
+        foreach (['name' => 'Title', 'recipeYield' => 'Serves', 'description' => 'About'] as $key => $label) {
+            if (filled($value = $this->flatten($recipe[$key] ?? null))) {
+                $lines[] = $label.': '.$value;
+            }
+        }
+
+        if ($ingredients = $this->lines($recipe['recipeIngredient'] ?? null)) {
+            $lines[] = "\nIngredients:\n- ".implode("\n- ", $ingredients);
+        }
+
+        if ($steps = $this->lines($recipe['recipeInstructions'] ?? null)) {
+            $lines[] = "\nMethod:\n".implode("\n", array_map(
+                fn (int $i, string $step) => ($i + 1).'. '.$step,
+                array_keys($steps),
+                $steps,
+            ));
+        }
+
+        return count($lines) > 1 ? implode("\n", $lines) : null;
+    }
+
+    /**
+     * Flatten the several shapes schema.org allows into plain strings.
+     *
+     * Instructions in particular arrive as strings, as HowToStep objects, or
+     * as HowToSections containing more of either.
+     *
+     * @return list<string>
+     */
+    protected function lines(mixed $value): array
+    {
+        if (blank($value)) {
+            return [];
+        }
+
+        $out = [];
+
+        foreach (is_array($value) && array_is_list($value) ? $value : [$value] as $entry) {
+            if (is_array($entry) && isset($entry['itemListElement'])) {
+                $out = array_merge($out, $this->lines($entry['itemListElement']));
+
+                continue;
+            }
+
+            if (filled($text = $this->flatten($entry))) {
+                $out[] = $text;
+            }
+        }
+
+        return $out;
+    }
+
+    protected function flatten(mixed $value): ?string
+    {
+        if (is_string($value) || is_numeric($value)) {
+            return trim(html_entity_decode((string) $value));
+        }
+
+        if (is_array($value)) {
+            // A HowToStep, or a list of them joined for a single field.
+            $text = $value['text'] ?? $value['name'] ?? null;
+
+            return $text !== null
+                ? $this->flatten($text)
+                : trim(implode(', ', array_filter(array_map($this->flatten(...), $value))));
+        }
+
+        return null;
     }
 
     /** @return array<string, mixed>|null */

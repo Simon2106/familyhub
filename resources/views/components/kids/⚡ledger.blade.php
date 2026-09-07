@@ -88,9 +88,7 @@ new class extends Component
 
 <div>
     @if ($this->member)
-        <div class="fixed inset-0 z-[55] bg-slate-900/70 backdrop-blur-sm" wire:click="close" aria-hidden="true"></div>
-
-        <div class="modal-viewport z-[55]" role="dialog" aria-modal="true" aria-label="{{ $this->member->name }}'s points">
+        <div wire:click.self="close" class="modal-backdrop modal-viewport z-[55]" role="dialog" aria-modal="true" aria-label="{{ $this->member->name }}'s points">
             <div class="flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-white shadow-2xl dark:bg-slate-900">
 
                 {{-- ---------------------------- HEADER ------------------------ --}}

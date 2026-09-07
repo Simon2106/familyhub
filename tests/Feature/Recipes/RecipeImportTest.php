@@ -239,4 +239,86 @@ class RecipeImportTest extends TestCase
             $recipe->ingredients,
         );
     }
+
+    #[Test]
+    public function a_sites_own_structured_recipe_is_put_in_front_of_the_model(): void
+    {
+        // What the BBC publishes, and what page prose is a poor substitute for.
+        $this->page(
+            '<html><head><title>Curry | BBC Food</title>'
+            .'<script type="application/ld+json">'.json_encode([
+                '@context' => 'https://schema.org',
+                '@graph' => [
+                    ['@type' => 'WebSite', 'name' => 'BBC Food'],
+                    [
+                        '@type' => 'Recipe',
+                        'name' => '5-ingredient curry',
+                        'recipeYield' => 'Serves 4–6',
+                        'recipeIngredient' => [
+                            '750g/1lb 10oz cannellini beans, drained',
+                            '3 tbsp curry paste',
+                            '400g tin chopped tomatoes',
+                        ],
+                        'recipeInstructions' => [
+                            ['@type' => 'HowToStep', 'text' => 'Fry the curry paste for a minute.'],
+                            ['@type' => 'HowToStep', 'text' => 'Add the tomatoes and beans and simmer.'],
+                        ],
+                    ],
+                ],
+            ]).'</script></head><body><p>Navigation and cookie banners.</p></body></html>'
+        );
+
+        app(RecipeIntake::class)->fromUrl('https://www.bbc.co.uk/food/recipes/5-ingredient_curry_75673');
+
+        $sent = $this->reader->sentText();
+
+        $this->assertStringContainsString('structured data', $sent);
+        $this->assertStringContainsString('750g/1lb 10oz cannellini beans, drained', $sent);
+        $this->assertStringContainsString('3 tbsp curry paste', $sent);
+        $this->assertStringContainsString('Serves 4–6', $sent);
+        $this->assertStringContainsString('1. Fry the curry paste for a minute.', $sent);
+        $this->assertStringContainsString('2. Add the tomatoes and beans and simmer.', $sent);
+    }
+
+    #[Test]
+    public function instructions_wrapped_in_sections_are_flattened(): void
+    {
+        $this->page(
+            '<html><head><script type="application/ld+json">'.json_encode([
+                '@type' => 'Recipe',
+                'name' => 'Something',
+                'recipeInstructions' => [[
+                    '@type' => 'HowToSection',
+                    'itemListElement' => [
+                        ['@type' => 'HowToStep', 'text' => 'First do this.'],
+                        ['@type' => 'HowToStep', 'text' => 'Then that.'],
+                    ],
+                ]],
+            ]).'</script></head><body>x</body></html>'
+        );
+
+        app(RecipeIntake::class)->fromUrl('https://example.test/recipe');
+
+        $this->assertStringContainsString('1. First do this.', $this->reader->sentText());
+        $this->assertStringContainsString('2. Then that.', $this->reader->sentText());
+    }
+
+    #[Test]
+    public function a_page_carrying_a_recipe_is_never_treated_as_login_walled(): void
+    {
+        // Almost no prose survives stripping some recipe pages, but a page that
+        // published its whole recipe is plainly not a login wall.
+        $this->page(
+            '<html><head><script type="application/ld+json">'.json_encode([
+                '@type' => 'Recipe',
+                'name' => 'Five ingredient curry',
+                'recipeIngredient' => ['beans', 'curry paste'],
+            ]).'</script></head><body>x</body></html>'
+        );
+
+        $recipe = app(RecipeIntake::class)->fromUrl('https://example.test/recipe', 'a caption')->fresh();
+
+        $this->assertNull($recipe->source_note);
+        $this->assertStringContainsString('Five ingredient curry', $this->reader->sentText());
+    }
 }

@@ -167,9 +167,7 @@ new class extends Component
 
 <div>
     @if ($this->isOpen())
-        <div class="fixed inset-0 z-[60] bg-slate-900/80" wire:click="close" aria-hidden="true"></div>
-
-        <div class="modal-viewport z-[60]" role="dialog" aria-modal="true" aria-label="{{ $this->prompt }}">
+        <div wire:click.self="close" class="modal-backdrop modal-viewport z-[60]" role="dialog" aria-modal="true" aria-label="{{ $this->prompt }}">
             <div class="w-full max-w-xs rounded-3xl bg-white p-5 shadow-2xl dark:bg-slate-900">
                 <div class="text-center">
                     <p class="text-sm text-slate-500 dark:text-slate-400">{{ $this->prompt }}</p>

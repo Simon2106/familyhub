@@ -118,6 +118,19 @@
     }
 
     /*
+     * The dim behind a dialog.
+     *
+     * On the same element as .modal-viewport rather than a sibling under it.
+     * As two elements the centring layer covered the backdrop completely — it
+     * is full-screen and came second — so every "tap outside to close" in the
+     * app was dead, and a dialog whose own buttons were awkward to reach could
+     * not be dismissed at all.
+     */
+    .modal-backdrop {
+        background-color: rgb(15 23 42 / 0.6);
+    }
+
+    /*
      * A modal layer pinned to the *visual* viewport rather than the layout
      * viewport. On iOS the on-screen keyboard shrinks the visual viewport
      * without moving the layout viewport, so a plainly centred dialog ends up
