@@ -23,14 +23,38 @@ adding packages beyond those listed.
 
 These supersede the text they replace. Newest first.
 
-1. **Calendars are iCloud-only.** Phase 2 was originally "Google (OAuth) + Apple
+1. **Member attribution from event titles**, plus two wall-display changes.
+   - The week strip runs Monday–Sunday with a **"This week"** segment to the
+     left of Monday. "This week" shows the whole current week as a list grouped
+     by day, and is the default view on load.
+   - Tapping a date shows only that day's events as per-member columns; tapping
+     the same date again returns to the week view.
+   - Members have **name aliases** (Simon: "Simon", "SW") and **places** —
+     named organisations with their own aliases and a type
+     (school / work / club / other), e.g. Sienna → "Sandy Gate" (school,
+     alias "SG"), Simon → "Ice" (work, aliases "Ice and a Slice", "IAAS").
+   - A place can be attached to **several members**, each attachment carrying an
+     **"include me automatically"** toggle. Ice is attached to both Simon and
+     Jenna with Jenna's toggle off, so Ice events go to Simon by default and
+     Jenna joins only when her own name or alias is in the title too.
+   - Matching is case-insensitive, whole-word, and handles multi-word phrases,
+     over the event **title and location**. Every member matched by a name alias
+     is collected, plus every member attached to a matched place whose toggle is
+     on. Events ↔ members is **many-to-many** ("SW + JW dentist" belongs to
+     both). A **manual assignment in the event editor wins** and is never
+     overwritten by a later sync. No match falls back to the calendar's owner,
+     then to the household.
+   - Attribution runs on sync and on save, with a **"re-run attribution"**
+     action on the Calendars page. Name aliases are seeded from first names.
+
+2. **Calendars are iCloud-only.** Phase 2 was originally "Google (OAuth) + Apple
    iCloud (CalDAV)". Google is **out of scope** unless asked for later. Phase 2
    below is iCloud only.
-2. **iCloud credentials are entered in `/admin`, not `.env`.** The app must
+3. **iCloud credentials are entered in `/admin`, not `.env`.** The app must
    support **multiple iCloud accounts**.
-3. **Phase 6 ships the Home Assistant driver only.** The VoiceMonkey driver is
+4. **Phase 6 ships the Home Assistant driver only.** The VoiceMonkey driver is
    dropped; see Phase 6.
-4. **Stack is Laravel 13 + Livewire 4 + Tailwind 4**, not the Laravel 11 +
+5. **Stack is Laravel 13 + Livewire 4 + Tailwind 4**, not the Laravel 11 +
    Livewire 3 + Breeze originally specified. Laravel 11 left its security-fix
    window in March 2026 and this app is internet-facing. Breeze is not used — it
    hard-pins Livewire 3 and Tailwind 3 — so auth is a hand-rolled login-only
@@ -63,8 +87,8 @@ These supersede the text they replace. Newest first.
 3. Routes: `/display` (wall mode, token in URL, no auth prompt), `/app` (phone
    mode), `/admin` (settings).
 4. Wall display layout (landscape and portrait, iPad 10.9"/11"):
-   - Left: today's agenda per member as colour-coded columns.
-   - Right: week strip + upcoming list; tap a day to expand.
+   - Left: the week grouped by day, or one day as colour-coded member columns.
+   - Right: week strip ("This week" + Mon–Sun) + upcoming list.
    - Bottom bar: Chores | Meals | Lists | Photos | Home tabs.
    - Idle → photo screensaver after N minutes; tap to wake.
 5. PWA: manifest, service worker (offline shell only), `apple-mobile-web-app-capable`,

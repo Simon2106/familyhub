@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Household;
+use App\Services\Attribution\EventAttributor;
 use App\Models\Member;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -22,6 +23,9 @@ new #[Layout('layouts::app')] class extends Component
 
     public string $pin = '';
 
+    /** Comma-separated, because chips are fiddly on a phone keyboard. */
+    public string $aliases = '';
+
     public function mount(): void
     {
         $this->householdName = Household::current()->name;
@@ -30,7 +34,16 @@ new #[Layout('layouts::app')] class extends Component
     #[Computed]
     public function members(): Collection
     {
-        return Household::current()->members()->get();
+        return Household::current()->members()->with('aliases')->get();
+    }
+
+    public function placesSummary(): string
+    {
+        $places = Household::current()->places()->count();
+
+        return $places === 0
+            ? 'Name the places that turn up in event titles, so events find the right person.'
+            : trans_choice('{1}:count place|[2,*]:count places', $places, ['count' => $places]).' recognised in event titles.';
     }
 
     public function calendarSummary(): string
@@ -59,18 +72,19 @@ new #[Layout('layouts::app')] class extends Component
 
     public function edit(int $id): void
     {
-        $member = Member::findOrFail($id);
+        $member = Member::with('aliases')->findOrFail($id);
 
         $this->editingId = $member->id;
         $this->name = $member->name;
         $this->colour = $member->colour;
         $this->isChild = $member->is_child;
         $this->pin = '';
+        $this->aliases = $member->aliases->pluck('alias')->join(', ');
     }
 
     public function addMember(): void
     {
-        $this->reset(['editingId', 'name', 'colour', 'isChild', 'pin']);
+        $this->reset(['editingId', 'name', 'colour', 'isChild', 'pin', 'aliases']);
         $this->editingId = 0; // 0 means "new"
     }
 
@@ -99,11 +113,33 @@ new #[Layout('layouts::app')] class extends Component
         }
 
         $member->save();
+        $member->ensureFirstNameAlias();
 
-        $this->reset(['editingId', 'name', 'colour', 'isChild', 'pin']);
+        $this->syncAliases($member);
+
+        $this->reset(['editingId', 'name', 'colour', 'isChild', 'pin', 'aliases']);
         unset($this->members);
 
-        $this->dispatch('saved', message: 'Member saved.');
+        // Titles that mention this member may now match differently.
+        app(EventAttributor::class)->applyToHousehold(Household::current());
+
+        $this->dispatch('saved', message: 'Member saved. Attribution re-run.');
+    }
+
+    /** Replace the member's aliases with what was typed, keeping them tidy. */
+    protected function syncAliases(Member $member): void
+    {
+        $wanted = collect(explode(',', $this->aliases))
+            ->map(fn (string $a) => trim(preg_replace('/\s+/u', ' ', $a) ?? ''))
+            ->filter()
+            ->unique(fn (string $a) => mb_strtolower($a))
+            ->values();
+
+        $member->aliases()->whereNotIn('alias', $wanted->all())->delete();
+
+        foreach ($wanted as $alias) {
+            $member->aliases()->firstOrCreate(['alias' => $alias]);
+        }
     }
 
     public function deleteMember(int $id): void
@@ -165,8 +201,9 @@ new #[Layout('layouts::app')] class extends Component
                               style="background-color: {{ $member->colour }};">{{ $member->initials() }}</span>
                         <span class="min-w-0 flex-1">
                             <span class="block truncate font-medium">{{ $member->name }}</span>
-                            <span class="block text-sm text-slate-500 dark:text-slate-400">
+                            <span class="block truncate text-sm text-slate-500 dark:text-slate-400">
                                 {{ $member->is_child ? 'Child' : 'Adult' }}@if ($member->is_child && $member->pin) · PIN set @endif
+                                @if ($member->aliases->isNotEmpty()) · also {{ $member->aliases->pluck('alias')->join(', ') }} @endif
                             </span>
                         </span>
                         <button type="button" wire:click="edit({{ $member->id }})"
@@ -193,6 +230,20 @@ new #[Layout('layouts::app')] class extends Component
                         </label>
                     </div>
 
+                    <div>
+                        <label class="block text-sm font-medium" for="member-aliases">Also matches</label>
+                        <input wire:model="aliases" id="member-aliases" type="text" autocapitalize="words"
+                               placeholder="SW, Si"
+                               class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-4 dark:border-slate-700 dark:bg-slate-900">
+                        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                            Other names this person goes by in event titles, separated by commas.
+                            @if (filled($name))
+                                <span class="text-slate-400">"{{ $name }}" always matches.</span>
+                            @endif
+                        </p>
+                        @error('aliases') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
                     @if ($isChild)
                         <div>
                             <label class="block text-sm font-medium" for="member-pin">PIN (leave blank to keep)</label>
@@ -213,6 +264,22 @@ new #[Layout('layouts::app')] class extends Component
                     </div>
                 </form>
             @endif
+        </section>
+
+        {{-- Places --}}
+        <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
+            <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <h2 class="font-semibold">Schools, work and clubs</h2>
+                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        {{ $this->placesSummary() }}
+                    </p>
+                </div>
+                <a href="{{ route('admin.places') }}" wire:navigate
+                   class="grid touch-target shrink-0 place-items-center rounded-xl px-4 font-semibold text-blue-600 dark:text-blue-400">
+                    Manage
+                </a>
+            </div>
         </section>
 
         {{-- Wall display --}}

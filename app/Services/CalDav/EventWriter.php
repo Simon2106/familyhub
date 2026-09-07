@@ -5,6 +5,7 @@ namespace App\Services\CalDav;
 use App\Exceptions\CalDavException;
 use App\Models\Calendar;
 use App\Models\Event;
+use App\Services\Attribution\EventAttributor;
 
 /**
  * Pushes local changes back to iCloud.
@@ -19,6 +20,7 @@ class EventWriter
     public function __construct(
         protected CalDavClient $client,
         protected EventMapper $mapper,
+        protected EventAttributor $attributor,
     ) {}
 
     /** @param array<string, mixed> $attributes */
@@ -82,5 +84,9 @@ class EventWriter
             'pushed_at' => now(),
             'source_hash' => hash('sha256', $this->mapper->toIcs($event)),
         ])->save();
+
+        // Re-read who the event is about; a retitled event may concern
+        // different people now. Skipped for events assigned by hand.
+        $this->attributor->apply($event);
     }
 }

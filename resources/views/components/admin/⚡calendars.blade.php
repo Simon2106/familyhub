@@ -5,6 +5,7 @@ use App\Jobs\SyncCalendarAccountJob;
 use App\Models\Calendar;
 use App\Models\CalendarAccount;
 use App\Models\Household;
+use App\Services\Attribution\EventAttributor;
 use App\Services\CalDav\AccountService;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -138,6 +139,20 @@ new #[Layout('layouts::app')] class extends Component
         unset($this->accounts);
 
         $this->dispatch('saved', message: "Removed {$label}.");
+    }
+
+    /**
+     * Re-read every event title against the current aliases and places.
+     *
+     * Events assigned by hand are left alone.
+     */
+    public function rerunAttribution(): void
+    {
+        $changed = app(EventAttributor::class)->applyToHousehold(Household::current());
+
+        $this->dispatch('saved', message: $changed === 0
+            ? 'Attribution re-run. Nothing changed.'
+            : "Attribution re-run. {$changed} events updated.");
     }
 
     public function assignMember(int $calendarId, ?string $memberId): void
@@ -345,6 +360,21 @@ new #[Layout('layouts::app')] class extends Component
                 Add an iCloud account
             </button>
         @endif
+
+        {{-- Attribution --}}
+        <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
+            <h2 class="font-semibold">Who events belong to</h2>
+            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Event titles are matched against member names and places to work out whose column they
+                belong in. Re-run this after changing aliases or places. Events you assigned by hand are
+                left as they are.
+            </p>
+            <button type="button" wire:click="rerunAttribution"
+                    class="touch-target mt-3 rounded-xl bg-slate-100 px-4 text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                <span wire:loading.remove wire:target="rerunAttribution">Re-run attribution</span>
+                <span wire:loading wire:target="rerunAttribution">Working…</span>
+            </button>
+        </section>
 
         @if ($this->demoAccount)
             <section class="rounded-2xl border border-dashed border-slate-300 p-4 dark:border-slate-700">

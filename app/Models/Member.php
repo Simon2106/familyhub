@@ -9,7 +9,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 
@@ -39,10 +41,51 @@ class Member extends Model
         return $this->hasMany(Calendar::class);
     }
 
+    /** Events on calendars this member owns. */
     /** @return HasManyThrough<Event, Calendar, $this> */
-    public function events(): HasManyThrough
+    public function ownedCalendarEvents(): HasManyThrough
     {
         return $this->hasManyThrough(Event::class, Calendar::class);
+    }
+
+    /**
+     * Events attributed to this member, however they were matched.
+     *
+     * @return BelongsToMany<Event, $this>
+     */
+    public function events(): BelongsToMany
+    {
+        return $this->belongsToMany(Event::class)->withPivot('reason')->withTimestamps();
+    }
+
+    /** @return MorphMany<Alias, $this> */
+    public function aliases(): MorphMany
+    {
+        return $this->morphMany(Alias::class, 'aliasable');
+    }
+
+    /** @return BelongsToMany<Place, $this> */
+    public function places(): BelongsToMany
+    {
+        return $this->belongsToMany(Place::class)
+            ->withPivot('include_automatically')
+            ->withTimestamps();
+    }
+
+    /**
+     * Every string this member answers to. The name itself always counts, so a
+     * member with no aliases configured still matches.
+     *
+     * @return list<string>
+     */
+    public function matchTerms(): array
+    {
+        return collect([$this->name])
+            ->merge($this->aliases->pluck('alias'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /** @param Builder<Member> $query */
@@ -54,6 +97,23 @@ class Member extends Model
     public function checkPin(string $pin): bool
     {
         return $this->pin !== null && Hash::check($pin, $this->pin);
+    }
+
+    /**
+     * Give the member their first name as an alias.
+     *
+     * Only when it differs from the full name — matchTerms() already includes
+     * the name itself, so "Simon" needs no alias while "Simon Williams" does.
+     */
+    public function ensureFirstNameAlias(): void
+    {
+        $first = trim((string) (preg_split('/\s+/u', trim($this->name))[0] ?? ''));
+
+        if ($first === '' || strcasecmp($first, trim($this->name)) === 0) {
+            return;
+        }
+
+        $this->aliases()->firstOrCreate(['alias' => $first]);
     }
 
     /** Two-letter fallback used when a member has no avatar image. */

@@ -81,4 +81,5 @@ Route::middleware('auth')->group(function () {
     Route::livewire('/app', 'phone.home')->name('app');
     Route::livewire('/admin', 'admin.settings')->name('admin');
     Route::livewire('/admin/calendars', 'admin.calendars')->name('admin.calendars');
+    Route::livewire('/admin/places', 'admin.places')->name('admin.places');
 });

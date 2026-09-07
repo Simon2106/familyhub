@@ -57,6 +57,30 @@ Livewire re-renders on a 60-second poll to pick up edits made from phones.
 - `/admin/calendars`: per-account status, last sync, errors, force resync,
   per-calendar member assignment and visibility
 
+### Member attribution
+
+Events are matched to family members by reading their titles and locations.
+
+- Members have **name aliases** — Simon also answers to "SW". First names are
+  seeded automatically; the member's own name always matches.
+- **Places** (`/admin/places`) are the schools, workplaces and clubs that turn
+  up in titles, each with its own aliases and a type. A place is attached to the
+  members it concerns, and each attachment has an **include automatically**
+  toggle: "Ice" is attached to both Simon and Jenna with Jenna's toggle off, so
+  Ice events go to Simon unless Jenna is also named.
+- Matching is case-insensitive and whole-word, so "Jo" does not match "Jones",
+  and multi-word phrases like "Ice and a Slice" match as phrases.
+- Events belong to **many** members: "SW + JW dentist" appears in both columns.
+- Assigning members by hand in the event editor **pins** them — later syncs
+  leave that event alone until you hand it back with "Match from the title
+  instead".
+- No match falls back to the calendar's owner, then to the household, which
+  gets its own column on days that need one.
+
+Attribution runs on every sync and every save. After changing aliases or places
+it re-runs automatically, and there is a **Re-run attribution** button on the
+Calendars page.
+
 ---
 
 ## Local setup

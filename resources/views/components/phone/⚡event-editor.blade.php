@@ -5,6 +5,7 @@ use App\Models\Calendar;
 use App\Models\CalendarAccount;
 use App\Models\Event;
 use App\Models\Household;
+use App\Services\Attribution\EventAttributor;
 use App\Services\CalDav\CalDavManager;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -43,6 +44,15 @@ new class extends Component
 
     public ?string $error = null;
 
+    /** Member ids the user has ticked. */
+    public array $memberIds = [];
+
+    /** True once the user changes the members, which pins them against syncs. */
+    public bool $membersTouched = false;
+
+    /** Whether this event's members were pinned by hand. */
+    public bool $isManual = false;
+
     /** Only calendars on a real iCloud account can be written to. */
     #[Computed]
     public function writableCalendars(): Collection
@@ -57,10 +67,21 @@ new class extends Component
             ->get();
     }
 
+    #[Computed]
+    public function householdMembers(): Collection
+    {
+        return Household::current()->members;
+    }
+
+    public function updatedMemberIds(): void
+    {
+        $this->membersTouched = true;
+    }
+
     #[On('edit-event')]
     public function edit(?int $eventId = null): void
     {
-        $this->reset(['error']);
+        $this->reset(['error', 'memberIds', 'membersTouched', 'isManual']);
 
         $timezone = Household::current()->displayTimezone();
 
@@ -74,6 +95,7 @@ new class extends Component
             $this->allDay = false;
             $this->location = '';
             $this->notes = '';
+            $this->memberIds = [];
             $this->open = true;
 
             return;
@@ -91,6 +113,8 @@ new class extends Component
         $this->allDay = $event->all_day;
         $this->location = (string) $event->location;
         $this->notes = (string) $event->notes;
+        $this->memberIds = $event->members->pluck('id')->map(fn ($id) => (string) $id)->all();
+        $this->isManual = $event->attributionIsManual();
         $this->open = true;
     }
 
@@ -137,7 +161,7 @@ new class extends Component
         $writer = app(CalDavManager::class)->writer($calendar->account);
 
         try {
-            $this->eventId
+            $event = $this->eventId
                 ? $writer->update($this->findEvent($this->eventId), $attributes)
                 : $writer->create($calendar, $attributes);
         } catch (CalDavException $e) {
@@ -146,9 +170,38 @@ new class extends Component
             return;
         }
 
+        // Only pin the members when the user actually changed them; otherwise
+        // leave the event under automatic attribution so later edits to
+        // aliases and places keep improving it.
+        if ($this->membersTouched) {
+            app(EventAttributor::class)->setManually(
+                $event,
+                collect($this->memberIds)->map(fn ($id) => (int) $id)->all(),
+            );
+        }
+
         $this->open = false;
         $this->dispatch('events-changed');
         $this->dispatch('saved', message: 'Saved to iCloud.');
+    }
+
+    /** Hand an event back to automatic matching. */
+    public function useAutomaticMembers(): void
+    {
+        if (! $this->eventId) {
+            return;
+        }
+
+        $event = $this->findEvent($this->eventId);
+
+        app(EventAttributor::class)->resetToAutomatic($event);
+
+        $this->memberIds = $event->fresh()->members->pluck('id')->map(fn ($id) => (string) $id)->all();
+        $this->membersTouched = false;
+        $this->isManual = false;
+
+        $this->dispatch('events-changed');
+        $this->dispatch('saved', message: 'Back to matching by title.');
     }
 
     public function deleteEvent(): void
@@ -239,6 +292,41 @@ new class extends Component
                             </div>
                         </div>
                     @endif
+
+                    <fieldset>
+                        <div class="flex items-baseline justify-between gap-3">
+                            <legend class="text-sm font-medium">Who it's for</legend>
+                            @if ($eventId && ! $isManual)
+                                <span class="text-xs text-slate-400">matched from the title</span>
+                            @elseif ($isManual)
+                                <button type="button" wire:click="useAutomaticMembers"
+                                        class="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                                    Match from the title instead
+                                </button>
+                            @endif
+                        </div>
+
+                        <div class="mt-1 flex flex-wrap gap-2">
+                            @foreach ($this->householdMembers as $member)
+                                @php $on = in_array((string) $member->id, $memberIds, true); @endphp
+                                <label class="flex touch-target items-center gap-2 rounded-full border px-3 text-sm font-medium"
+                                       @style([
+                                           "border-color: {$member->colour}; background-color: {$member->colour}1a" => $on,
+                                       ])
+                                       @class([
+                                           'border-slate-300 dark:border-slate-700' => ! $on,
+                                       ])>
+                                    <input type="checkbox" wire:model.live="memberIds" value="{{ $member->id }}" class="sr-only">
+                                    <span class="size-3 rounded-full" style="background-color: {{ $member->colour }};"></span>
+                                    {{ $member->name }}
+                                </label>
+                            @endforeach
+                        </div>
+
+                        @if ($memberIds === [])
+                            <p class="mt-1 text-sm text-slate-400">Nobody selected — it shows as a household event.</p>
+                        @endif
+                    </fieldset>
 
                     <div>
                         <label class="block text-sm font-medium" for="ev-location">Where <span class="text-slate-400">(optional)</span></label>

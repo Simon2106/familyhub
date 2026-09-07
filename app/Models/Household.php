@@ -39,6 +39,12 @@ class Household extends Model
         return $this->hasMany(CalendarAccount::class);
     }
 
+    /** @return HasMany<Place, $this> */
+    public function places(): HasMany
+    {
+        return $this->hasMany(Place::class)->orderBy('name');
+    }
+
     /** @return HasMany<Checklist, $this> */
     public function checklists(): HasMany
     {

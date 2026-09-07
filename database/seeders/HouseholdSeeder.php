@@ -43,6 +43,9 @@ class HouseholdSeeder extends Seeder
             }
 
             $member->save();
+
+            // So "Simon Williams" matches a title that just says "Simon".
+            $member->ensureFirstNameAlias();
         }
 
         foreach (EnvSeedSpec::users() as $spec) {

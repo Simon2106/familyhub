@@ -9,8 +9,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
-#[Fillable(['calendar_id', 'external_id', 'recurrence_id', 'href', 'etag', 'title', 'start_at', 'end_at', 'all_day', 'location', 'notes', 'rrule', 'source_hash', 'status', 'needs_push', 'pushed_at'])]
+#[Fillable(['calendar_id', 'external_id', 'recurrence_id', 'href', 'etag', 'title', 'start_at', 'end_at', 'all_day', 'location', 'notes', 'rrule', 'source_hash', 'status', 'attribution', 'needs_push', 'pushed_at'])]
 class Event extends Model
 {
     use HasFactory;
@@ -46,10 +47,22 @@ class Event extends Model
         return $this->belongsTo(Calendar::class);
     }
 
-    /** Events inherit their member from the calendar they live on. */
-    public function member(): ?Member
+    /**
+     * The members this event concerns.
+     *
+     * Many-to-many because "SW + JW dentist" belongs to both of them.
+     *
+     * @return BelongsToMany<Member, $this>
+     */
+    public function members(): BelongsToMany
     {
-        return $this->calendar?->member;
+        return $this->belongsToMany(Member::class)->withPivot('reason')->withTimestamps();
+    }
+
+    /** True once a person has chosen the members by hand. */
+    public function attributionIsManual(): bool
+    {
+        return $this->attribution === 'manual';
     }
 
     /**

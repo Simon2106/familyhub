@@ -5,6 +5,8 @@ namespace App\Services\CalDav;
 use App\Exceptions\CalDavException;
 use App\Models\Calendar;
 use App\Models\Event;
+use App\Services\Attribution\AttributionMatcher;
+use App\Services\Attribution\EventAttributor;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +24,19 @@ class CalendarSync
     public function __construct(
         protected CalDavClient $client,
         protected EventMapper $mapper,
+        protected EventAttributor $attributor,
     ) {}
+
+    /**
+     * Built once per sync and reused for every event, so a run costs one pass
+     * over the household's members and places rather than one per event.
+     */
+    protected ?AttributionMatcher $matcher = null;
+
+    protected function matcher(Calendar $calendar): AttributionMatcher
+    {
+        return $this->matcher ??= $this->attributor->matcherFor($calendar->account->household);
+    }
 
     public function sync(Calendar $calendar, bool $force = false): SyncResult
     {
@@ -191,6 +205,11 @@ class CalendarSync
                     $event->etag = $resource->etag();
                     $event->needs_push = false;
                     $event->save();
+
+                    // Work out who this event is about while it is in hand.
+                    // Already-loaded calendar, so no extra query per event.
+                    $event->setRelation('calendar', $calendar);
+                    $this->attributor->apply($event, $this->matcher($calendar));
 
                     $existed ? $result->updated++ : $result->created++;
                 }

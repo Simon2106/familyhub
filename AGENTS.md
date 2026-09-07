@@ -27,6 +27,14 @@ conventions. The points most easily got wrong:
 - **Calendars are iCloud-only** (CalDAV). Google is out of scope. iCloud
   credentials are entered in `/admin`, never `.env`, and several Apple IDs can be
   connected at once. See `BRIEF.md` for the full amended brief.
+- **Member attribution** (`app/Services/Attribution/`) decides whose column an
+  event lands in, by matching names, aliases and places against the title and
+  location. `AttributionMatcher` is compiled once per household and reused —
+  never build one per event. Events with `attribution = 'manual'` are off
+  limits: a person chose those by hand.
+- Livewire `#[Computed]` only caches on **property** access (`$this->days`).
+  Calling `$this->days()` re-runs the method, which is an easy way to
+  reintroduce an N+1 in the wall display.
 - CalDAV lives in `app/Services/CalDav/`. `CalDavClient` is transport only —
   keep model knowledge out of it. Fake iCloud with `tests/Support/FakeICloud.php`;
   note that `Http::fake()` MERGES stubs rather than replacing them, so that
