@@ -791,8 +791,13 @@ new #[Layout('layouts::display')] class extends Component
             <livewire:capture.review />
         </div>
 
+        {{-- ----------------------------- MEALS --------------------------- --}}
+        <div x-show="tab === 'meals'" x-cloak class="h-full min-h-0">
+            <livewire:recipes.box />
+        </div>
+
         {{-- ------------------- PLACEHOLDERS FOR LATER PHASES ------------ --}}
-        @foreach (['meals' => 'Meal plan and recipes', 'photos' => 'Photo library'] as $key => $label)
+        @foreach (['photos' => 'Photo library'] as $key => $label)
             <div x-show="tab === '{{ $key }}'" x-cloak class="grid h-full place-items-center">
                 <div class="text-center">
                     <p class="text-xl font-semibold text-slate-400">{{ $label }}</p>

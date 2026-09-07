@@ -177,6 +177,23 @@ new #[Layout('layouts::app')] class extends Component
             @endif
         </a>
 
+        @php $recipeCount = \App\Models\Recipe::where('household_id', $this->household()->id)->ready()->count(); @endphp
+
+        <a href="{{ route('recipes') }}" wire:navigate
+           class="mt-3 flex touch-target items-center gap-3 rounded-2xl bg-white p-3 dark:bg-slate-900">
+            <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+                <svg class="size-5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M6 3v9a3 3 0 0 0 6 0V3M9 12v9M17 3c-1.5 2-2 4-2 6s.5 3 2 3 2-1 2-3-.5-4-2-6zm0 9v9" />
+                </svg>
+            </span>
+            <span class="min-w-0 flex-1">
+                <span class="block font-medium">Recipes</span>
+                <span class="block text-sm text-slate-500 dark:text-slate-400">
+                    {{ $recipeCount === 0 ? 'Save a meal idea' : trans_choice('{1}:count saved idea|[2,*]:count saved ideas', $recipeCount, ['count' => $recipeCount]) }}
+                </span>
+            </span>
+        </a>
+
         {{-- Editable here: phones are where a to-do actually gets written. --}}
         <section class="mt-4 rounded-2xl bg-white p-3 dark:bg-slate-900">
             <livewire:todos.panel :editable="true" />

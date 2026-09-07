@@ -24,7 +24,7 @@ Access) and on family phones.
 | **2** | iCloud CalDAV sync, two-way | **Done** |
 | **3** | Capture — inbound email, photo/PDF/URL, Claude extraction, review queue | **Done** |
 | 4 | Kids — chores, routines, rewards | Not started |
-| 5 | Meals & shopping | Not started |
+| 5 | Meals & shopping | **Recipe box done**, meal plan next |
 | 6 | Home Assistant, weather, bins, AI assistant | Not started |
 
 ### What Phase 1 ships
@@ -212,6 +212,56 @@ those forgetting to update the mirror would leave a stale reminder on everyone's
 calendar. The observer queues `SyncTodoMirrorJob`, which makes iCloud match the
 to-do rather than trying to infer which edit just happened. A calendar that
 refuses the write is logged, not raised — the to-do itself is already saved.
+
+### The recipe box
+
+A saved meal idea, however it arrived. Everything but the title is optional,
+because half of what is worth saving is a link and a photograph, and a recipe
+box that insists on ingredients is one nobody puts anything in.
+
+Four ways in, all landing in the same place:
+
+| Where from | What happens |
+| --- | --- |
+| **Link** typed in `/app/recipes` | The page is fetched, reduced to text, and read |
+| **Pasted text** | Read as-is; no network at all |
+| **Photo** — a cookbook page, a card, a screenshot | Sent as an image, HEIC converted and downscaled first |
+| **Shared to FamilyHub** from Instagram, TikTok or a recipe site | Caption *and* link together |
+
+The card appears immediately in a "Reading it…" state and fills itself in, the
+same contract the review inbox makes: nothing shared ever disappears into a
+queue without acknowledgement.
+
+#### The login-wall problem
+
+A recipe shared out of Instagram is the common case, and the link in it goes to
+a login wall. Fetching it does not fail — it returns a shell of a page, which is
+worse, because it looks like success. So a fetched page under 400 characters
+with a shared caption available is treated as a wall: the caption is used, and
+the card says **"Instagram.com needed a login, so this is from the text you
+shared."** That one line is what makes a half-filled card trustworthy rather
+than broken. A login-walled link with *nothing* saved alongside it fails and
+says so, rather than producing an empty recipe.
+
+#### One share target, two destinations
+
+A manifest can declare only one share target, so `ShareTargetController` decides:
+a known food host (the social three, plus the recipe sites the family uses) or a
+caption containing "ingredients" **and** a corroborating word goes to the recipe
+box; everything else goes to Review. Two signals rather than one, because
+"ingredients" alone appears in allergen notices.
+
+Guessing is unavoidable, so both destinations carry the correction: **"It's a
+recipe"** on a review card, **"Not a recipe — send to Review"** on a recipe card.
+
+#### Ingredients
+
+Split into quantity, unit and item at read time — `2 tbsp olive oil, plus extra`
+becomes `2 / tbsp / olive oil / plus extra` — and lowercased, because these get
+merged into a shopping list and read in a supermarket aisle. `RecipeParser`
+drops nonsense quantities and rows with no ingredient in them; the fake reader
+used in tests runs through that same parser, so a test can never assert on data
+production would have thrown away.
 
 ### Member attribution
 

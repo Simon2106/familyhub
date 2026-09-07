@@ -15,7 +15,7 @@ class UrlFetcher
 {
     public const MAX_CHARS = 60_000;
 
-    /** @return array{title: ?string, text: string} */
+    /** @return array{title: ?string, text: string, image: ?string} */
     public function fetch(string $url): array
     {
         if (! preg_match('#^https?://#i', $url)) {
@@ -32,7 +32,39 @@ class UrlFetcher
 
         $html = $response->body();
 
-        return ['title' => $this->title($html), 'text' => $this->text($html)];
+        return [
+            'title' => $this->title($html),
+            'text' => $this->text($html),
+            'image' => $this->image($html, $url),
+        ];
+    }
+
+    /**
+     * The page's own preview image, from the tag it already publishes for
+     * social cards. A recipe card without a photograph of the food is a much
+     * less appetising thing to scroll past.
+     */
+    protected function image(string $html, string $base): ?string
+    {
+        $patterns = [
+            '#<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']#i',
+            '#<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']#i',
+            '#<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']#i',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $html, $m)) {
+                $url = html_entity_decode(trim($m[1]));
+
+                if (str_starts_with($url, '//')) {
+                    $url = (parse_url($base, PHP_URL_SCHEME) ?: 'https').':'.$url;
+                }
+
+                return preg_match('#^https?://#i', $url) ? mb_substr($url, 0, 2000) : null;
+            }
+        }
+
+        return null;
     }
 
     protected function title(string $html): ?string

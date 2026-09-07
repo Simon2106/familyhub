@@ -156,6 +156,32 @@ new class extends Component
         $this->afterReview('Dismissed.');
     }
 
+    /**
+     * The correction in the other direction.
+     *
+     * A shared recipe that came in through the calendar side of the share
+     * target belongs in the recipe box, and re-sharing it from Instagram to
+     * get it there would be absurd.
+     */
+    public function saveAsMealIdea(int $captureId): void
+    {
+        $capture = $this->findCapture($captureId);
+
+        $link = $capture->raw_payload && str_starts_with((string) $capture->raw_payload, 'http')
+            ? $capture->raw_payload
+            : null;
+
+        $link
+            ? app(\App\Services\Recipes\RecipeIntake::class)->fromUrl($link, $capture->body_text)
+            : app(\App\Services\Recipes\RecipeIntake::class)->fromText(
+                trim($capture->subject."\n\n".$capture->body_text)
+            );
+
+        $capture->forceFill(['status' => 'done'])->save();
+
+        $this->afterReview('Saved to the recipe box.');
+    }
+
     public function retry(int $captureId): void
     {
         $capture = $this->findCapture($captureId);
@@ -481,9 +507,16 @@ new class extends Component
                             Accept all confident
                         </button>
                     @endif
+                    {{-- A shared reel or recipe page that came in on the
+                         calendar side of the share target. Moving it beats
+                         asking anyone to share it again. --}}
+                    <button type="button" wire:click="saveAsMealIdea({{ $capture->id }})"
+                            class="touch-target rounded-xl px-4 text-sm font-semibold text-slate-500">
+                        It's a recipe
+                    </button>
                     <button type="button" wire:click="dismissCapture({{ $capture->id }})"
                             wire:confirm="Dismiss everything from this one?"
-                            class="touch-target rounded-xl px-4 text-sm font-semibold text-slate-500">Dismiss the rest</button>
+                            class="touch-target ml-auto rounded-xl px-4 text-sm font-semibold text-slate-500">Dismiss the rest</button>
                 </div>
             @endif
         </section>

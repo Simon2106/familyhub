@@ -5,6 +5,8 @@ namespace App\Providers;
 use Anthropic\Client;
 use App\Services\Capture\ClaudeItemExtractor;
 use App\Services\Capture\Contracts\ItemExtractor;
+use App\Services\Recipes\ClaudeRecipeReader;
+use App\Services\Recipes\Contracts\RecipeReader;
 use Illuminate\Support\ServiceProvider;
 use RuntimeException;
 
@@ -24,9 +26,10 @@ class AppServiceProvider extends ServiceProvider
             return new Client(apiKey: $key);
         });
 
-        // Bound to the interface so tests can swap in a fake and exercise the
-        // whole capture pipeline without calling the API.
+        // Bound to interfaces so tests can swap in fakes and exercise the
+        // whole capture and recipe pipelines without calling the API.
         $this->app->bind(ItemExtractor::class, ClaudeItemExtractor::class);
+        $this->app->bind(RecipeReader::class, ClaudeRecipeReader::class);
     }
 
     public function boot(): void

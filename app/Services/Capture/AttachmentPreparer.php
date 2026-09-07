@@ -85,6 +85,44 @@ class AttachmentPreparer
     }
 
     /**
+     * A content block for bytes that did not arrive as a capture attachment —
+     * a photographed recipe, say.
+     *
+     * Shares this class's HEIC conversion and downscaling rather than growing
+     * a second copy of them elsewhere: an iPhone photo of a cookbook page has
+     * exactly the same two problems as an iPhone photo of a school letter.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function blockFor(string $contents, string $mime): ?array
+    {
+        if ($contents === '') {
+            return null;
+        }
+
+        if ($mime === 'application/pdf') {
+            return strlen($contents) > self::MAX_BYTES
+                ? null
+                : ['type' => 'document', 'source' => ['type' => 'base64', 'mediaType' => $mime, 'data' => base64_encode($contents)]];
+        }
+
+        // Anything the API will not read — HEIC above all — goes through
+        // Imagick, which also fixes the sideways-orientation flag.
+        if (! in_array($mime, CaptureAttachment::IMAGE_TYPES, strict: true)
+            || strlen($contents) > self::MAX_BYTES) {
+            $shrunk = $this->downscale($contents);
+
+            if ($shrunk === null) {
+                return null;
+            }
+
+            [$contents, $mime] = $shrunk;
+        }
+
+        return ['type' => 'image', 'source' => ['type' => 'base64', 'mediaType' => $mime, 'data' => base64_encode($contents)]];
+    }
+
+    /**
      * @return array{0: string, 1: string}|null base64 data and media type
      */
     public function prepare(CaptureAttachment $attachment): ?array
