@@ -134,6 +134,19 @@ class HomeAssistant
         Cache::forget(self::STATES_KEY);
     }
 
+    /**
+     * States straight from HA, unfiltered and uncached.
+     *
+     * The listener seeds from this: it wants every row exactly as the REST
+     * API gives them, because those are what it will be patching.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function rawStates(): array
+    {
+        return $this->client->get('/api/states');
+    }
+
     /** Replace the shared state cache — used by the websocket listener. */
     public function remember(array $rows): void
     {

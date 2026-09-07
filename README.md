@@ -25,7 +25,7 @@ Access) and on family phones.
 | **3** | Capture — inbound email, photo/PDF/URL, Claude extraction, review queue | **Done** |
 | **4** | Kids — chores, routines, rewards | **Done** |
 | **5** | Meals & shopping — recipe box, meal plan, shopping list | **Done** |
-| 6 | Home Assistant, weather, bins, AI assistant | Not started |
+| 6 | Home Assistant, weather, bins, AI assistant | **HA + weather done**, bins/assistant next |
 
 ### What Phase 1 ships
 
@@ -764,18 +764,72 @@ the token budget" naming the current value, rather than as a confusing JSON erro
 Sampling parameters are not sent: current models reject `temperature` and `top_p`
 outright.
 
-### Home Assistant — *Phase 6*
+### Home Assistant
 
 HA is the **only** smart-home driver. Zigbee switches arrive via Zigbee2MQTT
 inside HA, and HA bridges the Alexa household.
 
 1. HA → click your user (bottom left) → **Security** tab
 2. **Long-Lived Access Tokens** → Create Token
-3. Set `HOMEASSISTANT_URL` and `HOMEASSISTANT_TOKEN`
+3. Set `HA_URL` and `HA_TOKEN`
 
-Home tab tiles will show live entity state over the websocket API and toggle
-`light`, `switch`, `climate`, `cover`, `scene` and `script` entities, grouped by
-HA area.
+> **`HA_URL` is used exactly as you write it.** Nothing appends a port. Home
+> Assistant is famously on 8123, but this one sits behind a reverse proxy on 80,
+> so `http://homeassistant.local` is right here and `http://10.0.0.5:8123` would
+> be right elsewhere. The websocket address is derived from the same value —
+> scheme swapped, everything else left alone — so there is one place to get the
+> host wrong rather than two.
+
+Then choose what belongs on the wall in **`/admin` → Home**. HA knows about
+hundreds of things and a kitchen wall wants about twelve, so the picker is a
+shortlist rather than a mirror: only `light`, `switch`, `climate`, `cover`,
+`scene` and `script` are ever offered, grouped by HA's own areas. A tile can be
+renamed — "Sonoff 0x00124b" is not a name anyone taps twice — and **Refresh**
+re-reads names and rooms after they change in HA.
+
+#### What the tiles do
+
+| Kind | Tile |
+| --- | --- |
+| `light`, `switch` | The whole tile is the switch |
+| `scene`, `script` | Tap to run — there is no "off" to show |
+| `cover` | Open / Stop / Close, because "toggle" is not what anyone means by a blind |
+| `climate` | Current and target, with −/+ in half degrees, clamped to 5–30°C |
+
+Tiles tell the truth about what they do not know. Something HA has lost touch
+with says **Not responding** rather than rendering as off, and an unreachable Pi
+is reported on the wall — a kitchen cannot show a stack trace. Scenes and
+scripts are exempt from that check, since a scene that has not run since the last
+reboot reports `unknown` and means nothing by it.
+
+#### Live state
+
+States are read through a short shared cache, so a wall of a dozen tiles is one
+request to a Raspberry Pi rather than twelve, and acting on something clears the
+state it just changed so the next read cannot serve the moment before the tap.
+
+`php artisan familyhub:ha-listen` holds the websocket open and keeps that cache
+warm. It is **optional**: without it the wall polls REST every few seconds and is
+never wrong for long; with it, tiles follow a physical light switch almost
+immediately and HA is left alone in between. Run it under Supervisor on Forge,
+in the same way as the queue worker. It re-seeds from `/api/states` on every
+connect rather than trusting what it had before, so killing and restarting it is
+always safe, and it backs off up to a minute while HA is down — the cache keeps
+its five-minute life so the wall shows the last known state rather than emptying
+while the Pi reboots.
+
+Check the credentials without leaving a process running:
+
+```sh
+php artisan familyhub:ha-listen --once
+```
+
+### Weather
+
+Open-Meteo, chosen because it needs **no API key** — one less credential to keep
+alive on a screen that has to work untouched for months. Set `WEATHER_LATITUDE`
+and `WEATHER_LONGITUDE`; leave them empty and the tile simply does not appear.
+Cached for 20 minutes, and a failed fetch costs the tile rather than the wall.
 
 ---
 

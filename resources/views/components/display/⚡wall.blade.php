@@ -189,6 +189,17 @@ new #[Layout('layouts::display')] class extends Component
         return $this->today->toDateString();
     }
 
+    /**
+     * The weather, or nothing at all.
+     *
+     * Never throws: no weather is a missing tile, not a broken wall.
+     */
+    #[Computed]
+    public function weather(): ?\App\Services\Weather\Forecast
+    {
+        return app(\App\Services\Weather\OpenMeteo::class)->current();
+    }
+
     /** Midnight in household time, which is what every "due in N days" counts from. */
     #[Computed]
     public function today(): CarbonImmutable
@@ -475,7 +486,10 @@ new #[Layout('layouts::display')] class extends Component
             @endif
         </div>
 
-        <div class="text-right">
+        <div class="flex items-center gap-5">
+            <x-weather-tile :forecast="$this->weather" class="hidden sm:flex" />
+
+            <div class="text-right">
             <p class="text-sm font-medium text-slate-500 dark:text-slate-400"
                title="Build {{ \App\Support\BuildVersion::current() }}"
                data-build-version="{{ \App\Support\BuildVersion::current() }}">{{ $this->household()->name }}</p>
@@ -488,6 +502,7 @@ new #[Layout('layouts::display')] class extends Component
             >
                 Back to today
             </button>
+            </div>
         </div>
     </header>
 
