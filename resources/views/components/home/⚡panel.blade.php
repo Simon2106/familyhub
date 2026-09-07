@@ -21,6 +21,28 @@ new class extends Component
 {
     public ?string $error = null;
 
+    /**
+     * What we have asked a tile to become, and when we asked.
+     *
+     * A tap flips the tile immediately in the browser, but the browser cannot
+     * hold that opinion for long without either lying or flickering. So the
+     * expectation lives here instead: every render until it comes true shows
+     * the state we asked for, and if Home Assistant has not agreed within a
+     * few seconds the tile goes back to the truth and says so.
+     *
+     * @var array<int, array{state: bool, at: int}>
+     */
+    public array $expecting = [];
+
+    /** @var array<int, array{text: string, at: int}> */
+    public array $notes = [];
+
+    /** How long a light gets to do as it is told before we stop believing. */
+    public const SETTLE_SECONDS = 5;
+
+    /** How long "didn't respond" stays on screen. */
+    public const NOTE_SECONDS = 8;
+
     public function household(): Household
     {
         return Household::current();
@@ -81,6 +103,77 @@ new class extends Component
     }
 
     /**
+     * Compare what we asked for against what Home Assistant now says.
+     *
+     * A lifecycle hook rather than something the template calls: hanging this
+     * off the outermost loop meant it silently stopped running whenever the
+     * template took a different branch — removing the last tile left an
+     * expectation behind forever. booted() runs on every request whatever the
+     * page decides to draw.
+     */
+    public function booted(): void
+    {
+        $this->reconcile();
+    }
+
+    protected function reconcile(): void
+    {
+        $now = now()->timestamp;
+
+        foreach ($this->expecting as $tileId => $expectation) {
+            $tile = $this->tiles->firstWhere('id', $tileId);
+            $actual = $tile ? $this->states->get($tile->entity_id) : null;
+
+            if (! $tile) {
+                unset($this->expecting[$tileId]);
+
+                continue;
+            }
+
+            // It did as it was told. Nothing more to watch for.
+            if ($actual && ! $actual->isUnavailable() && $actual->isOn() === $expectation['state']) {
+                unset($this->expecting[$tileId]);
+
+                continue;
+            }
+
+            if ($now - $expectation['at'] >= self::SETTLE_SECONDS) {
+                unset($this->expecting[$tileId]);
+
+                // Reverting silently would look like the tap missed. Saying so
+                // is the difference between a bug and a flat battery.
+                $this->notes[$tileId] = ['text' => 'Didn\'t respond', 'at' => $now];
+            }
+        }
+
+        foreach ($this->notes as $tileId => $note) {
+            if ($now - $note['at'] >= self::NOTE_SECONDS) {
+                unset($this->notes[$tileId]);
+            }
+        }
+    }
+
+    /** What the tile should show: what we asked for while we still believe it. */
+    public function showsOn(HomeTile $tile): bool
+    {
+        if (isset($this->expecting[$tile->id])) {
+            return $this->expecting[$tile->id]['state'];
+        }
+
+        return $this->stateFor($tile)?->isOn() ?? false;
+    }
+
+    public function isPending(HomeTile $tile): bool
+    {
+        return isset($this->expecting[$tile->id]);
+    }
+
+    public function noteFor(HomeTile $tile): ?string
+    {
+        return $this->notes[$tile->id]['text'] ?? null;
+    }
+
+    /**
      * Tiles by section, in the order the sections are listed.
      *
      * Grouped by kind rather than by room: on a wall, "turn a light on" is the
@@ -111,12 +204,54 @@ new class extends Component
      */
     public function press(int $tileId): void
     {
-        $this->act($tileId, fn (HomeAssistant $ha, HomeTile $tile) => $ha->toggle($tile->entity_id));
+        $tile = $this->tiles->firstWhere('id', $tileId);
+
+        if (! $tile) {
+            return;
+        }
+
+        // Recorded before the call, not after: a Pi taking four seconds to
+        // answer is exactly when the tile most needs to look like it heard.
+        if ($this->isSwitchable($tile)) {
+            $this->expect($tile, ! $this->showsOn($tile));
+        }
+
+        $this->act($tileId, fn (HomeAssistant $ha, HomeTile $t) => $ha->toggle($t->entity_id));
+
+        // Lets the browser stop holding its own opinion: from here the server
+        // is carrying the optimism, and it knows when to give up on it.
+        $this->dispatch('tile-settled', tile: $tileId);
+    }
+
+    public function isSwitchableTile(HomeTile $tile): bool
+    {
+        return $this->isSwitchable($tile);
+    }
+
+    /** Scenes and scripts have no state to be optimistic about. */
+    protected function isSwitchable(HomeTile $tile): bool
+    {
+        return in_array($tile->domain, ['light', 'switch', 'cover', 'climate'], true);
+    }
+
+    protected function expect(HomeTile $tile, bool $state): void
+    {
+        unset($this->notes[$tile->id]);
+
+        $this->expecting[$tile->id] = ['state' => $state, 'at' => now()->timestamp];
     }
 
     public function move(int $tileId, string $action): void
     {
-        $this->act($tileId, fn (HomeAssistant $ha, HomeTile $tile) => $ha->cover($tile->entity_id, $action));
+        $tile = $this->tiles->firstWhere('id', $tileId);
+
+        if ($tile && $action !== 'stop') {
+            $this->expect($tile, $action === 'open');
+        }
+
+        $this->act($tileId, fn (HomeAssistant $ha, HomeTile $t) => $ha->cover($t->entity_id, $action));
+
+        $this->dispatch('tile-settled', tile: $tileId);
     }
 
     public function nudge(int $tileId, float $by): void
@@ -141,7 +276,7 @@ new class extends Component
             $this->error = $e->getMessage();
         }
 
-        unset($this->reading, $this->states, $this->problem);
+        unset($this->reading, $this->states, $this->problem, $this->sections);
     }
 
     /**
@@ -166,9 +301,13 @@ new class extends Component
             $do(app(HomeAssistant::class), $tile);
         } catch (HomeAssistantException $e) {
             $this->error = $e->getMessage();
+
+            // A call that never left the box cannot come true, so stop
+            // pretending it might.
+            unset($this->expecting[$tile->id]);
         }
 
-        unset($this->reading, $this->states, $this->problem);
+        unset($this->reading, $this->states, $this->problem, $this->sections);
     }
 }; ?>
 
@@ -211,30 +350,52 @@ new class extends Component
                     @foreach ($tiles as $tile)
                         @php
                             $state = $this->stateFor($tile);
-                            $on = $state?->isOn() ?? false;
-                            $missing = $state === null || $state->isUnavailable();
+                            $on = $this->showsOn($tile);
+                            $pending = $this->isPending($tile);
+                            $note = $this->noteFor($tile);
+                            // A pending tile is not missing, however quiet HA is
+                            // being about it — we are mid-conversation.
+                            $missing = ! $pending && ($state === null || $state->isUnavailable());
                         @endphp
 
+                        {{-- `wanted` is the browser's own opinion, held only
+                             for the length of the round trip. The moment the
+                             server answers it takes over, because it is the one
+                             that knows when to stop believing. --}}
                         <div wire:key="tile-{{ $tile->id }}"
-                             class="flex flex-col gap-2 rounded-2xl border-2 p-3 transition-colors
-                                    {{ $missing
+                             x-data="{
+                                 wanted: null,
+                                 flip(to) { this.wanted = to },
+                             }"
+                             x-on:tile-settled.window="if ($event.detail.tile === {{ $tile->id }}) wanted = null"
+                             :class="wanted === null
+                                 ? '{{ $missing
                                         ? 'border-transparent bg-slate-100 dark:bg-slate-800/60'
-                                        : ($on ? 'border-transparent bg-amber-100 dark:bg-amber-500/20' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900') }}">
+                                        : ($on ? 'border-transparent bg-amber-100 dark:bg-amber-500/20' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900') }}'
+                                 : (wanted
+                                     ? 'border-transparent bg-amber-100 dark:bg-amber-500/20'
+                                     : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900')"
+                             class="flex flex-col gap-2 rounded-2xl border-2 p-3 transition-colors">
 
                             {{-- The whole tile is the switch for the things that
                                  have one. Covers and thermostats get buttons
                                  instead, because "toggle" is not what anyone
                                  means by a blind. --}}
                             @if (in_array($tile->domain, ['light', 'switch', 'scene', 'script'], true))
-                                <button type="button" wire:click="press({{ $tile->id }})"
+                                <button type="button"
+                                        x-on:click="flip({{ $this->isSwitchableTile($tile) ? '! '.($on ? 'true' : 'false') : 'null' }})"
+                                        wire:click="press({{ $tile->id }})"
                                         class="flex min-h-16 w-full items-center gap-3 text-left"
                                         @disabled($missing)>
                                     <x-ha-icon :domain="$tile->domain" class="text-2xl leading-none" />
                                     <span class="min-w-0 flex-1">
                                         <span class="block truncate font-semibold">{{ $tile->title() }}</span>
-                                        <span class="block truncate text-sm {{ $missing ? 'text-slate-400' : 'text-slate-500 dark:text-slate-400' }}">
-                                            {{ $state?->summary() ?? 'Not responding' }}
+                                        <span class="block truncate text-sm {{ $missing ? 'text-slate-400' : 'text-slate-500 dark:text-slate-400' }}"
+                                              x-show="wanted === null">
+                                            {{ $note ?? ($pending ? ($on ? 'On' : 'Off') : ($state?->summary() ?? 'Not responding')) }}
                                         </span>
+                                        <span class="block truncate text-sm text-slate-500 dark:text-slate-400"
+                                              x-show="wanted !== null" x-cloak x-text="wanted ? 'On' : 'Off'"></span>
                                         {{-- The room, now that sections are by
                                              kind. Quiet, because it answers a
                                              question that is asked second. --}}
@@ -249,7 +410,7 @@ new class extends Component
                                     <span class="min-w-0 flex-1">
                                         <span class="block truncate font-semibold">{{ $tile->title() }}</span>
                                         <span class="block truncate text-sm text-slate-500 dark:text-slate-400">
-                                            {{ $state?->summary() ?? 'Not responding' }}
+                                            {{ $note ?? $state?->summary() ?? 'Not responding' }}
                                         </span>
                                         @if ($tile->area)
                                             <span class="block truncate text-xs text-slate-400">{{ $tile->area }}</span>
@@ -260,7 +421,9 @@ new class extends Component
                                 @if ($tile->domain === 'cover')
                                     <div class="grid grid-cols-3 gap-1">
                                         @foreach (['open' => 'Open', 'stop' => 'Stop', 'close' => 'Close'] as $action => $label)
-                                            <button type="button" wire:click="move({{ $tile->id }}, '{{ $action }}')"
+                                            <button type="button"
+                                                    @if ($action !== 'stop') x-on:click="flip({{ $action === 'open' ? 'true' : 'false' }})" @endif
+                                                    wire:click="move({{ $tile->id }}, '{{ $action }}')"
                                                     class="touch-target rounded-xl bg-slate-100 text-sm font-semibold dark:bg-slate-800"
                                                     @disabled($missing)>{{ $label }}</button>
                                         @endforeach
