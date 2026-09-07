@@ -37,6 +37,11 @@
         <env name="FAMILYHUB_SEED_USERS" value="Ada|ada@example.test|secret-password"/>
         <env name="FAMILYHUB_SEED_MEMBERS" value="Ada|#2563eb|adult|;Bea|#16a34a|child|4321"/>
         <env name="FAMILYHUB_IDLE_MINUTES" value="10"/>
+        <!-- Empty by default so the suite does not depend on the developer's
+             .env; InboundAddressTest sets it explicitly. -->
+        <env name="FAMILYHUB_INBOUND_ADDRESS" value=""/>
+        <env name="POSTMARK_INBOUND_SECRET" value="test-inbound-secret"/>
+        <env name="ANTHROPIC_MODEL" value="claude-sonnet-5"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
     </php>
 </phpunit>

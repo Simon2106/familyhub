@@ -35,6 +35,19 @@ class PostmarkInboundController
     {
         $payload = $request->all();
 
+        if (! $this->addressedToUs($payload)) {
+            Log::info('Ignoring inbound email addressed elsewhere', [
+                'from' => $payload['From'] ?? null,
+                'subject' => $payload['Subject'] ?? null,
+                'recipients' => $this->recipients($payload),
+                'expected' => config('familyhub.inbound_address'),
+            ]);
+
+            // 200 so Postmark treats it as delivered; a non-2xx would have it
+            // retrying a message that is never going to be wanted.
+            return response()->json(['status' => 'ignored', 'reason' => 'recipient']);
+        }
+
         $body = $this->body($payload);
         $files = $this->attachments($payload);
 
@@ -53,6 +66,77 @@ class PostmarkInboundController
         ], $files);
 
         return response()->json(['status' => 'accepted', 'capture' => $capture->id]);
+    }
+
+    /**
+     * Was this actually sent to the household's capture address?
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    protected function addressedToUs(array $payload): bool
+    {
+        $expected = $this->normalise((string) config('familyhub.inbound_address'));
+
+        // Unconfigured means no filtering, which is how this behaved before
+        // the address existed.
+        if ($expected === '') {
+            return true;
+        }
+
+        return in_array($expected, $this->recipients($payload), strict: true);
+    }
+
+    /**
+     * Every address this message was delivered to, normalised.
+     *
+     * OriginalRecipient matters as much as the headers: a message auto-forwarded
+     * by a rule still carries the school's address in To, and only the envelope
+     * recipient says where it actually landed.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return list<string>
+     */
+    protected function recipients(array $payload): array
+    {
+        $found = [];
+
+        foreach (['ToFull', 'CcFull', 'BccFull'] as $key) {
+            foreach ($payload[$key] ?? [] as $entry) {
+                if (is_array($entry) && isset($entry['Email'])) {
+                    $found[] = $entry['Email'];
+                }
+            }
+        }
+
+        foreach (['OriginalRecipient', 'To', 'Cc', 'Bcc'] as $key) {
+            foreach (explode(',', (string) ($payload[$key] ?? '')) as $address) {
+                // Headers arrive as "Name <a@b.com>, other@b.com".
+                if (preg_match('/<([^>]+)>/', $address, $m)) {
+                    $address = $m[1];
+                }
+
+                $found[] = $address;
+            }
+        }
+
+        return array_values(array_filter(array_unique(array_map($this->normalise(...), $found))));
+    }
+
+    /**
+     * Lower-cased, with any +tag removed, so ai+sandygate@… reaches ai@… and
+     * the household can tag a source without adding an address.
+     */
+    protected function normalise(string $address): string
+    {
+        $address = strtolower(trim($address));
+
+        if (! str_contains($address, '@')) {
+            return '';
+        }
+
+        [$local, $domain] = explode('@', $address, 2);
+
+        return explode('+', $local, 2)[0].'@'.$domain;
     }
 
     /** @param array<string, mixed> $payload */

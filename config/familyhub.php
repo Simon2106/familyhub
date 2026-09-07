@@ -118,6 +118,13 @@ return [
         'inbound_secret' => env('POSTMARK_INBOUND_SECRET'),
     ],
 
+    /*
+    | The address the household forwards things to. Mail delivered to the
+    | inbound stream but addressed anywhere else is acknowledged and ignored.
+    | Leave unset to accept anything the stream receives.
+    */
+    'inbound_address' => env('FAMILYHUB_INBOUND_ADDRESS'),
+
     'whatsapp' => [
         'enabled' => (bool) env('FAMILYHUB_WHATSAPP_ENABLED', false),
     ],

@@ -19,7 +19,10 @@ class PostmarkWebhookTest extends TestCase
     {
         parent::setUp();
 
-        config(['familyhub.postmark.inbound_secret' => 'inbound-secret']);
+        config([
+            'familyhub.postmark.inbound_secret' => 'inbound-secret',
+            'familyhub.inbound_address' => 'ai@hub.example',
+        ]);
         Household::factory()->create();
         Storage::fake('local');
         Queue::fake();
@@ -30,6 +33,7 @@ class PostmarkWebhookTest extends TestCase
         return array_merge([
             'From' => 'office@school.example',
             'FromFull' => ['Email' => 'office@school.example'],
+            'ToFull' => [['Email' => 'ai@hub.example']],
             'Subject' => 'Autumn term dates',
             'TextBody' => "Parents evening is on 15 September at 6pm.\nInset day 9 October.",
         ], $overrides);

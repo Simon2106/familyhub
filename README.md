@@ -450,7 +450,29 @@ being absent from a response that never covered them.
    `https://hub.yourdomain.com/webhooks/postmark/<that secret>`
    (Postmark signs nothing, so the secret in the path is the authentication.
    Basic auth with the same value as the password works too.)
-4. Forward school newsletters to the inbound address Postmark gives you
+4. Set `FAMILYHUB_INBOUND_ADDRESS` to the address the household forwards to,
+   e.g. `ai@hub.yourdomain.com`
+5. Forward school newsletters to that address
+
+#### Who is allowed to send
+
+An inbound stream receives everything sent to the domain, so without a filter a
+stray or spam message becomes a capture. Mail is only processed when
+`FAMILYHUB_INBOUND_ADDRESS` appears among its recipients — checked across
+`ToFull`, `CcFull`, `BccFull` and the raw `To`/`Cc`/`Bcc` headers, **and** the
+envelope `OriginalRecipient`, because a message auto-forwarded by a rule still
+carries the school's address in `To` and only the envelope says where it landed.
+
+Matching ignores case, and a `+tag` still reaches the address — `ai+sandygate@…`
+counts as `ai@…`, so a source can be tagged without configuring another mailbox.
+
+Anything addressed elsewhere is answered **200** and logged with what it was
+addressed to. A non-2xx would have Postmark retrying a message that is never
+going to be wanted. The check runs before anything is stored, so an unwanted
+message never writes attachments to disk.
+
+Leaving `FAMILYHUB_INBOUND_ADDRESS` blank accepts everything the stream receives,
+which is how this behaved before the setting existed.
 
 A wrong or missing secret returns **404**, not 401 — an unauthenticated caller
 learns nothing about whether the endpoint exists. An empty or unreadable email is
