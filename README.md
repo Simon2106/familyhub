@@ -73,6 +73,22 @@ Entry points, all landing in the same queue and running the same job:
 | **Link** | Fetched and reduced to readable text |
 | **Share sheet** | The PWA declares a `share_target`, so anything can be shared to FamilyHub from iOS |
 
+The prompt treats **attachments as the primary source** — a forwarded email is
+usually just a covering note, and the dates live in the PDF. It is given the
+household's members (with aliases, and whether each is a child or an adult), the
+places in their lives (schools, workplaces, clubs, with their aliases and who
+they concern) and the sender's domain, so "Holy Trinity School" comes back worded
+the way the household's own attribution already understands.
+
+It is asked to produce **both halves of a deadline**: a letter giving "flu
+vaccination on 25 September, consent form no later than one full school day
+before" yields the event *and* a dated task on the 24th, with the rule it applied
+recorded in the notes. Counting back over a weekend is handled by treating a
+school day as a weekday. An action a parent must take — a form, a payment, a
+booking — is the parent's even when the child's school wrote the letter. Undated
+tasks are allowed but discouraged, and any URL for doing the thing is copied into
+the notes so it is actionable from a phone.
+
 Extraction uses structured outputs (`output_config.format`) against a strict JSON
 schema, so the response cannot come back as prose that needs hunting through.
 That schema is restricted to the keywords the API accepts — no `minimum`,

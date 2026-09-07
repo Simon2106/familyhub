@@ -62,7 +62,12 @@ class ProcessCaptureJob implements ShouldQueue
 
         $this->capture->markProcessing();
 
-        $result = $extractor->extract($this->capture->load(['attachments', 'household.members']));
+        $result = $extractor->extract($this->capture->load([
+            'attachments',
+            'household.members.aliases',
+            'household.places.aliases',
+            'household.places.members',
+        ]));
 
         foreach ($result->items as $item) {
             $this->capture->items()->create($item->toAttributes());

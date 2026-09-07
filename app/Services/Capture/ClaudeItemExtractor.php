@@ -203,11 +203,8 @@ class ClaudeItemExtractor implements ItemExtractor
             'The household timezone is '.$household->displayTimezone().'. Give all times in local time.',
         ];
 
-        $members = $household->members->pluck('name')->all();
-
-        if ($members !== []) {
-            $lines[] = 'The family members are: '.implode(', ', $members).
-                '. Only use these to fill member_hint if the source actually names one.';
+        foreach ($this->householdContext($household) as $line) {
+            $lines[] = $line;
         }
 
         $lines[] = '';
@@ -215,6 +212,13 @@ class ClaudeItemExtractor implements ItemExtractor
 
         if ($capture->sender) {
             $lines[] = 'From: '.$capture->sender;
+
+            // The domain alone often identifies the school or club when the
+            // letter itself never names it in full.
+            if ($domain = $this->senderDomain($capture->sender)) {
+                $lines[] = 'Sender domain: '.$domain.
+                    ' — a hint about which school, club or workplace this concerns.';
+            }
         }
 
         if ($capture->subject) {
@@ -240,6 +244,75 @@ class ClaudeItemExtractor implements ItemExtractor
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Who lives here, and what the places in their lives are called.
+     *
+     * Without this the model can only quote "Holy Trinity School" back; with it
+     * the quote is one the household's own matching already understands.
+     *
+     * @return list<string>
+     */
+    protected function householdContext(\App\Models\Household $household): array
+    {
+        $lines = [];
+
+        $members = $household->members;
+
+        if ($members->isEmpty()) {
+            return $lines;
+        }
+
+        $lines[] = '';
+        $lines[] = 'The household:';
+
+        foreach ($members as $member) {
+            $aliases = $member->aliases->pluck('alias')->all();
+
+            $lines[] = sprintf(
+                '- %s (%s)%s',
+                $member->name,
+                $member->is_child ? 'child' : 'adult',
+                $aliases === [] ? '' : ', also written as '.implode(', ', $aliases),
+            );
+        }
+
+        $places = $household->places;
+
+        if ($places->isNotEmpty()) {
+            $lines[] = '';
+            $lines[] = 'Places in their lives:';
+
+            foreach ($places as $place) {
+                $names = collect([$place->name])->merge($place->aliases->pluck('alias'))->unique();
+                $people = $place->members->pluck('name');
+
+                $lines[] = sprintf(
+                    '- %s (%s)%s%s',
+                    $names->implode(' / '),
+                    $place->type,
+                    $people->isEmpty() ? '' : ' — '.$people->implode(' and '),
+                    $people->isEmpty() ? '' : ($place->type === 'school' ? ' goes there' : ''),
+                );
+            }
+        }
+
+        $lines[] = '';
+        $lines[] = 'Use these to word member_hint the way the household would recognise. '
+            .'Remember that a form or payment is the parent\'s task even when the child\'s '
+            .'school is the one writing.';
+
+        return $lines;
+    }
+
+    protected function senderDomain(string $sender): ?string
+    {
+        if (! preg_match('/@([^\s>]+)/', $sender, $m)) {
+            return null;
+        }
+
+        return strtolower(rtrim($m[1], '>')) ?: null;
     }
 
     protected function firstText(mixed $message): string
