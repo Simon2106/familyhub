@@ -887,6 +887,48 @@ new #[Layout('layouts::display')] class extends Component
                 </div>
 
                 <div class="pane-scroll min-h-0 flex-1 rounded-2xl bg-white p-3 dark:bg-slate-900">
+
+                    {{-- ------------------- ONE DAY PICKED ------------------- --}}
+                    {{-- The rail follows the picked day rather than always
+                         counting forward from today. A panel headed "Coming up"
+                         listing Tuesday while Monday is selected reads as a
+                         bug, whatever it technically means. Rendered per day
+                         because the picking is done in Alpine — the events are
+                         already loaded, so this costs markup, not queries. --}}
+                    @foreach ($week as $day)
+                        <div x-show="isPicked(@js($day['date']))" x-cloak wire:key="rail-{{ $day['date'] }}">
+                            <h2 class="px-1 pb-2 text-sm font-semibold tracking-wide text-slate-400 uppercase">
+                                {{ $day['is_today'] ? 'Today' : $day['carbon']->format('l j F') }}
+                            </h2>
+
+                            @forelse ($day['events'] as $event)
+                                @php $eventMembers = $event->members; @endphp
+                                <div class="flex items-center gap-3 rounded-xl px-1 py-2">
+                                    <span class="w-12 shrink-0 text-center text-sm font-semibold tabular-nums text-slate-500 dark:text-slate-400">
+                                        {{ $event->all_day ? 'All day' : $event->start_at->timezone($day['tz'])->format('H:i') }}
+                                    </span>
+                                    <span class="flex h-8 shrink-0 gap-0.5">
+                                        @forelse ($eventMembers as $member)
+                                            <span class="w-1 rounded-full" style="background-color: {{ $member->colour }};"></span>
+                                        @empty
+                                            <span class="w-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
+                                        @endforelse
+                                    </span>
+                                    <span class="min-w-0 flex-1">
+                                        <span class="block truncate font-medium">{{ $event->title }}</span>
+                                        <span class="block truncate text-sm text-slate-500 dark:text-slate-400">
+                                            {{ $eventMembers->pluck('name')->join(', ') ?: 'Household' }}@if ($event->location) · {{ $event->location }} @endif
+                                        </span>
+                                    </span>
+                                </div>
+                            @empty
+                                <p class="px-1 py-4 text-sm text-slate-400">Nothing on this day.</p>
+                            @endforelse
+                        </div>
+                    @endforeach
+
+                    {{-- ---------------------- THIS WEEK --------------------- --}}
+                    <div x-show="view === 'week'">
                     <h2 class="px-1 pb-2 text-sm font-semibold tracking-wide text-slate-400 uppercase">Coming up</h2>
 
                     @forelse ($this->upcoming as $entry)
@@ -921,6 +963,7 @@ new #[Layout('layouts::display')] class extends Component
                     @empty
                         <p class="px-1 py-4 text-sm text-slate-400">Nothing else coming up.</p>
                     @endforelse
+                    </div>
                 </div>
 
                 {{-- Household to-dos, under "Coming up" in both views. --}}
