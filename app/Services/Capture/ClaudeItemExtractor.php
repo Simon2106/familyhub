@@ -46,10 +46,34 @@ class ClaudeItemExtractor implements ItemExtractor
             ],
         );
 
+        // No temperature or top_p: Sonnet 5 and the other current models reject
+        // sampling parameters outright.
+
+        return $this->interpret($message);
+    }
+
+    /**
+     * Reads a response, refusing the two ways it can be unusable.
+     *
+     * Kept separate from the request so both paths can be tested without an
+     * API call; typed loosely for the same reason.
+     */
+    public function interpret(mixed $message): ExtractionResult
+    {
         if ($message->stopReason === 'refusal') {
             throw new RuntimeException(
                 'Claude declined to read this capture'
                 .($message->stopDetails?->explanation ? ': '.$message->stopDetails->explanation : '.')
+            );
+        }
+
+        // Sonnet 5 thinks adaptively by default and that spend shares the
+        // max_tokens budget, so a long term calendar can be cut off mid-JSON.
+        // Saying so beats letting it surface as "not valid JSON".
+        if ($message->stopReason === 'max_tokens') {
+            throw new RuntimeException(
+                'The answer ran past the token budget. Raise ANTHROPIC_MAX_TOKENS '
+                .'(currently '.config('familyhub.anthropic.max_tokens').') and try again.'
             );
         }
 

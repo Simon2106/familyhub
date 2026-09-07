@@ -109,7 +109,7 @@ return [
 
     'anthropic' => [
         'key' => env('ANTHROPIC_API_KEY'),
-        'model' => env('ANTHROPIC_MODEL', 'claude-sonnet-4-6'),
+        'model' => env('ANTHROPIC_MODEL', 'claude-sonnet-5'),
         // A term calendar can hold thirty items; the response needs room.
         'max_tokens' => (int) env('ANTHROPIC_MAX_TOKENS', 16000),
     ],

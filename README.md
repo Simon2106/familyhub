@@ -421,9 +421,18 @@ answered 200 and ignored, because a non-2xx would make Postmark retry it forever
 ### Anthropic
 
 `ANTHROPIC_API_KEY` is required for capture; without it captures are stored but
-never read. `ANTHROPIC_MODEL` defaults to `claude-sonnet-4-6` as the brief
-specifies — `claude-sonnet-5` and `claude-opus-5` are current and read term
-calendars more reliably, and it is a one-line change.
+never read.
+
+`ANTHROPIC_MODEL` defaults to **`claude-sonnet-5`**. Swap in `claude-opus-5` if a
+particular school's newsletters prove hard to read, or `claude-haiku-4-5` to cut
+cost at some accuracy.
+
+Current models think adaptively by default, and that spend comes out of the same
+`ANTHROPIC_MAX_TOKENS` budget as the answer — so a very long term calendar can be
+cut off mid-answer. That is reported as "the answer ran past the token budget"
+with the current value, rather than as a confusing JSON error. Raise
+`ANTHROPIC_MAX_TOKENS` (default 16000) if you see it. Sampling parameters are not
+sent: current models reject `temperature` and `top_p` outright.
 
 ### Home Assistant — *Phase 6*
 
