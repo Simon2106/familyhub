@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Exceptions\HouseholdNotProvisioned;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -139,6 +140,43 @@ class Household extends Model
             'mirror_deadline_tasks' => $on,
             'mirror_calendar_id' => $calendarId,
         ]);
+    }
+
+    /**
+     * Which meals the household plans.
+     *
+     * Dinner only by default: most families plan one meal a day, and a grid
+     * with three empty rows per day looks like work nobody has done rather
+     * than a plan.
+     *
+     * @return list<string>
+     */
+    public function mealSlots(): array
+    {
+        $slots = $this->settings['meal_slots'] ?? null;
+
+        if (! is_array($slots) || $slots === []) {
+            return Meal::DEFAULT_SLOTS;
+        }
+
+        // Kept in meal order however they were stored, so the grid never shows
+        // dinner above breakfast.
+        return array_values(array_intersect(Meal::SLOTS, $slots));
+    }
+
+    /** @param list<string> $slots */
+    public function setMealSlots(array $slots): void
+    {
+        $slots = array_values(array_intersect(Meal::SLOTS, $slots));
+
+        // Dinner is the floor: a plan with no rows at all is not a plan.
+        $this->putSettings(['meal_slots' => $slots ?: Meal::DEFAULT_SLOTS]);
+    }
+
+    /** Monday, because the wall calendar and the paper planner both start there. */
+    public function weekStart(?CarbonImmutable $from = null): CarbonImmutable
+    {
+        return ($from ?? $this->todayLocal())->startOfWeek(CarbonInterface::MONDAY);
     }
 
     /** @param array<string, mixed> $values */

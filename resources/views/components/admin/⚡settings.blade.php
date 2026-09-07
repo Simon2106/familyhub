@@ -21,6 +21,9 @@ new #[Layout('layouts::app')] class extends Component
 
     public bool $mirrorDeadlines = false;
 
+    /** @var list<string> */
+    public array $mealSlots = ['dinner'];
+
     public string $mirrorCalendarId = '';
 
     /** Member being edited, or null when the form is closed. */
@@ -46,6 +49,7 @@ new #[Layout('layouts::app')] class extends Component
         $this->todoLeadDays = $household->todoLeadDays();
         $this->mirrorDeadlines = (bool) ($household->settings['mirror_deadline_tasks'] ?? false);
         $this->mirrorCalendarId = (string) ($household->settings['mirror_calendar_id'] ?? '');
+        $this->mealSlots = $household->mealSlots();
     }
 
     #[Computed]
@@ -113,6 +117,7 @@ new #[Layout('layouts::app')] class extends Component
             $this->mirrorDeadlines,
             $this->mirrorCalendarId !== '' ? (int) $this->mirrorCalendarId : null,
         );
+        $household->setMealSlots($this->mealSlots);
 
         $this->dispatch('saved', message: 'Household saved.');
     }
@@ -295,6 +300,23 @@ new #[Layout('layouts::app')] class extends Component
                     </label>
                 @endif
             @endif
+
+            {{-- Dinner is not offered as a choice: a meal planner with no rows
+                 is not a planner, and every household plans dinner. --}}
+            <div class="mt-3">
+                <span class="block text-sm font-medium">Meals to plan</span>
+                <span class="block text-sm text-slate-500 dark:text-slate-400">
+                    Dinner is always shown. Breakfast and lunch appear beside it on the Meals tab.
+                </span>
+                <div class="mt-2 flex flex-wrap gap-4">
+                    @foreach (['breakfast' => 'Breakfast', 'lunch' => 'Lunch'] as $slot => $label)
+                        <label class="flex touch-target items-center gap-2">
+                            <input type="checkbox" wire:model="mealSlots" value="{{ $slot }}" class="size-5 rounded">
+                            <span class="text-sm font-medium">{{ $label }}</span>
+                        </label>
+                    @endforeach
+                </div>
+            </div>
 
             <button type="button" wire:click="saveHousehold"
                     class="mt-3 w-full touch-target rounded-xl bg-blue-600 font-semibold text-white">

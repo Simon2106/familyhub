@@ -177,6 +177,28 @@ new #[Layout('layouts::app')] class extends Component
             @endif
         </a>
 
+        @php
+            $tonight = \App\Models\Meal::where('household_id', $this->household()->id)
+                ->where('slot', 'dinner')
+                ->where('on', $this->household()->todayLocal()->toDateString())
+                ->first();
+        @endphp
+
+        <a href="{{ route('meals') }}" wire:navigate
+           class="mt-3 flex touch-target items-center gap-3 rounded-2xl bg-white p-3 dark:bg-slate-900">
+            <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400">
+                <svg class="size-5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M6 3v9a3 3 0 0 0 6 0V3M9 12v9M17 3c-1.5 2-2 4-2 6s.5 3 2 3 2-1 2-3-.5-4-2-6zm0 9v9" />
+                </svg>
+            </span>
+            <span class="min-w-0 flex-1">
+                <span class="block font-medium">Meals</span>
+                <span class="block truncate text-sm text-slate-500 dark:text-slate-400">
+                    {{ $tonight ? 'Tonight: '.$tonight->title : 'Nothing planned for tonight' }}
+                </span>
+            </span>
+        </a>
+
         @php $recipeCount = \App\Models\Recipe::where('household_id', $this->household()->id)->ready()->count(); @endphp
 
         <a href="{{ route('recipes') }}" wire:navigate

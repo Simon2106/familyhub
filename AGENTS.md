@@ -83,6 +83,12 @@ conventions. The points most easily got wrong:
 - **Compare due dates as dates.** Household midnight is 23:00 UTC the previous
   day for half the year, so subtracting a UTC-parsed date column from it is off
   by one. `ChecklistItem::daysUntilDue()` reduces both sides to `Y-m-d` first.
+- **Livewire owns some names on the component, and shadowing one fails
+  silently.** A `#[Computed] slots()` is swallowed by Livewire 4's own slots
+  feature: the property reads as an empty collection, every write guarded on it
+  no-ops, and nothing throws. `ComponentNamingTest` checks a deny-list as well
+  as property/method collisions within the component. Add new components to its
+  data provider.
 - Livewire `#[Computed]` only caches on **property** access (`$this->days`).
   Calling `$this->days()` re-runs the method, which is an easy way to
   reintroduce an N+1 in the wall display.

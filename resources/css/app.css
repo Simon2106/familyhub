@@ -72,6 +72,29 @@
     }
 
     /*
+     * While a meal is lifted, nothing else may move. Without this the grid
+     * scrolls under the finger that is carrying a meal across it, and the drop
+     * lands on whatever slid into place — which is never the intended day.
+     */
+    body.dragging-meal {
+        touch-action: none;
+        user-select: none;
+    }
+
+    body.dragging-meal .pane-scroll {
+        overflow: hidden;
+    }
+
+    /* The meal riding under the finger. Pointer-transparent, or it would be
+       the element found under every hit test. */
+    .drag-ghost {
+        position: fixed;
+        z-index: 60;
+        pointer-events: none;
+        transform: translate(-50%, -50%) rotate(-2deg);
+    }
+
+    /*
      * A modal layer pinned to the *visual* viewport rather than the layout
      * viewport. On iOS the on-screen keyboard shrinks the visual viewport
      * without moving the layout viewport, so a plainly centred dialog ends up

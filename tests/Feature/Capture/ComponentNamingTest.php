@@ -31,7 +31,22 @@ class ComponentNamingTest extends TestCase
             ['phone.event-editor'],
             ['admin.calendars'],
             ['admin.places'],
+            ['recipes.box'],
+            ['meals.plan'],
         ];
+    }
+
+    /**
+     * Names Livewire itself owns on the component.
+     *
+     * `slots` is here because it cost an afternoon: Livewire 4 has a slots
+     * feature, so a #[Computed] slots() is shadowed by an empty collection.
+     * Every write guarded on it then failed silently — no exception, no
+     * validation error, simply nothing saved.
+     */
+    public static function reserved(): array
+    {
+        return [['slots'], ['id'], ['props'], ['view'], ['redirect'], ['dispatch'], ['skipRender']];
     }
 
     #[Test]
@@ -54,6 +69,29 @@ class ComponentNamingTest extends TestCase
         $this->assertTrue(
             $clashes->isEmpty(),
             "{$name} has method(s) shadowed by a property of the same name: ".$clashes->implode(', ')
+        );
+    }
+
+    #[Test]
+    #[DataProvider('components')]
+    public function no_member_collides_with_a_name_livewire_owns(string $name): void
+    {
+        Household::factory()->create();
+
+        $reflection = new ReflectionClass(Livewire::test($name)->instance());
+        $reserved = collect(self::reserved())->flatten();
+
+        $declared = collect($reflection->getMethods(\ReflectionMethod::IS_PUBLIC))
+            ->merge($reflection->getProperties(\ReflectionProperty::IS_PUBLIC))
+            ->reject(fn ($member) => $member->class !== $reflection->getName())
+            ->map(fn ($member) => $member->getName());
+
+        $clashes = $declared->intersect($reserved)->values();
+
+        $this->assertTrue(
+            $clashes->isEmpty(),
+            "{$name} declares ".$clashes->implode(', ').', which Livewire owns. '
+            .'It will be shadowed by the framework and fail silently — rename it.'
         );
     }
 }

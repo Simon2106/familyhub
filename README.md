@@ -24,7 +24,7 @@ Access) and on family phones.
 | **2** | iCloud CalDAV sync, two-way | **Done** |
 | **3** | Capture — inbound email, photo/PDF/URL, Claude extraction, review queue | **Done** |
 | 4 | Kids — chores, routines, rewards | Not started |
-| 5 | Meals & shopping | **Recipe box done**, meal plan next |
+| 5 | Meals & shopping | **Recipe box and meal plan done**, shopping list next |
 | 6 | Home Assistant, weather, bins, AI assistant | Not started |
 
 ### What Phase 1 ships
@@ -262,6 +262,36 @@ merged into a shopping list and read in a supermarket aisle. `RecipeParser`
 drops nonsense quantities and rows with no ingredient in them; the fake reader
 used in tests runs through that same parser, so a test can never assert on data
 production would have thrown away.
+
+### The meal plan
+
+A week at a time, Monday to Sunday, laid out like the paper planner it replaces:
+one row per day, dinner as the main cell. Breakfast and lunch sit beside it only
+when switched on in `/admin` — most households plan one meal a day, and three
+empty rows per day look like work nobody has done rather than a plan.
+
+**Free text is first-class.** "Leftovers", "out" and "Nanny's" are meals. The
+cell editor opens with the text field focused and the recipe picker underneath,
+in that order, because most meals are typed rather than chosen. One meal per
+cell, like one square on paper: writing a second replaces the first.
+
+- **Tap a cell** to type a meal or pick one from Favourites / All recipes.
+- **Press and hold, then drag** to move a meal to another day, or to pull an
+  idea off the **Unplanned ideas** shelf onto a day. The shelf holds saved
+  recipes that have no day yet.
+- **Copy last week** fills the week from the one before without overwriting
+  anything already planned. **Clear week** empties this week only.
+- The wall's home view says **"Tonight: …"** beside the date, and every day row
+  in This week carries its dinner. `/app` says it too.
+
+#### Why press-and-hold, not HTML5 drag
+
+HTML5 drag-and-drop does not work in iOS Safari, and the wall is an iPad, so
+dragging is built on pointer events (`resources/js/dragboard.js`, covered by
+`tests/js/dragboard.test.mjs`). The hold is not decorative: a drag that starts
+on `pointerdown` makes the grid impossible to scroll, because every attempt to
+scroll picks up a meal instead. A finger that wanders more than 10px before the
+350ms hold completes is scrolling, and the pickup is cancelled.
 
 ### Member attribution
 

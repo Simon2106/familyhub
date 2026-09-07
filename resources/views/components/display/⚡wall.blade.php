@@ -4,6 +4,7 @@ use App\Models\CaptureItem;
 use App\Models\ChecklistItem;
 use App\Models\Event;
 use App\Models\Household;
+use App\Models\Meal;
 use App\Services\PhotoLibrary;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -193,6 +194,31 @@ new #[Layout('layouts::display')] class extends Component
     public function today(): CarbonImmutable
     {
         return $this->household()->todayLocal();
+    }
+
+    /**
+     * The week's dinners, keyed by date, for the home view.
+     *
+     * Dinner only: it is the meal a household actually plans, and the one
+     * worth a line on a screen read from across the kitchen.
+     *
+     * @return Collection<string, Meal>
+     */
+    #[Computed]
+    public function dinners(): Collection
+    {
+        return Meal::query()
+            ->where('household_id', $this->household()->id)
+            ->where('slot', 'dinner')
+            ->between($this->weekStart->toDateString(), $this->weekStart->addDays(self::HORIZON)->toDateString())
+            ->get()
+            ->keyBy(fn (Meal $meal) => $meal->on->toDateString());
+    }
+
+    #[On('meals-changed')]
+    public function refreshDinners(): void
+    {
+        unset($this->dinners);
     }
 
     /** Everything from tomorrow onwards, as a flat list for the "coming up" rail. */
@@ -389,6 +415,18 @@ new #[Layout('layouts::display')] class extends Component
                 <p class="text-sm text-slate-500 dark:text-slate-400"
                    x-text="selected && new Date(selected + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })"></p>
             </div>
+
+            {{-- The question actually asked in a kitchen, answered without
+                 anyone having to change tab. --}}
+            @php $tonight = $this->dinners[$this->todayDate] ?? null; @endphp
+
+            @if ($tonight)
+                <button type="button" x-on:click="tab = 'meals'"
+                        class="hidden min-w-0 items-baseline gap-2 rounded-xl px-3 py-1 text-left sm:flex">
+                    <span class="text-sm font-semibold tracking-wide text-slate-400 uppercase">Tonight</span>
+                    <span class="truncate text-lg font-semibold">{{ $tonight->title }}</span>
+                </button>
+            @endif
         </div>
 
         <div class="text-right">
@@ -523,6 +561,13 @@ new #[Layout('layouts::display')] class extends Component
                                         {{ $day['is_today'] ? 'Today' : $day['carbon']->format('l') }}
                                     </span>
                                     <span class="text-sm text-slate-400">{{ $day['carbon']->format('j M') }}</span>
+
+                                    @php $dinner = $this->dinners[$day['date']] ?? null; @endphp
+                                    @if ($dinner)
+                                        <span class="ml-auto min-w-0 truncate text-sm font-medium text-slate-500 dark:text-slate-400">
+                                            {{ $dinner->title }}
+                                        </span>
+                                    @endif
                                 </button>
 
                                 @unless ($dayIsEmpty)
@@ -792,8 +837,13 @@ new #[Layout('layouts::display')] class extends Component
         </div>
 
         {{-- ----------------------------- MEALS --------------------------- --}}
-        <div x-show="tab === 'meals'" x-cloak class="h-full min-h-0">
-            <livewire:recipes.box />
+        <div x-show="tab === 'meals'" x-cloak class="grid h-full min-h-0 gap-4 xl:grid-cols-5">
+            <div class="flex min-h-0 flex-col xl:col-span-3">
+                <livewire:meals.plan />
+            </div>
+            <div class="min-h-0 xl:col-span-2">
+                <livewire:recipes.box />
+            </div>
         </div>
 
         {{-- ------------------- PLACEHOLDERS FOR LATER PHASES ------------ --}}

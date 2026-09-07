@@ -7,6 +7,7 @@
  */
 
 import { isDarkNow } from './dark-mode';
+import { createDragBoard } from './dragboard';
 import { createUpdater } from './updater';
 
 /* -------------------------------------------------------------------------
@@ -147,6 +148,60 @@ if (versionMeta) {
 
     window.familyhubUpdater = updater;
 }
+
+/* -------------------------------------------------------------------------
+ * Meal plan drag-and-drop
+ *
+ * Registered as an Alpine component rather than wired up per element: the meal
+ * grid appears on the wall and on phones, and both need identical behaviour.
+ * Livewire owns Alpine, so this waits for it rather than starting it.
+ * ---------------------------------------------------------------------- */
+
+document.addEventListener('alpine:init', () => {
+    window.Alpine.data('mealBoard', () => ({
+        board: null,
+        drag: { dragging: null, x: 0, y: 0, over: null },
+
+        init() {
+            this.board = createDragBoard({
+                onDrop: (payload, target) => {
+                    const [on, slot] = target.split('|');
+
+                    // Two kinds of thing get dragged onto a day: a meal
+                    // already on the grid, which moves, and an idea off the
+                    // shelf, which is placed.
+                    const idea = String(payload.id).match(/^recipe:(\d+)$/);
+
+                    idea
+                        ? this.$wire.place(Number(idea[1]), on, slot)
+                        : this.$wire.move(payload.id, on, slot);
+                },
+                onChange: (state) => {
+                    this.drag = state;
+                    // Lifting a meal must not also scroll the grid under it.
+                    document.body.classList.toggle('dragging-meal', state.dragging !== null);
+                },
+            });
+        },
+
+        lift(event, id, from, title) {
+            // Mouse right-clicks and multi-touch are not drags.
+            if (event.button > 0 || !event.isPrimary) return;
+
+            this.board.down(event, { id, from, title });
+        },
+
+        track(event) {
+            if (this.board.move(event)) event.preventDefault();
+        },
+
+        release(event) {
+            // Swallow the click that follows a real drag, or the cell editor
+            // opens on top of the move that just happened.
+            if (this.board.up(event)) event.preventDefault();
+        },
+    }));
+});
 
 /* -------------------------------------------------------------------------
  * Service worker (offline shell only)
