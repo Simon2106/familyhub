@@ -34,6 +34,9 @@ class ComponentNamingTest extends TestCase
             ['recipes.box'],
             ['meals.plan'],
             ['meals.shopping'],
+            ['kids.my-day'],
+            ['kids.pin'],
+            ['admin.chores'],
         ];
     }
 

@@ -84,6 +84,15 @@ new #[Layout('layouts::app')] class extends Component
             : trans_choice('{1}:count place|[2,*]:count places', $places, ['count' => $places]).' recognised in event titles.';
     }
 
+    public function choresSummary(): string
+    {
+        $chores = \App\Models\Chore::where('household_id', Household::current()->id)->active()->count();
+
+        return $chores === 0
+            ? 'Set up the jobs each child does, and what they are worth.'
+            : trans_choice('{1}:count chore|[2,*]:count chores', $chores, ['count' => $chores]).' running.';
+    }
+
     public function calendarSummary(): string
     {
         $accounts = Household::current()->calendarAccounts()->withCount('calendars')->get();
@@ -418,6 +427,22 @@ new #[Layout('layouts::app')] class extends Component
                     </p>
                 </div>
                 <a href="{{ route('admin.places') }}" wire:navigate
+                   class="grid touch-target shrink-0 place-items-center rounded-xl px-4 font-semibold text-blue-600 dark:text-blue-400">
+                    Manage
+                </a>
+            </div>
+        </section>
+
+        {{-- Kids --}}
+        <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
+            <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <h2 class="font-semibold">Chores</h2>
+                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        {{ $this->choresSummary() }}
+                    </p>
+                </div>
+                <a href="{{ route('admin.chores') }}" wire:navigate
                    class="grid touch-target shrink-0 place-items-center rounded-xl px-4 font-semibold text-blue-600 dark:text-blue-400">
                     Manage
                 </a>

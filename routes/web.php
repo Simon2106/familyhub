@@ -132,4 +132,5 @@ Route::middleware('auth')->group(function () {
     Route::livewire('/admin', 'admin.settings')->name('admin');
     Route::livewire('/admin/calendars', 'admin.calendars')->name('admin.calendars');
     Route::livewire('/admin/places', 'admin.places')->name('admin.places');
+    Route::livewire('/admin/chores', 'admin.chores')->name('admin.chores');
 });

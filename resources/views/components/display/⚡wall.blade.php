@@ -221,6 +221,30 @@ new #[Layout('layouts::display')] class extends Component
         unset($this->dinners);
     }
 
+    /**
+     * Chores due across the shown fortnight, by date then member.
+     *
+     * Reading this writes nothing: a chore nobody has touched has no row, and
+     * "not done yet" is exactly the state a child most needs to see.
+     *
+     * @return Collection<string, Collection<int|string, Collection<int, \App\Services\Chores\ChoreSlot>>>
+     */
+    #[Computed]
+    public function choresByDate(): Collection
+    {
+        return app(\App\Services\Chores\ChoreBoard::class)->forRange(
+            $this->household(),
+            $this->weekStart,
+            $this->weekStart->addDays(self::HORIZON),
+        );
+    }
+
+    #[On('chores-changed')]
+    public function refreshChores(): void
+    {
+        unset($this->choresByDate);
+    }
+
     /** Everything from tomorrow onwards, as a flat list for the "coming up" rail. */
     #[Computed]
     public function upcoming(): Collection
@@ -641,7 +665,26 @@ new #[Layout('layouts::display')] class extends Component
 
                                 <div class="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-slate-900">
                                     <div class="flex items-center gap-2 px-3 py-2" style="background-color: {{ $member->colour }}1a;">
-                                        <span class="size-3 shrink-0 rounded-full" style="background-color: {{ $member->colour }};"></span>
+                                        {{-- A child's avatar is the door into
+                                             their own day. An adult's column
+                                             header is just a heading. --}}
+                                        @if ($member->is_child)
+                                            <button
+                                                type="button"
+                                                wire:click="$dispatch('show-my-day', { member: {{ $member->id }}, date: '{{ $day['date'] }}' })"
+                                                class="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full"
+                                                aria-label="{{ $member->name }}'s day"
+                                            >
+                                                @if ($member->avatarUrl())
+                                                    <img src="{{ $member->avatarUrl() }}" alt="" class="size-9 rounded-full object-cover">
+                                                @else
+                                                    <span class="grid size-9 place-items-center rounded-full text-sm font-bold text-white"
+                                                          style="background-color: {{ $member->colour }};">{{ $member->initials() }}</span>
+                                                @endif
+                                            </button>
+                                        @else
+                                            <span class="size-3 shrink-0 rounded-full" style="background-color: {{ $member->colour }};"></span>
+                                        @endif
                                         <span class="truncate text-base font-semibold">{{ $member->name }}</span>
                                         @if ($memberEvents->isNotEmpty())
                                             <span class="ml-auto text-sm text-slate-400">{{ $memberEvents->count() }}</span>
@@ -666,10 +709,36 @@ new #[Layout('layouts::display')] class extends Component
                                                 @endif
                                             </div>
                                         @empty
-                                            @if ($memberTodos->isEmpty())
+                                            @if ($memberTodos->isEmpty() && ($this->choresByDate[$day['date']][$member->id] ?? collect())->isEmpty())
                                                 <p class="px-1 py-4 text-sm text-slate-400 dark:text-slate-600">Nothing on</p>
                                             @endif
                                         @endforelse
+
+                                        {{-- Today's chores. Tapping the header
+                                             opens the big-tap view; these are
+                                             here so a glance at the column
+                                             shows what is still outstanding. --}}
+                                        @php $memberChores = $this->choresByDate[$day['date']][$member->id] ?? collect(); @endphp
+
+                                        @foreach ($memberChores as $slot)
+                                            <div class="flex items-center gap-2 rounded-xl px-2 py-1.5 {{ $slot->isDone() ? 'opacity-50' : '' }}"
+                                                 style="background-color: {{ $member->colour }}0f;">
+                                                <span class="grid size-5 shrink-0 place-items-center rounded-md border-2 {{ $slot->isDone() ? 'border-transparent text-white' : 'border-slate-300 dark:border-slate-600' }}"
+                                                      style="{{ $slot->isDone() ? 'background-color: '.$member->colour.';' : '' }}">
+                                                    @if ($slot->isDone())
+                                                        <svg class="size-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L20 7" /></svg>
+                                                    @endif
+                                                </span>
+                                                <span class="min-w-0 flex-1 truncate text-sm {{ $slot->isDone() ? 'line-through' : 'font-medium' }}">
+                                                    @if ($slot->chore->icon) {{ $slot->chore->icon }} @endif{{ $slot->chore->title }}
+                                                </span>
+                                                @if ($slot->isAwaitingApproval())
+                                                    <span class="shrink-0 rounded-full bg-amber-100 px-1.5 text-[0.65rem] font-bold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">check</span>
+                                                @elseif ($slot->points() > 0)
+                                                    <span class="shrink-0 text-xs font-bold tabular-nums text-slate-400">{{ $slot->points() }}</span>
+                                                @endif
+                                            </div>
+                                        @endforeach
 
                                         {{-- To-dos due this day, below the events and
                                              visibly a different kind of thing. --}}
@@ -856,6 +925,10 @@ new #[Layout('layouts::display')] class extends Component
             </div>
         @endforeach
     </div>
+
+    {{-- A child's day, and the keypad that guards the two things it should. --}}
+    <livewire:kids.my-day />
+    <livewire:kids.pin />
 
     {{-- ============================ TAB BAR ============================= --}}
     <nav data-tab-bar class="grid shrink-0 grid-cols-5 gap-1 border-t border-slate-200 px-4 py-1.5 dark:border-slate-800">

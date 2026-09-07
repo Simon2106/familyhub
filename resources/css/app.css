@@ -85,6 +85,29 @@
         overflow: hidden;
     }
 
+    /*
+     * The moment a chore is ticked.
+     *
+     * Short and springy rather than long and smooth: the whole scheme runs on
+     * this feeling like something happened. Respects a reduced-motion setting,
+     * where the colour change alone carries it.
+     */
+    .chore-just-done {
+        animation: chore-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes chore-pop {
+        0% { transform: scale(1); }
+        40% { transform: scale(1.04); }
+        100% { transform: scale(1); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .chore-just-done {
+            animation: none;
+        }
+    }
+
     /* The meal riding under the finger. Pointer-transparent, or it would be
        the element found under every hit test. */
     .drag-ghost {
