@@ -138,25 +138,44 @@ class WallDisplayTest extends TestCase
     #[Test]
     public function loading_the_display_does_not_issue_a_query_per_event(): void
     {
+        // Measured by growth, not against a fixed budget: a threshold has to be
+        // raised every time the display gains a feature, and raising it is
+        // indistinguishable from letting an N+1 through.
         $members = Member::factory()->count(3)->create(['household_id' => $this->household->id]);
+        $calendars = $members->map(fn (Member $m) => $this->calendarFor($m));
 
-        foreach ($members as $member) {
-            $calendar = $this->calendarFor($member);
+        $addEvents = function (int $each) use ($calendars) {
+            foreach ($calendars as $calendar) {
+                Event::factory()->count($each)->create(['calendar_id' => $calendar->id]);
+            }
+        };
 
-            Event::factory()->count(10)->create(['calendar_id' => $calendar->id]);
-        }
+        $measure = function (): int {
+            DB::enableQueryLog();
+            DB::flushQueryLog();
+            Livewire::test('display.wall');
+            $count = count(DB::getQueryLog());
+            DB::disableQueryLog();
 
-        DB::enableQueryLog();
-        Livewire::test('display.wall');
-        $queries = count(DB::getQueryLog());
-        DB::disableQueryLog();
+            return $count;
+        };
 
-        // Household, members, events, calendars, members-for-calendars, checklists,
-        // checklist items. A per-event or per-calendar lookup would blow past this.
-        $this->assertLessThan(
-            15,
-            $queries,
-            "Expected a handful of queries for 30 events, got {$queries} — likely an N+1.",
+        $addEvents(2);
+
+        // Warm-up: the first render creates the household's home checklist, so
+        // it is not comparable with later ones.
+        $measure();
+
+        $withFew = $measure();
+
+        $addEvents(20);
+
+        $withMany = $measure();
+
+        $this->assertSame(
+            $withFew,
+            $withMany,
+            "Query count went from {$withFew} to {$withMany} as events grew tenfold — that is an N+1.",
         );
     }
 
