@@ -199,6 +199,32 @@ new #[Layout('layouts::app')] class extends Component
             </span>
         </a>
 
+        @php
+            $shopping = \App\Models\Checklist::where('household_id', $this->household()->id)
+                ->where('type', 'shopping')
+                ->withCount(['items as outstanding_count' => fn ($q) => $q->where('is_done', false)])
+                ->first();
+        @endphp
+
+        @if ($shopping)
+            <a href="{{ route('shopping') }}" wire:navigate
+               class="mt-3 flex touch-target items-center gap-3 rounded-2xl bg-white p-3 dark:bg-slate-900">
+                <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
+                    <svg class="size-5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M6 6h15l-1.5 9h-12zM6 6 5 3H2M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm8 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" />
+                    </svg>
+                </span>
+                <span class="min-w-0 flex-1">
+                    <span class="block font-medium">Shopping</span>
+                    <span class="block text-sm text-slate-500 dark:text-slate-400">
+                        {{ $shopping->outstanding_count === 0
+                            ? 'Nothing left to buy'
+                            : trans_choice('{1}:count thing to buy|[2,*]:count things to buy', $shopping->outstanding_count, ['count' => $shopping->outstanding_count]) }}
+                    </span>
+                </span>
+            </a>
+        @endif
+
         @php $recipeCount = \App\Models\Recipe::where('household_id', $this->household()->id)->ready()->count(); @endphp
 
         <a href="{{ route('recipes') }}" wire:navigate

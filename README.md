@@ -24,7 +24,7 @@ Access) and on family phones.
 | **2** | iCloud CalDAV sync, two-way | **Done** |
 | **3** | Capture — inbound email, photo/PDF/URL, Claude extraction, review queue | **Done** |
 | 4 | Kids — chores, routines, rewards | Not started |
-| 5 | Meals & shopping | **Recipe box and meal plan done**, shopping list next |
+| **5** | Meals & shopping — recipe box, meal plan, shopping list | **Done** |
 | 6 | Home Assistant, weather, bins, AI assistant | Not started |
 
 ### What Phase 1 ships
@@ -292,6 +292,33 @@ dragging is built on pointer events (`resources/js/dragboard.js`, covered by
 on `pointerdown` makes the grid impossible to scroll, because every attempt to
 scroll picks up a meal instead. A finger that wanders more than 10px before the
 350ms hold completes is scrolling, and the pickup is cancelled.
+
+### The shopping list
+
+**Shopping list** on the meal plan merges the week's recipes into the household
+shopping list. It is additive and safe to run again: plan two more meals on
+Thursday, press it again, and only the new ingredients appear.
+
+Three rules, and the interesting part is where they disagree:
+
+- **Merged by ingredient *and* unit.** 200g of chorizo and two tins of it are
+  not four hundred of anything, so they stay as two lines — they are two
+  different products on two different shelves.
+- **Nothing already on the list is added again**, matched on the ingredient name
+  alone and including things already ticked off. Someone who wrote
+  "Onions — a bag" by hand has dealt with onions; a list that argues with them
+  is worse than one that trusts them.
+- The "already there" set is **snapshotted before the run**, not updated during
+  it. That is what lets both chorizo lines in and still adds neither on a second
+  run.
+
+**Free-text meals are skipped and counted.** A week of "leftovers" and "out"
+produces an empty list, so the toast says *"None of this week's meals have a
+recipe attached"* rather than leaving it looking broken.
+
+`/app/shopping` is the supermarket view: the shopping list and nothing else,
+because standing in an aisle with one hand on a trolley is the least forgiving
+place this app gets used.
 
 ### Member attribution
 

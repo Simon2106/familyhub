@@ -33,6 +33,7 @@ class ComponentNamingTest extends TestCase
             ['admin.places'],
             ['recipes.box'],
             ['meals.plan'],
+            ['meals.shopping'],
         ];
     }
 

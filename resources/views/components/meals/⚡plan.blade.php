@@ -3,6 +3,7 @@
 use App\Models\Household;
 use App\Models\Meal;
 use App\Models\Recipe;
+use App\Services\Meals\ShoppingListGenerator;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -253,6 +254,25 @@ new class extends Component
             : 'Copied last week.');
     }
 
+    /**
+     * Merge this week's recipes into the shopping list.
+     *
+     * Deliberately additive and repeatable: it can be run again after a couple
+     * more meals are planned without producing a second onion.
+     */
+    public function generateShoppingList(): void
+    {
+        $result = app(ShoppingListGenerator::class)->generate(
+            $this->household(),
+            $this->weekStart->toDateString(),
+            $this->weekStart->addDays(6)->toDateString(),
+        );
+
+        // The Lists tab may be on screen beside this on the wall.
+        $this->dispatch('todos-changed');
+        $this->dispatch('saved', message: $result->sentence());
+    }
+
     public function clearWeek(): void
     {
         Meal::query()
@@ -342,6 +362,11 @@ new class extends Component
             </button>
         </div>
 
+        <button type="button" wire:click="generateShoppingList"
+                class="touch-target rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white">
+            <span wire:loading.remove wire:target="generateShoppingList">Shopping list</span>
+            <span wire:loading wire:target="generateShoppingList">Adding…</span>
+        </button>
         <button type="button" wire:click="copyLastWeek"
                 class="touch-target rounded-xl px-3 text-sm font-semibold text-blue-600 dark:text-blue-400">
             Copy last week

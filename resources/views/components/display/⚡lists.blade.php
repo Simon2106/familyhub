@@ -14,11 +14,25 @@ use Livewire\Component;
  */
 new class extends Component
 {
+    /**
+     * Narrow to one kind of list.
+     *
+     * Used by the supermarket view, which wants the shopping list and nothing
+     * else on screen; empty shows everything, as the wall's Lists tab does.
+     */
+    public string $onlyType = '';
+
+    public function mount(string $only = ''): void
+    {
+        $this->onlyType = $only;
+    }
+
     #[Computed]
     public function checklists(): Collection
     {
         return Household::current()
             ->checklists()
+            ->when($this->onlyType !== '', fn ($q) => $q->where('type', $this->onlyType))
             ->with(['items' => fn ($q) => $q->with(['member', 'event'])])
             ->get();
     }
