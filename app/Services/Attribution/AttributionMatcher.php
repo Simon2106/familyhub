@@ -15,6 +15,12 @@ use App\Models\Place;
  * Matching is case-insensitive and anchored to word boundaries, so "Jo" does
  * not match "Jones" — an alias only counts when it stands as its own word or
  * phrase. Multi-word aliases work the same way ("Ice and a Slice").
+ *
+ * Names win outright. If the text names anybody, the result is exactly those
+ * people and places are not consulted at all — naming someone is an explicit
+ * statement about who the event is for, and a place is only a default for when
+ * nobody said. So "JW Ice WFH" is Jenna alone even though Ice would otherwise
+ * pull in Simon, while "Ice offsite" falls through to Simon.
  */
 final class AttributionMatcher
 {
@@ -24,17 +30,24 @@ final class AttributionMatcher
 
     public const REASON_CALENDAR = 'calendar';
 
-    /** @param list<array{pattern: string, member_id: int, reason: string}> $rules */
-    private function __construct(private readonly array $rules) {}
+    /**
+     * @param  list<array{pattern: string, member_id: int}>  $aliasRules
+     * @param  list<array{pattern: string, member_id: int}>  $placeRules
+     */
+    private function __construct(
+        private readonly array $aliasRules,
+        private readonly array $placeRules,
+    ) {}
 
     public static function forHousehold(Household $household): self
     {
-        $rules = [];
+        $aliasRules = [];
+        $placeRules = [];
 
         foreach ($household->members()->with('aliases')->get() as $member) {
             foreach ($member->matchTerms() as $term) {
                 if ($pattern = self::pattern($term)) {
-                    $rules[] = ['pattern' => $pattern, 'member_id' => $member->id, 'reason' => self::REASON_ALIAS];
+                    $aliasRules[] = ['pattern' => $pattern, 'member_id' => $member->id];
                 }
             }
         }
@@ -50,18 +63,12 @@ final class AttributionMatcher
                 // Only members whose "include me automatically" is on. Someone
                 // opted out of a shared workplace is added by name or not at all.
                 foreach ($place->automaticMembers as $member) {
-                    $rules[] = ['pattern' => $pattern, 'member_id' => $member->id, 'reason' => self::REASON_PLACE];
+                    $placeRules[] = ['pattern' => $pattern, 'member_id' => $member->id];
                 }
             }
         }
 
-        return new self($rules);
-    }
-
-    /** @param list<array{pattern: string, member_id: int, reason: string}> $rules */
-    public static function fromRules(array $rules): self
-    {
-        return new self($rules);
+        return new self($aliasRules, $placeRules);
     }
 
     /**
@@ -77,17 +84,26 @@ final class AttributionMatcher
             return [];
         }
 
+        // Names are decisive. Only when the text names nobody does a place get
+        // to speak for its members.
+        $byName = $this->evaluate($this->aliasRules, $haystack, self::REASON_ALIAS);
+
+        return $byName !== []
+            ? $byName
+            : $this->evaluate($this->placeRules, $haystack, self::REASON_PLACE);
+    }
+
+    /**
+     * @param  list<array{pattern: string, member_id: int}>  $rules
+     * @return array<int, string>
+     */
+    private function evaluate(array $rules, string $haystack, string $reason): array
+    {
         $matched = [];
 
-        foreach ($this->rules as $rule) {
-            if (preg_match($rule['pattern'], $haystack) !== 1) {
-                continue;
-            }
-
-            // A name beats a place: being named in the title is the stronger
-            // signal, and it is how someone opted out of a place gets added.
-            if (! isset($matched[$rule['member_id']]) || $rule['reason'] === self::REASON_ALIAS) {
-                $matched[$rule['member_id']] = $rule['reason'];
+        foreach ($rules as $rule) {
+            if (preg_match($rule['pattern'], $haystack) === 1) {
+                $matched[$rule['member_id']] = $reason;
             }
         }
 
@@ -96,7 +112,7 @@ final class AttributionMatcher
 
     public function isEmpty(): bool
     {
-        return $this->rules === [];
+        return $this->aliasRules === [] && $this->placeRules === [];
     }
 
     /**

@@ -29,8 +29,9 @@ conventions. The points most easily got wrong:
   connected at once. See `BRIEF.md` for the full amended brief.
 - **Member attribution** (`app/Services/Attribution/`) decides whose column an
   event lands in, by matching names, aliases and places against the title and
-  location. `AttributionMatcher` is compiled once per household and reused —
-  never build one per event. Events with `attribution = 'manual'` are off
+  location. **Names win outright**: if any name alias matches, places are not
+  consulted at all. `AttributionMatcher` is compiled once per household and
+  reused — never build one per event. Events with `attribution = 'manual'` are off
   limits: a person chose those by hand.
 - Livewire `#[Computed]` only caches on **property** access (`$this->days`).
   Calling `$this->days()` re-runs the method, which is an easy way to

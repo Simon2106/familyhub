@@ -128,27 +128,76 @@ class AttributionMatchingTest extends TestCase
     }
 
     #[Test]
-    public function a_name_alias_overrides_being_opted_out_of_a_place(): void
+    public function naming_someone_suppresses_the_place_default(): void
+    {
+        $simon = $this->member('Simon', ['SW']);
+        $jenna = $this->member('Jenna', ['JW']);
+
+        // Ice would pull Simon in on its own, but the title names Jenna, and a
+        // name is an explicit statement about who the event is for.
+        $this->place('Ice', 'work', ['IAAS'], [$simon->id => true, $jenna->id => false]);
+
+        $this->assertSame([$jenna->id => 'alias'], $this->matcher()->match('JW Ice WFH'));
+    }
+
+    #[Test]
+    public function a_place_speaks_only_when_nobody_is_named(): void
+    {
+        $simon = $this->member('Simon', ['SW']);
+        $this->member('Jenna', ['JW']);
+
+        $this->place('Ice', 'work', ['IAAS'], [$simon->id => true]);
+
+        $this->assertSame([$simon->id => 'place'], $this->matcher()->match('Ice offsite'));
+    }
+
+    #[Test]
+    public function every_named_person_is_included_and_the_place_still_stays_out(): void
     {
         $simon = $this->member('Simon', ['SW']);
         $jenna = $this->member('Jenna', ['JW']);
 
         $this->place('Ice', 'work', ['IAAS'], [$simon->id => true, $jenna->id => false]);
 
-        $matched = $this->matcher()->match('Ice Christmas party, JW coming too');
+        $matched = $this->matcher()->match('SW JW Ice party');
 
         $this->assertEqualsCanonicalizing([$simon->id, $jenna->id], array_keys($matched));
-        $this->assertSame('place', $matched[$simon->id]);
-        $this->assertSame('alias', $matched[$jenna->id]);
+        // Both are here by name, not because Ice spoke for Simon.
+        $this->assertSame(['alias', 'alias'], array_values($matched));
     }
 
     #[Test]
-    public function a_name_beats_a_place_as_the_recorded_reason(): void
+    public function naming_one_person_does_not_drag_in_the_places_other_members(): void
+    {
+        $simon = $this->member('Simon', ['SW']);
+        $jenna = $this->member('Jenna', ['JW']);
+
+        // Both are on Ice automatically this time.
+        $this->place('Ice', 'work', ['IAAS'], [$simon->id => true, $jenna->id => true]);
+
+        // Naming Jenna means Jenna, not "Jenna and everyone else at Ice".
+        $this->assertSame([$jenna->id => 'alias'], $this->matcher()->match('JW at the Ice offsite'));
+    }
+
+    #[Test]
+    public function a_name_match_is_recorded_as_such(): void
     {
         $simon = $this->member('Simon', ['SW']);
         $this->place('Ice', 'work', [], [$simon->id => true]);
 
         $this->assertSame([$simon->id => 'alias'], $this->matcher()->match('SW at Ice'));
+    }
+
+    #[Test]
+    public function a_name_matched_anywhere_suppresses_places_matched_in_the_location(): void
+    {
+        $simon = $this->member('Simon', ['SW']);
+        $sienna = $this->member('Sienna');
+
+        $this->place('Sandy Gate', 'school', ['SG'], [$sienna->id => true]);
+
+        // The location is Sienna's school, but the title says this is Simon's.
+        $this->assertSame([$simon->id => 'alias'], $this->matcher()->match('SW dropping off', 'Sandy Gate'));
     }
 
     #[Test]

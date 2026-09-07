@@ -70,6 +70,17 @@ Events are matched to family members by reading their titles and locations.
   Ice events go to Simon unless Jenna is also named.
 - Matching is case-insensitive and whole-word, so "Jo" does not match "Jones",
   and multi-word phrases like "Ice and a Slice" match as phrases.
+- **Names win outright.** If a title names anybody, the event goes to exactly
+  those people and places are not consulted — naming someone is an explicit
+  statement about who the event is for, while a place is only a default for when
+  nobody said:
+
+  | Title | Goes to | Why |
+  | --- | --- | --- |
+  | `JW Ice WFH` | Jenna | named, so Ice stays out |
+  | `Ice offsite` | Simon | nobody named, so Ice speaks for its automatic member |
+  | `SW JW Ice party` | Simon, Jenna | both named |
+
 - Events belong to **many** members: "SW + JW dentist" appears in both columns.
 - Assigning members by hand in the event editor **pins** them — later syncs
   leave that event alone until you hand it back with "Match from the title
@@ -80,6 +91,16 @@ Events are matched to family members by reading their titles and locations.
 Attribution runs on every sync and every save. After changing aliases or places
 it re-runs automatically, and there is a **Re-run attribution** button on the
 Calendars page.
+
+After a deploy that changes the matching rules, re-run it over existing events:
+
+```sh
+php artisan familyhub:attribute --dry-run   # shows what would move
+php artisan familyhub:attribute
+```
+
+Both leave hand-assigned events alone, and the plain run reports how many it
+skipped for that reason.
 
 ---
 
@@ -337,4 +358,5 @@ written to a calendar without a person accepting it.
 | `familyhub:seed-demo` | Seed the household from `.env` (`--fresh` wipes first, `--household-only` skips demo events) |
 | `familyhub:display-token` | Show the wall display pairing URL (`--new` rotates the token) |
 | `sync:calendars` | Sync connected iCloud accounts (`--force` full pass, `--account=` one account, `--now` inline) |
+| `familyhub:attribute` | Re-run member attribution over existing events (`--dry-run` to preview) |
 | `capture:process` | *Phase 3* |
