@@ -67,13 +67,17 @@ with an optional assignee shown as their colour dot.
 - Tap to tick. The tick is optimistic in Alpine and persisted by Livewire; the
   item lingers a few seconds so the tick registers, then fades off the panel.
 - Ticked items are findable under **Done** on the Lists tab, and can be
-  un-ticked from there.
+  un-ticked from there. They are kept for a configurable window (default 30
+  days, set in `/admin`) and then removed by a nightly `familyhub:prune-done`.
+  **Clear done** on the Done row empties it immediately.
 - A **dated** to-do also appears in its member's column on that day, below the
   events and marked as a task. Undated ones live only in the panel — pinning them
   to an arbitrary day would be a lie. To-dos with no member go to the Household
   column, which appears on any day that needs it.
 - The **+** on the panel opens a large-text quick add (title, optional due date,
-  optional member) sized for typing on the wall iPad.
+  optional member) as a centred dialog. It is pinned to the *visual* viewport,
+  so it clears the wall's tab bar and rides above the iOS on-screen keyboard
+  rather than hiding behind it.
 - On phones (`/app`) the same panel is editable — each row gets an edit control
   for changing the title, date, assignee, or deleting.
 
@@ -313,6 +317,7 @@ Google Calendar is deliberately not implemented; see the amendments in `BRIEF.md
 | --- | --- |
 | Every 5 minutes | `sync:calendars` — incremental, using each calendar's sync token |
 | Nightly at 03:30 | `sync:calendars --force` — full pass, catches anything a token missed |
+| Nightly at 04:00 | `familyhub:prune-done` — removes completed to-dos past retention |
 | On demand | **Sync now** / **Force resync** per account in `/admin/calendars` |
 
 Jobs run on the `sync` queue, which Horizon prioritises over `default`. Both jobs
@@ -382,4 +387,5 @@ written to a calendar without a person accepting it.
 | `familyhub:display-token` | Show the wall display pairing URL (`--new` rotates the token) |
 | `sync:calendars` | Sync connected iCloud accounts (`--force` full pass, `--account=` one account, `--now` inline) |
 | `familyhub:attribute` | Re-run member attribution over existing events (`--dry-run` to preview) |
+| `familyhub:prune-done` | Delete completed to-dos past the retention window (`--dry-run` to preview) |
 | `capture:process` | *Phase 3* |

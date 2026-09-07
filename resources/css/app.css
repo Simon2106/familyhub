@@ -70,4 +70,36 @@
         min-height: var(--spacing-touch);
         min-width: var(--spacing-touch);
     }
+
+    /*
+     * A modal layer pinned to the *visual* viewport rather than the layout
+     * viewport. On iOS the on-screen keyboard shrinks the visual viewport
+     * without moving the layout viewport, so a plainly centred dialog ends up
+     * behind the keyboard. app.js keeps --vv-top/--vv-height in step.
+     *
+     * The bottom padding reserves the wall's tab bar plus the home indicator,
+     * so a centred dialog can never sit on top of them.
+     */
+    .modal-viewport {
+        position: fixed;
+        left: 0;
+        right: 0;
+        top: var(--vv-top, 0px);
+        height: var(--vv-height, 100dvh);
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        padding-top: calc(env(safe-area-inset-top) + 1rem);
+        padding-right: calc(env(safe-area-inset-right) + 1rem);
+        padding-left: calc(env(safe-area-inset-left) + 1rem);
+        padding-bottom: calc(var(--tab-bar-height, 0px) + env(safe-area-inset-bottom) + 1rem);
+    }
+
+    /*
+     * With the keyboard up the tab bar is behind it anyway, so give that space
+     * back to the dialog rather than squeezing it into a sliver.
+     */
+    :root.keyboard-open .modal-viewport {
+        padding-bottom: 0.75rem;
+    }
 }

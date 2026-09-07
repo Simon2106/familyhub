@@ -73,6 +73,31 @@ class Household extends Model
     }
 
     /**
+     * How many days a ticked to-do stays under "Done" before being deleted.
+     *
+     * Stored in the settings blob rather than its own column: it is a
+     * preference, and more will follow it.
+     */
+    public function doneRetentionDays(): int
+    {
+        $days = (int) (($this->settings['done_retention_days'] ?? null)
+            ?: config('familyhub.todos.done_retention_days'));
+
+        // A zero or negative retention would delete items as soon as they were
+        // ticked, which is indistinguishable from losing them.
+        return max($days, 1);
+    }
+
+    public function setDoneRetentionDays(int $days): void
+    {
+        $this->update([
+            'settings' => array_merge($this->settings ?? [], [
+                'done_retention_days' => max($days, 1),
+            ]),
+        ]);
+    }
+
+    /**
      * The single household this installation serves. FamilyHub is deliberately
      * single-tenant, so this is cached for the request rather than looked up.
      */

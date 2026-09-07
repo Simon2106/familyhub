@@ -151,6 +151,27 @@ class TodoPanelTest extends TestCase
     }
 
     #[Test]
+    public function the_quick_add_is_a_dialog_not_an_inline_form(): void
+    {
+        // Inline, it pushed the panel down over the wall's tab bar and squeezed
+        // the list out of sight.
+        $html = Livewire::test('todos.panel')->call('startAdding')->html();
+
+        $this->assertStringContainsString('role="dialog"', $html);
+        $this->assertStringContainsString('aria-modal="true"', $html);
+        // .modal-viewport keeps it clear of the tab bar and follows the keyboard.
+        $this->assertStringContainsString('modal-viewport', $html);
+    }
+
+    #[Test]
+    public function the_dialog_is_not_rendered_until_it_is_opened(): void
+    {
+        $html = Livewire::test('todos.panel')->html();
+
+        $this->assertStringNotContainsString('role="dialog"', $html);
+    }
+
+    #[Test]
     public function a_todo_needs_a_title(): void
     {
         Livewire::test('todos.panel')

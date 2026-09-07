@@ -31,6 +31,53 @@ document.addEventListener('visibilitychange', () => {
 });
 
 /* -------------------------------------------------------------------------
+ * Visual viewport tracking
+ *
+ * iOS shrinks the visual viewport when the on-screen keyboard appears, without
+ * moving the layout viewport that `position: fixed` is measured against. A
+ * dialog centred the ordinary way therefore ends up behind the keyboard. These
+ * custom properties let `.modal-viewport` follow the part of the screen the
+ * user can actually see, and reserve the tab bar's height so a dialog never
+ * covers it.
+ * ---------------------------------------------------------------------- */
+
+function syncVisualViewport() {
+    const root = document.documentElement;
+    const tabBar = document.querySelector('[data-tab-bar]');
+
+    root.style.setProperty('--tab-bar-height', `${tabBar ? tabBar.offsetHeight : 0}px`);
+
+    const viewport = window.visualViewport;
+
+    if (!viewport) {
+        root.style.setProperty('--vv-top', '0px');
+        root.style.setProperty('--vv-height', `${window.innerHeight}px`);
+        return;
+    }
+
+    root.style.setProperty('--vv-top', `${viewport.offsetTop}px`);
+    root.style.setProperty('--vv-height', `${viewport.height}px`);
+
+    // A large shortfall against the layout viewport means a keyboard, not a
+    // scrolled-away browser bar.
+    root.classList.toggle('keyboard-open', window.innerHeight - viewport.height > 120);
+}
+
+syncVisualViewport();
+
+window.addEventListener('resize', syncVisualViewport);
+window.addEventListener('orientationchange', syncVisualViewport);
+
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncVisualViewport);
+    window.visualViewport.addEventListener('scroll', syncVisualViewport);
+}
+
+// Livewire swaps DOM around; the tab bar may not have existed on first run.
+document.addEventListener('livewire:navigated', syncVisualViewport);
+document.addEventListener('DOMContentLoaded', syncVisualViewport);
+
+/* -------------------------------------------------------------------------
  * Rubber-band suppression
  *
  * iOS Safari bounces the whole page on an overscroll even when the body does

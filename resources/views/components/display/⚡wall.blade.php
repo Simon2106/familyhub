@@ -766,7 +766,7 @@ new #[Layout('layouts::display')] class extends Component
     </div>
 
     {{-- ============================ TAB BAR ============================= --}}
-    <nav class="grid shrink-0 grid-cols-5 gap-1 border-t border-slate-200 px-4 py-1.5 dark:border-slate-800">
+    <nav data-tab-bar class="grid shrink-0 grid-cols-5 gap-1 border-t border-slate-200 px-4 py-1.5 dark:border-slate-800">
         @foreach ([
             ['home', 'Home', 'M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z'],
             ['chores', 'Chores', 'M9 11.5 11.5 14 16 8.5M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z'],

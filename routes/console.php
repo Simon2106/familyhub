@@ -17,3 +17,9 @@ Schedule::command('sync:calendars')
 Schedule::command('sync:calendars --force')
     ->dailyAt('03:30')
     ->withoutOverlapping();
+
+// Completed to-dos stay findable under "Done" for the household's retention
+// window, then go. Runs in the small hours so nobody watches items vanish.
+Schedule::command('familyhub:prune-done')
+    ->dailyAt('04:00')
+    ->withoutOverlapping();

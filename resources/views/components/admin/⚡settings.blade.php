@@ -12,6 +12,8 @@ new #[Layout('layouts::app')] class extends Component
 {
     public string $householdName = '';
 
+    public int $doneRetentionDays = 30;
+
     /** Member being edited, or null when the form is closed. */
     public ?int $editingId = null;
 
@@ -29,6 +31,7 @@ new #[Layout('layouts::app')] class extends Component
     public function mount(): void
     {
         $this->householdName = Household::current()->name;
+        $this->doneRetentionDays = Household::current()->doneRetentionDays();
     }
 
     #[Computed]
@@ -63,9 +66,15 @@ new #[Layout('layouts::app')] class extends Component
 
     public function saveHousehold(): void
     {
-        $this->validate(['householdName' => 'required|string|max:120']);
+        $this->validate([
+            'householdName' => 'required|string|max:120',
+            'doneRetentionDays' => 'required|integer|min:1|max:3650',
+        ]);
 
-        Household::current()->update(['name' => $this->householdName]);
+        $household = Household::current();
+
+        $household->update(['name' => $this->householdName]);
+        $household->setDoneRetentionDays($this->doneRetentionDays);
 
         $this->dispatch('saved', message: 'Household saved.');
     }
@@ -181,6 +190,23 @@ new #[Layout('layouts::app')] class extends Component
                 <button type="submit" class="touch-target shrink-0 rounded-xl bg-blue-600 px-5 font-semibold text-white">Save</button>
             </form>
             @error('householdName') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+
+            <label class="mt-3 flex items-center justify-between gap-3">
+                <span class="min-w-0">
+                    <span class="block text-sm font-medium">Keep completed to-dos for</span>
+                    <span class="block text-sm text-slate-500 dark:text-slate-400">
+                        Ticked items stay under "Done" this long, then a nightly job removes them.
+                    </span>
+                </span>
+                <span class="flex shrink-0 items-center gap-2">
+                    <input wire:model="doneRetentionDays" type="number" inputmode="numeric" min="1" max="3650"
+                           aria-label="Days to keep completed to-dos"
+                           class="touch-target w-20 rounded-xl border border-slate-300 px-3 text-center dark:border-slate-700 dark:bg-slate-950">
+                    <span class="text-sm text-slate-500 dark:text-slate-400">days</span>
+                </span>
+            </label>
+            @error('doneRetentionDays') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+
             <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
                 Timezone: {{ Household::current()->displayTimezone() }}
                 <span class="text-slate-400">(times are stored in UTC)</span>

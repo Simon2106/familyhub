@@ -70,6 +70,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | To-dos
+    |--------------------------------------------------------------------------
+    | How long a completed to-do stays findable under "Done" before the nightly
+    | cleanup removes it. Overridable per household in /admin.
+    */
+
+    'todos' => [
+        'done_retention_days' => (int) env('FAMILYHUB_DONE_RETENTION_DAYS', 30),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | CalDAV (Apple iCloud)
     |--------------------------------------------------------------------------
     | Apple ID and app-specific password are NOT configured here — they are

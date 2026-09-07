@@ -174,50 +174,67 @@ new class extends Component
         </button>
     </div>
 
-    {{-- Quick add / edit. Deliberately large: this gets typed on an iPad
-         on-screen keyboard, standing up, at arm's length. --}}
+    {{-- Quick add / edit.
+         A centred dialog on its own layer rather than an inline form: inline,
+         it pushed the panel down over the wall's tab bar and squeezed the list
+         out of sight. .modal-viewport keeps it inside the visible viewport and
+         clear of the tab bar, and follows the keyboard up on iOS. --}}
     @if ($adding)
-        <form wire:submit="save" class="mb-2 shrink-0 space-y-2 rounded-xl bg-slate-50 p-2 dark:bg-slate-800/70">
-            <input
-                wire:model="title"
-                type="text"
-                autofocus
-                placeholder="What needs doing?"
-                class="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg dark:border-slate-600 dark:bg-slate-900"
+        <div class="fixed inset-0 z-50 bg-black/50" wire:click="$set('adding', false)" aria-hidden="true"></div>
+
+        <div class="modal-viewport z-50" role="dialog" aria-modal="true" aria-label="{{ $editingId ? 'Edit to-do' : 'Add a to-do' }}">
+            <form
+                wire:submit="save"
+                data-todo-dialog
+                class="pane-scroll max-h-full w-full max-w-md space-y-3 overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl dark:bg-slate-900"
             >
-            @error('title') <p class="text-sm text-red-600">{{ $message }}</p> @enderror
+                <h3 class="text-lg font-semibold">{{ $editingId ? 'Edit to-do' : 'New to-do' }}</h3>
 
-            <div class="flex gap-2">
                 <input
-                    wire:model="dueOn"
-                    type="date"
-                    aria-label="Due date"
-                    class="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-3 text-base dark:border-slate-600 dark:bg-slate-900"
+                    wire:model="title"
+                    type="text"
+                    autofocus
+                    placeholder="What needs doing?"
+                    class="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg dark:border-slate-600 dark:bg-slate-950"
                 >
-                <select
-                    wire:model="memberId"
-                    aria-label="Who for"
-                    class="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-3 text-base dark:border-slate-600 dark:bg-slate-900"
-                >
-                    <option value="">Anyone</option>
-                    @foreach ($this->members as $member)
-                        <option value="{{ $member->id }}">{{ $member->name }}</option>
-                    @endforeach
-                </select>
-            </div>
+                @error('title') <p class="text-sm text-red-600">{{ $message }}</p> @enderror
 
-            <div class="flex gap-2">
-                <button type="submit" class="touch-target flex-1 rounded-xl bg-blue-600 font-semibold text-white">
-                    {{ $editingId ? 'Save' : 'Add' }}
-                </button>
-                <button type="button" wire:click="$set('adding', false)"
-                        class="touch-target rounded-xl px-4 font-semibold text-slate-500">Cancel</button>
-                @if ($editingId && $editable)
-                    <button type="button" wire:click="deleteItem({{ $editingId }})"
-                            class="touch-target rounded-xl px-4 font-semibold text-red-600">Delete</button>
-                @endif
-            </div>
-        </form>
+                <div class="flex flex-wrap gap-2">
+                    <label class="min-w-0 flex-1">
+                        <span class="block text-sm font-medium text-slate-500 dark:text-slate-400">Due</span>
+                        <input
+                            wire:model="dueOn"
+                            type="date"
+                            class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-base dark:border-slate-600 dark:bg-slate-950"
+                        >
+                    </label>
+                    <label class="min-w-0 flex-1">
+                        <span class="block text-sm font-medium text-slate-500 dark:text-slate-400">Who for</span>
+                        <select
+                            wire:model="memberId"
+                            class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-base dark:border-slate-600 dark:bg-slate-950"
+                        >
+                            <option value="">Anyone</option>
+                            @foreach ($this->members as $member)
+                                <option value="{{ $member->id }}">{{ $member->name }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                </div>
+
+                <div class="flex gap-2 pt-1">
+                    <button type="submit" class="touch-target flex-1 rounded-xl bg-blue-600 text-lg font-semibold text-white">
+                        {{ $editingId ? 'Save' : 'Add' }}
+                    </button>
+                    <button type="button" wire:click="$set('adding', false)"
+                            class="touch-target rounded-xl px-4 font-semibold text-slate-500">Cancel</button>
+                    @if ($editingId && $editable)
+                        <button type="button" wire:click="deleteItem({{ $editingId }})"
+                                class="touch-target rounded-xl px-4 font-semibold text-red-600">Delete</button>
+                    @endif
+                </div>
+            </form>
+        </div>
     @endif
 
     <ul class="pane-scroll min-h-0 flex-1">
