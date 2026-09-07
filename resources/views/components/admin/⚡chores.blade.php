@@ -24,6 +24,9 @@ new #[Layout('layouts::app')] class extends Component
     /** @var list<int> */
     public array $days = [];
 
+    /** Weekly is one day, so it is a single choice rather than a set. */
+    public string $weeklyDay = '1';
+
     public int $points = 1;
 
     public bool $needsApproval = false;
@@ -49,9 +52,26 @@ new #[Layout('layouts::app')] class extends Component
         return Household::current()->members;
     }
 
+    /**
+     * Keep the picked days as sorted, unique numbers.
+     *
+     * A checkbox hands its value back as a string, and the tiles compare
+     * strictly against the integer weekday. Without this the array updates
+     * perfectly well and no tile ever lights up, so the picker looks broken
+     * while working.
+     */
+    public function updatedDays(): void
+    {
+        $days = array_values(array_unique(array_map('intval', $this->days)));
+
+        sort($days);
+
+        $this->days = $days;
+    }
+
     public function addChore(): void
     {
-        $this->reset(['editingId', 'title', 'icon', 'memberId', 'recurrence', 'days', 'points', 'needsApproval', 'isActive']);
+        $this->reset(['editingId', 'title', 'icon', 'memberId', 'recurrence', 'days', 'weeklyDay', 'points', 'needsApproval', 'isActive']);
         $this->editingId = 0;
     }
 
@@ -64,7 +84,8 @@ new #[Layout('layouts::app')] class extends Component
         $this->icon = (string) $chore->icon;
         $this->memberId = (string) ($chore->member_id ?? '');
         $this->recurrence = $chore->recurrence;
-        $this->days = $chore->recurrence === 'daily' || $chore->recurrence === 'weekdays' ? [] : $chore->weekdays();
+        $this->days = $chore->recurrence === 'days' ? $chore->weekdays() : [];
+        $this->weeklyDay = (string) ($chore->recurrence === 'weekly' ? ($chore->weekdays()[0] ?? 1) : 1);
         $this->points = $chore->points;
         $this->needsApproval = $chore->needs_approval;
         $this->isActive = $chore->is_active;
@@ -77,14 +98,18 @@ new #[Layout('layouts::app')] class extends Component
             'icon' => 'nullable|string|max:8',
             'recurrence' => 'required|in:'.implode(',', Chore::RECURRENCES),
             'points' => 'required|integer|min:0|max:1000',
-            'days' => 'array',
+            // Saving a chore that falls due on nothing is worse than refusing
+            // it: it looks set up and then never appears.
+            'days' => $this->recurrence === 'days' ? 'required|array|min:1' : 'array',
             'days.*' => 'integer|min:1|max:7',
+            'weeklyDay' => 'required|integer|min:1|max:7',
+        ], [
+            'days.required' => 'Pick at least one day.',
+            'days.min' => 'Pick at least one day.',
         ]);
 
-        // A weekly chore is one day; picking three and calling it weekly would
-        // silently behave as "specific days".
         $days = match ($this->recurrence) {
-            'weekly' => array_slice($this->days, 0, 1) ?: [1],
+            'weekly' => [(int) $this->weeklyDay],
             'days' => $this->days,
             default => null,
         };
@@ -107,7 +132,7 @@ new #[Layout('layouts::app')] class extends Component
             // appear as missed on every day of the week already gone.
             : Chore::create($attributes + ['starts_on' => Household::current()->todayLocal()->toDateString()]);
 
-        $this->reset(['editingId', 'title', 'icon', 'memberId', 'recurrence', 'days', 'points', 'needsApproval', 'isActive']);
+        $this->reset(['editingId', 'title', 'icon', 'memberId', 'recurrence', 'days', 'weeklyDay', 'points', 'needsApproval', 'isActive']);
         unset($this->chores);
 
         $this->dispatch('saved', message: 'Chore saved.');
@@ -197,19 +222,30 @@ new #[Layout('layouts::app')] class extends Component
                         @endforeach
                     </div>
 
-                    @if (in_array($recurrence, ['days', 'weekly'], true))
+                    @if ($recurrence === 'days')
                         <div class="mt-2 flex flex-wrap gap-1.5">
                             @foreach (self::DAY_NAMES as $number => $name)
-                                <label class="grid size-12 cursor-pointer place-items-center rounded-xl border-2 text-sm font-semibold
-                                              {{ in_array($number, $days, true) ? 'border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300' : 'border-slate-200 text-slate-500 dark:border-slate-700' }}">
+                                <label class="grid size-12 cursor-pointer place-items-center rounded-xl border-2 text-sm font-semibold transition-colors focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 dark:focus-within:ring-offset-slate-900
+                                              {{ in_array($number, $days, true) ? 'border-blue-600 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-950 dark:text-blue-300' : 'border-slate-200 text-slate-500 dark:border-slate-700' }}">
                                     <input type="checkbox" wire:model.live="days" value="{{ $number }}" class="sr-only">
                                     {{ $name }}
                                 </label>
                             @endforeach
                         </div>
-                        @if ($recurrence === 'weekly' && count($days) > 1)
-                            <p class="mt-1 text-sm text-amber-600 dark:text-amber-400">A weekly chore uses the first day you pick.</p>
-                        @endif
+                        @error('days') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                    @elseif ($recurrence === 'weekly')
+                        {{-- Radios, not checkboxes: a weekly chore is one day,
+                             and letting several be ticked only to quietly use
+                             one of them is a worse answer than not offering it. --}}
+                        <div class="mt-2 flex flex-wrap gap-1.5">
+                            @foreach (self::DAY_NAMES as $number => $name)
+                                <label class="grid size-12 cursor-pointer place-items-center rounded-xl border-2 text-sm font-semibold transition-colors focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 dark:focus-within:ring-offset-slate-900
+                                              {{ (int) $weeklyDay === $number ? 'border-blue-600 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-950 dark:text-blue-300' : 'border-slate-200 text-slate-500 dark:border-slate-700' }}">
+                                    <input type="radio" wire:model.live="weeklyDay" value="{{ $number }}" class="sr-only">
+                                    {{ $name }}
+                                </label>
+                            @endforeach
+                        </div>
                     @endif
                 </div>
 
