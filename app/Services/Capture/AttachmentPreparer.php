@@ -46,6 +46,7 @@ class AttachmentPreparer
     {
         $blocks = [];
         $skipped = [];
+        $names = [];
 
         foreach ($attachments as $attachment) {
             $block = $this->block($attachment);
@@ -57,9 +58,10 @@ class AttachmentPreparer
             }
 
             $blocks[] = $block;
+            $names[] = $attachment->filename;
         }
 
-        return new PreparedAttachments($blocks, $skipped);
+        return new PreparedAttachments($blocks, $skipped, $names);
     }
 
     /**

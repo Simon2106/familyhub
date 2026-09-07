@@ -5,6 +5,7 @@ namespace App\Services\Capture;
 use Anthropic\Client;
 use App\Models\Capture;
 use App\Services\Capture\Contracts\ItemExtractor;
+use Illuminate\Support\Facades\Log;
 use Carbon\CarbonImmutable;
 use RuntimeException;
 
@@ -42,7 +43,7 @@ class ClaudeItemExtractor implements ItemExtractor
         // with two large PDFs otherwise spends most of a single response's
         // budget on the first, and the rest come back truncated or missing —
         // and a term calendar needs every date, not most of them.
-        $results = array_map(fn (array $part) => $this->ask($part), $parts);
+        $results = array_map(fn (array $part) => $this->ask($part['content'], $capture, $part['label']), $parts);
 
         $result = ExtractionResult::merge($results);
 
@@ -69,28 +70,34 @@ class ClaudeItemExtractor implements ItemExtractor
 
         foreach ($prepared->blocks as $index => $block) {
             $parts[] = [
-                // Documents first: the API reads them better when they precede
-                // the instruction that refers to them.
-                $block,
-                ['type' => 'text', 'text' => $this->describe(
-                    $capture,
-                    $prepared,
-                    $total > 1
-                        ? sprintf('This is attachment %d of %d. Read only this one.', $index + 1, $total)
-                        : 'The attachment is included above. Read it fully.',
-                )],
+                'label' => $prepared->names[$index] ?? 'attachment '.($index + 1),
+                'content' => [
+                    // Documents first: the API reads them better when they
+                    // precede the instruction that refers to them.
+                    $block,
+                    ['type' => 'text', 'text' => $this->describe(
+                        $capture,
+                        $prepared,
+                        $total > 1
+                            ? sprintf('This is attachment %d of %d. Read only this one.', $index + 1, $total)
+                            : 'The attachment is included above. Read it fully.',
+                    )],
+                ],
             ];
         }
 
         if (filled($capture->body_text)) {
-            $parts[] = [['type' => 'text', 'text' => $this->describe(
-                $capture,
-                $prepared,
-                $total > 0
-                    ? 'Any attachments are being read separately. Take only what the message itself says.'
-                    : null,
-                includeBody: true,
-            )]];
+            $parts[] = [
+                'label' => 'message body',
+                'content' => [['type' => 'text', 'text' => $this->describe(
+                    $capture,
+                    $prepared,
+                    $total > 0
+                        ? 'Any attachments are being read separately. Take only what the message itself says.'
+                        : null,
+                    includeBody: true,
+                )]],
+            ];
         }
 
         // Nothing written and nothing readable attached: if there is a body at
@@ -99,9 +106,9 @@ class ClaudeItemExtractor implements ItemExtractor
     }
 
     /** @param list<array<string, mixed>> $content */
-    protected function ask(array $content): ExtractionResult
+    protected function ask(array $content, Capture $capture, string $label): ExtractionResult
     {
-        return $this->interpret($this->send([
+        $message = $this->send([
             'model' => config('familyhub.anthropic.model'),
             'maxTokens' => config('familyhub.anthropic.max_tokens'),
             // Cached: the instructions never vary, so every call after the
@@ -123,7 +130,21 @@ class ClaudeItemExtractor implements ItemExtractor
             ],
             // No temperature or top_p: current models reject sampling
             // parameters outright.
-        ]));
+        ]);
+
+        // What was actually sent, and what it cost. Without this, an
+        // attachment that never reached the model is indistinguishable from
+        // one the model read and found nothing in.
+        Log::info('Capture part read', [
+            'capture' => $capture->id,
+            'part' => $label,
+            'blocks' => array_map(fn (array $b) => $b['type'], $content),
+            'input_tokens' => $message->usage->inputTokens ?? null,
+            'output_tokens' => $message->usage->outputTokens ?? null,
+            'cache_read_tokens' => $message->usage->cacheReadInputTokens ?? null,
+        ]);
+
+        return $this->interpret($message);
     }
 
     /**
