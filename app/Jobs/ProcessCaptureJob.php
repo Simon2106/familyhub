@@ -25,8 +25,11 @@ class ProcessCaptureJob implements ShouldQueue
 
     public array $backoff = [30, 180, 600];
 
-    /** Extraction over a term calendar is not quick. */
-    public int $timeout = 300;
+    /**
+     * Extraction over a term calendar is not quick, and a capture with several
+     * attachments is now several sequential calls rather than one.
+     */
+    public int $timeout = 900;
 
     public function __construct(public Capture $capture)
     {
@@ -40,7 +43,7 @@ class ProcessCaptureJob implements ShouldQueue
         // cannot get the lock is re-released immediately and burns an attempt
         // each time until it exceeds tries. Dropping it is right here — the
         // job already holding the lock is doing the same work.
-        return [(new WithoutOverlapping('capture-'.$this->capture->id))->dontRelease()->expireAfter(600)];
+        return [(new WithoutOverlapping('capture-'.$this->capture->id))->dontRelease()->expireAfter(1200)];
     }
 
     public function handle(ItemExtractor $extractor): void

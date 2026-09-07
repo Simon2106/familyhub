@@ -110,8 +110,16 @@ return [
     'anthropic' => [
         'key' => env('ANTHROPIC_API_KEY'),
         'model' => env('ANTHROPIC_MODEL', 'claude-sonnet-5'),
-        // A term calendar can hold thirty items; the response needs room.
-        'max_tokens' => (int) env('ANTHROPIC_MAX_TOKENS', 16000),
+
+        // A term calendar can hold thirty items, and thinking comes out of the
+        // same budget as the answer, so the ceiling has to cover both.
+        'max_tokens' => (int) env('ANTHROPIC_MAX_TOKENS', 32000),
+
+        // Extraction is transcription, not reasoning: find the dates already
+        // written down. Low effort keeps thinking from eating the budget the
+        // JSON needs. Raise it if a school's newsletters prove genuinely hard.
+        // budget_tokens is rejected by current models; effort is the lever.
+        'effort' => env('ANTHROPIC_EFFORT', 'low'),
     ],
 
     'postmark' => [

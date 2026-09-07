@@ -513,11 +513,28 @@ particular school's newsletters prove hard to read, or `claude-haiku-4-5` to cut
 cost at some accuracy.
 
 Current models think adaptively by default, and that spend comes out of the same
-`ANTHROPIC_MAX_TOKENS` budget as the answer — so a very long term calendar can be
-cut off mid-answer. That is reported as "the answer ran past the token budget"
-with the current value, rather than as a confusing JSON error. Raise
-`ANTHROPIC_MAX_TOKENS` (default 16000) if you see it. Sampling parameters are not
-sent: current models reject `temperature` and `top_p` outright.
+`ANTHROPIC_MAX_TOKENS` budget as the answer. Two things keep the budget for the
+JSON:
+
+- **`ANTHROPIC_EFFORT` is `low`.** Extraction is transcription, not reasoning —
+  the dates are already written down. `budget_tokens` is rejected by current
+  models, so effort is the lever. Raise it if a school's newsletters prove
+  genuinely hard to read.
+- **`ANTHROPIC_MAX_TOKENS` is 32000**, covering thinking and a thirty-item term
+  calendar together.
+
+A capture with attachments is **one call per attachment plus one for the body**,
+merged afterwards. A single call meant a newsletter with two large PDFs spent
+most of one response's budget on the first and the rest came back short. Splitting
+also means each attachment gets a whole request to itself rather than a share of
+one. Duplicates that splitting introduces — the covering email and the PDF both
+naming the same date — are folded together, keeping the more confident and fuller
+reading.
+
+If a response still runs past the budget it is reported as "the answer ran past
+the token budget" naming the current value, rather than as a confusing JSON error.
+Sampling parameters are not sent: current models reject `temperature` and `top_p`
+outright.
 
 ### Home Assistant — *Phase 6*
 

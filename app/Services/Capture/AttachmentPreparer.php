@@ -19,63 +19,67 @@ use Throwable;
 class AttachmentPreparer
 {
     /**
-     * Raw bytes across all attachments in one request.
-     *
-     * The API's ceiling is 32MB for the whole request, and base64 inflates by
-     * a third, so ~24MB of raw bytes is the real limit. 20MB leaves room for
-     * the prompt and keeps a margin.
-     */
-    public const MAX_TOTAL_BYTES = 20_000_000;
-
-    /**
      * Raw bytes for one attachment.
      *
-     * Postmark accepts up to 35MB of email, so a single scanned PDF can be
-     * large. Anything past this is reported rather than dropped.
+     * Each attachment now gets a request of its own, so this is measured
+     * against the API's 32MB per-request ceiling rather than shared out — a
+     * large PDF can no longer crowd out the others. base64 inflates by a
+     * third, so 20MB of raw bytes leaves room for the prompt.
+     *
+     * Postmark accepts up to 35MB of email, so a single scanned PDF can still
+     * exceed this; it is reported rather than dropped.
      */
-    public const MAX_BYTES = 12_000_000;
+    public const MAX_BYTES = 20_000_000;
 
     /** Long edge in pixels. Plenty to read a page of A4. */
     public const MAX_EDGE = 2000;
 
     /**
-     * Every attachment that fits, and the names of those that do not.
+     * One content block per attachment that fits, plus the names of those that
+     * do not.
+     *
+     * No shared budget: each of these goes in a request of its own.
      *
      * @param  iterable<CaptureAttachment>  $attachments
      */
-    public function prepareAll(iterable $attachments): PreparedAttachments
+    public function prepareEach(iterable $attachments): PreparedAttachments
     {
         $blocks = [];
         $skipped = [];
-        $budget = self::MAX_TOTAL_BYTES;
 
         foreach ($attachments as $attachment) {
-            $prepared = $this->prepare($attachment);
+            $block = $this->block($attachment);
 
-            if ($prepared === null) {
+            if ($block === null) {
                 $skipped[] = $attachment->filename;
 
                 continue;
             }
 
-            [$data, $mime] = $prepared;
-
-            // base64 is what actually travels, so the budget is spent in those
-            // bytes rather than the raw ones.
-            if (strlen($data) > $budget) {
-                $skipped[] = $attachment->filename;
-
-                continue;
-            }
-
-            $budget -= strlen($data);
-
-            $blocks[] = $mime === 'application/pdf'
-                ? ['type' => 'document', 'source' => ['type' => 'base64', 'mediaType' => 'application/pdf', 'data' => $data]]
-                : ['type' => 'image', 'source' => ['type' => 'base64', 'mediaType' => $mime, 'data' => $data]];
+            $blocks[] = $block;
         }
 
         return new PreparedAttachments($blocks, $skipped);
+    }
+
+    /**
+     * One attachment as a content block.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function block(CaptureAttachment $attachment): ?array
+    {
+        $prepared = $this->prepare($attachment);
+
+        if ($prepared === null) {
+            return null;
+        }
+
+        [$data, $mime] = $prepared;
+
+        return $mime === 'application/pdf'
+            ? ['type' => 'document', 'source' => ['type' => 'base64', 'mediaType' => 'application/pdf', 'data' => $data]]
+            : ['type' => 'image', 'source' => ['type' => 'base64', 'mediaType' => $mime, 'data' => $data]];
     }
 
     /**

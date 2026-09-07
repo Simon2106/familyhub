@@ -23,11 +23,11 @@ class ClaudeItemExtractor implements ItemExtractor
 
     public function extract(Capture $capture): ExtractionResult
     {
-        $prepared = $this->attachments->prepareAll($capture->attachments);
+        $prepared = $this->attachments->prepareEach($capture->attachments);
 
-        $content = $this->buildContent($capture, $prepared);
+        $parts = $this->parts($capture, $prepared);
 
-        if ($content === []) {
+        if ($parts === []) {
             // Everything that arrived was unreadable. Failing loudly is right:
             // reporting "nothing found" would look identical to an email that
             // genuinely had no dates in it.
@@ -38,26 +38,13 @@ class ClaudeItemExtractor implements ItemExtractor
             return new ExtractionResult;
         }
 
-        $message = $this->client->messages->create(
-            model: config('familyhub.anthropic.model'),
-            maxTokens: config('familyhub.anthropic.max_tokens'),
-            // Cached: the instructions never vary, so every capture after the
-            // first reads them from cache rather than paying for them again.
-            system: [[
-                'type' => 'text',
-                'text' => ExtractionSchema::systemPrompt(),
-                'cacheControl' => ['type' => 'ephemeral'],
-            ]],
-            messages: [['role' => 'user', 'content' => $content]],
-            outputConfig: [
-                'format' => ['type' => 'json_schema', 'schema' => ExtractionSchema::schema()],
-            ],
-        );
+        // One call per part rather than one call for everything. A newsletter
+        // with two large PDFs otherwise spends most of a single response's
+        // budget on the first, and the rest come back truncated or missing —
+        // and a term calendar needs every date, not most of them.
+        $results = array_map(fn (array $part) => $this->ask($part), $parts);
 
-        // No temperature or top_p: Sonnet 5 and the other current models reject
-        // sampling parameters outright.
-
-        $result = $this->interpret($message);
+        $result = ExtractionResult::merge($results);
 
         // A partial read is still a useful read, but the review inbox has to
         // say what was left out.
@@ -67,6 +54,87 @@ class ClaudeItemExtractor implements ItemExtractor
                 trim(($result->summary ?? '').' '.$prepared->skippedSentence()),
             )
             : $result;
+    }
+
+    /**
+     * The separate pieces of work this capture divides into: one per readable
+     * attachment, plus one for whatever was written in the message itself.
+     *
+     * @return list<list<array<string, mixed>>>
+     */
+    protected function parts(Capture $capture, PreparedAttachments $prepared): array
+    {
+        $parts = [];
+        $total = count($prepared->blocks);
+
+        foreach ($prepared->blocks as $index => $block) {
+            $parts[] = [
+                // Documents first: the API reads them better when they precede
+                // the instruction that refers to them.
+                $block,
+                ['type' => 'text', 'text' => $this->describe(
+                    $capture,
+                    $prepared,
+                    $total > 1
+                        ? sprintf('This is attachment %d of %d. Read only this one.', $index + 1, $total)
+                        : 'The attachment is included above. Read it fully.',
+                )],
+            ];
+        }
+
+        if (filled($capture->body_text)) {
+            $parts[] = [['type' => 'text', 'text' => $this->describe(
+                $capture,
+                $prepared,
+                $total > 0
+                    ? 'Any attachments are being read separately. Take only what the message itself says.'
+                    : null,
+                includeBody: true,
+            )]];
+        }
+
+        // Nothing written and nothing readable attached: if there is a body at
+        // all it has already been added above, so this is genuinely empty.
+        return $parts;
+    }
+
+    /** @param list<array<string, mixed>> $content */
+    protected function ask(array $content): ExtractionResult
+    {
+        return $this->interpret($this->send([
+            'model' => config('familyhub.anthropic.model'),
+            'maxTokens' => config('familyhub.anthropic.max_tokens'),
+            // Cached: the instructions never vary, so every call after the
+            // first reads them from cache rather than paying for them again —
+            // which matters more now that one capture can be several calls.
+            'system' => [[
+                'type' => 'text',
+                'text' => ExtractionSchema::systemPrompt(),
+                'cacheControl' => ['type' => 'ephemeral'],
+            ]],
+            'messages' => [['role' => 'user', 'content' => $content]],
+            'outputConfig' => [
+                // Transcription, not reasoning. Thinking comes out of the same
+                // budget as the answer, and a long term calendar needs that
+                // budget for JSON. budget_tokens is rejected by current models,
+                // so effort is the lever.
+                'effort' => config('familyhub.anthropic.effort'),
+                'format' => ['type' => 'json_schema', 'schema' => ExtractionSchema::schema()],
+            ],
+            // No temperature or top_p: current models reject sampling
+            // parameters outright.
+        ]));
+    }
+
+    /**
+     * The one call to the SDK, kept alone in a method so a test can assert the
+     * request without standing up an HTTP client.
+     *
+     * @param  array<string, mixed>  $request
+     */
+    protected function send(array $request): mixed
+    {
+        return $this->client->messages->create(...$request);
     }
 
     /**
@@ -97,31 +165,13 @@ class ClaudeItemExtractor implements ItemExtractor
         return $this->parse($this->firstText($message));
     }
 
-    /**
-     * The user turn: what was sent, plus any readable attachments.
-     *
-     * @return list<array<string, mixed>>
-     */
-    protected function buildContent(Capture $capture, PreparedAttachments $prepared): array
-    {
-        // Documents first: the API reads them better when they precede the
-        // instruction that refers to them.
-        $content = $prepared->blocks;
-
-        $text = $this->describe($capture, $prepared);
-
-        if (trim($text) === '' && $content === []) {
-            return [];
-        }
-
-        $content[] = ['type' => 'text', 'text' => $text];
-
-        return $content;
-    }
-
     /** The volatile half of the prompt — kept out of the cached system block. */
-    protected function describe(Capture $capture, PreparedAttachments $prepared): string
-    {
+    protected function describe(
+        Capture $capture,
+        PreparedAttachments $prepared,
+        ?string $scope = null,
+        bool $includeBody = false,
+    ): string {
         $household = $capture->household;
         $sentAt = $capture->created_at ?? now();
 
@@ -150,15 +200,15 @@ class ClaudeItemExtractor implements ItemExtractor
             $lines[] = 'Subject: '.$capture->subject;
         }
 
-        if (filled($capture->body_text)) {
+        if ($includeBody && filled($capture->body_text)) {
             $lines[] = '';
             $lines[] = '--- content ---';
             $lines[] = $capture->body_text;
         }
 
-        if ($prepared->blocks !== []) {
+        if ($scope !== null) {
             $lines[] = '';
-            $lines[] = 'Attachments are included above. Read them fully.';
+            $lines[] = $scope;
         }
 
         if ($prepared->hasSkipped()) {

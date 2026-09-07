@@ -30,6 +30,12 @@ class AttachmentLimitsTest extends TestCase
         ]);
     }
 
+    /** An attachment whose stored file is genuinely past the ceiling. */
+    protected function oversizedPdf(string $name): CaptureAttachment
+    {
+        return $this->pdf($name, AttachmentPreparer::MAX_BYTES + 1);
+    }
+
     protected function pdf(string $name, int $bytes): CaptureAttachment
     {
         $path = "captures/{$this->capture->id}/{$name}";
@@ -52,7 +58,7 @@ class AttachmentLimitsTest extends TestCase
         $this->pdf('term-dates.pdf', 3_000_000);
         $this->pdf('trip-letter.pdf', 2_000_000);
 
-        $prepared = app(AttachmentPreparer::class)->prepareAll($this->capture->attachments);
+        $prepared = app(AttachmentPreparer::class)->prepareEach($this->capture->attachments);
 
         $this->assertCount(2, $prepared->blocks);
         $this->assertFalse($prepared->hasSkipped());
@@ -64,9 +70,11 @@ class AttachmentLimitsTest extends TestCase
     {
         // Silently omitting it produces "nothing found", which is
         // indistinguishable from an email that had no dates in it.
-        $this->pdf('huge-scan.pdf', AttachmentPreparer::MAX_BYTES + 1);
+        // Just over the ceiling, without materialising the whole thing: the
+        // size column is what the preparer reads before touching the file.
+        $this->oversizedPdf('huge-scan.pdf');
 
-        $prepared = app(AttachmentPreparer::class)->prepareAll($this->capture->attachments);
+        $prepared = app(AttachmentPreparer::class)->prepareEach($this->capture->attachments);
 
         $this->assertSame([], $prepared->blocks);
         $this->assertSame(['huge-scan.pdf'], $prepared->skipped);
@@ -74,28 +82,36 @@ class AttachmentLimitsTest extends TestCase
     }
 
     #[Test]
-    public function attachments_share_one_request_budget(): void
+    public function a_large_pdf_no_longer_starves_the_others(): void
     {
-        // Each fits on its own; together they would overflow the request.
-        $this->pdf('one.pdf', 11_000_000);
-        $this->pdf('two.pdf', 11_000_000);
+        // Each attachment gets a request of its own, so nothing is summed
+        // against a shared cap. Asserted by reflection rather than by
+        // allocating tens of megabytes of base64 in the test process.
+        $this->assertFalse(
+            (new \ReflectionClass(AttachmentPreparer::class))->hasConstant('MAX_TOTAL_BYTES'),
+            'A shared budget would let one large attachment crowd out the rest.',
+        );
 
-        $prepared = app(AttachmentPreparer::class)->prepareAll($this->capture->attachments);
+        $this->pdf('one.pdf', 900_000);
+        $this->pdf('two.pdf', 900_000);
+        $this->pdf('three.pdf', 900_000);
 
-        $this->assertCount(1, $prepared->blocks, 'The second must not push the request past the API ceiling.');
-        $this->assertSame(['two.pdf'], $prepared->skipped);
+        $prepared = app(AttachmentPreparer::class)->prepareEach($this->capture->attachments);
+
+        $this->assertCount(3, $prepared->blocks);
+        $this->assertFalse($prepared->hasSkipped());
     }
 
     #[Test]
-    public function the_budget_is_measured_in_the_bytes_that_actually_travel(): void
+    public function the_per_attachment_ceiling_leaves_room_for_base64(): void
     {
-        // base64 inflates by a third, so 16MB of raw PDF is ~21MB on the wire
-        // and does not fit a 20MB budget.
-        $this->pdf('big.pdf', 16_000_000);
-
-        $prepared = app(AttachmentPreparer::class)->prepareAll($this->capture->attachments);
-
-        $this->assertSame(['big.pdf'], $prepared->skipped);
+        // base64 inflates by a third, so the raw ceiling has to sit below the
+        // API's 32MB request limit with room for the prompt.
+        $this->assertLessThan(
+            32_000_000 * 3 / 4,
+            AttachmentPreparer::MAX_BYTES,
+            'A single attachment at the ceiling must still fit one request once base64-encoded.',
+        );
     }
 
     #[Test]
