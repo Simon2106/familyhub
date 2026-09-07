@@ -3,7 +3,9 @@
 use App\Models\Chore;
 use App\Models\Household;
 use App\Models\Member;
+use App\Models\RoutineStep;
 use App\Services\Chores\ChoreBoard;
+use App\Services\Routines\RoutineBoard;
 use App\Services\Points\PointsLedger;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -28,19 +30,22 @@ new class extends Component
     /** Set while a tick is being celebrated, so the animation has something to key on. */
     public ?int $justDone = null;
 
+    public ?int $justDoneStep = null;
+
     #[On('show-my-day')]
     public function show(int $member, ?string $date = null): void
     {
         $this->memberId = $member;
         $this->date = $date ?: Household::current()->todayLocal()->toDateString();
         $this->justDone = null;
+        $this->justDoneStep = null;
 
-        unset($this->member, $this->chores, $this->balance);
+        unset($this->member, $this->chores, $this->balance, $this->routines);
     }
 
     public function close(): void
     {
-        $this->reset(['memberId', 'date', 'justDone']);
+        $this->reset(['memberId', 'date', 'justDone', 'justDoneStep']);
     }
 
     #[Computed]
@@ -77,6 +82,46 @@ new class extends Component
             ->forDay(Household::current(), $this->day)
             ->filter(fn ($slot) => $slot->chore->member_id === $this->member->id)
             ->values();
+    }
+
+    /**
+     * This child's routines for the day, the running one first.
+     *
+     * @return Collection<int, \App\Services\Routines\RoutineProgress>
+     */
+    #[Computed]
+    public function routines(): Collection
+    {
+        if (! $this->member) {
+            return collect();
+        }
+
+        return app(RoutineBoard::class)
+            ->forMember($this->member, $this->day)
+            ->sortByDesc(fn ($progress) => $progress->isNow ? 1 : 0)
+            ->values();
+    }
+
+    /** Ticking a routine step is as free as ticking a chore. */
+    public function tickStep(int $stepId): void
+    {
+        $step = RoutineStep::query()
+            ->whereHas('routine', fn ($q) => $q->where('member_id', $this->memberId))
+            ->findOrFail($stepId);
+
+        $board = app(RoutineBoard::class);
+
+        if ($board->isComplete($step, $this->day)) {
+            $board->uncomplete($step, $this->day);
+            $this->justDoneStep = null;
+        } else {
+            $board->complete($step, $this->day);
+            $this->justDoneStep = $stepId;
+        }
+
+        unset($this->routines);
+
+        $this->dispatch('routines-changed');
     }
 
     #[Computed]
@@ -192,10 +237,57 @@ new class extends Component
                     </button>
                 </div>
 
+                {{-- -------------------------- ROUTINES ------------------------ --}}
+                @foreach ($this->routines as $progress)
+                    <section class="mt-5 rounded-2xl p-4 {{ $progress->isNow ? 'ring-2' : 'bg-slate-50 dark:bg-slate-800/40' }}"
+                             style="{{ $progress->isNow ? 'background-color: '.$this->member->colour.'12; --tw-ring-color: '.$this->member->colour.'66;' : '' }}"
+                             wire:key="routine-{{ $progress->routine->id }}">
+                        <div class="flex items-baseline gap-2">
+                            <h3 class="text-lg font-bold">{{ $progress->routine->label() }}</h3>
+                            @if ($progress->isNow)
+                                <span class="rounded-full px-2 py-0.5 text-xs font-bold text-white"
+                                      style="background-color: {{ $this->member->colour }};">now</span>
+                            @else
+                                <span class="text-sm text-slate-400">{{ $progress->routine->windowLabel() }}</span>
+                            @endif
+                            <span class="ml-auto text-sm font-semibold tabular-nums text-slate-400">{{ $progress->summary() }}</span>
+                        </div>
+
+                        @if ($progress->allDone())
+                            <p class="mt-2 text-center text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                                {{ $progress->routine->label() }} all done! 🎉
+                            </p>
+                        @endif
+
+                        <ul class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                            @foreach ($progress->steps as $entry)
+                                @php $step = $entry['step']; @endphp
+                                <li wire:key="step-{{ $step->id }}">
+                                    <button
+                                        type="button"
+                                        wire:click="tickStep({{ $step->id }})"
+                                        class="flex w-full flex-col items-center gap-1 rounded-2xl border-2 p-3 transition-all
+                                               {{ $entry['done'] ? 'border-transparent' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900' }}
+                                               {{ $justDoneStep === $step->id ? 'chore-just-done' : '' }}"
+                                        style="{{ $entry['done'] ? 'background-color: '.$this->member->colour.'; color: white;' : '' }}"
+                                    >
+                                        <span class="text-3xl leading-none" aria-hidden="true">{{ $step->icon ?: ($entry['done'] ? '✅' : '⬜️') }}</span>
+                                        <span class="text-center text-sm leading-tight font-semibold {{ $entry['done'] ? '' : 'text-slate-700 dark:text-slate-200' }}">
+                                            {{ $step->title }}
+                                        </span>
+                                    </button>
+                                </li>
+                            @endforeach
+                        </ul>
+                    </section>
+                @endforeach
+
                 {{-- --------------------------- CHORES ------------------------- --}}
                 <div class="mt-5 min-h-0 flex-1">
                     @if ($this->chores->isEmpty())
-                        <p class="py-10 text-center text-lg text-slate-400">Nothing to do today.</p>
+                        @if ($this->routines->isEmpty())
+                            <p class="py-10 text-center text-lg text-slate-400">Nothing to do today.</p>
+                        @endif
                     @else
                         @if ($this->allDone)
                             {{-- Worth a fuss. The whole scheme runs on this moment. --}}

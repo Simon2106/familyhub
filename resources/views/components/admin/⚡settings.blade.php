@@ -449,6 +449,21 @@ new #[Layout('layouts::app')] class extends Component
             </div>
         </section>
 
+        <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
+            <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <h2 class="font-semibold">Routines</h2>
+                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        Morning, after-school and bedtime checklists, shown on the wall during their window.
+                    </p>
+                </div>
+                <a href="{{ route('admin.routines') }}" wire:navigate
+                   class="grid touch-target shrink-0 place-items-center rounded-xl px-4 font-semibold text-blue-600 dark:text-blue-400">
+                    Manage
+                </a>
+            </div>
+        </section>
+
         {{-- Wall display --}}
         <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
             <h2 class="font-semibold">Wall display</h2>

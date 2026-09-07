@@ -245,6 +245,28 @@ new #[Layout('layouts::display')] class extends Component
         unset($this->choresByDate);
     }
 
+    /**
+     * Routines running right now, by member.
+     *
+     * Only the running one: a list of everything a child does all day is a
+     * poster, not something to act on during the morning rush.
+     *
+     * @return Collection<int, \App\Services\Routines\RoutineProgress>
+     */
+    #[Computed]
+    public function runningRoutines(): Collection
+    {
+        return app(\App\Services\Routines\RoutineBoard::class)
+            ->activeAcross($this->household(), $this->today, $this->household()->nowLocal())
+            ->keyBy(fn ($progress) => $progress->routine->member_id);
+    }
+
+    #[On('routines-changed')]
+    public function refreshRoutines(): void
+    {
+        unset($this->runningRoutines);
+    }
+
     /** Everything from tomorrow onwards, as a flat list for the "coming up" rail. */
     #[Computed]
     public function upcoming(): Collection
@@ -686,7 +708,20 @@ new #[Layout('layouts::display')] class extends Component
                                             <span class="size-3 shrink-0 rounded-full" style="background-color: {{ $member->colour }};"></span>
                                         @endif
                                         <span class="truncate text-base font-semibold">{{ $member->name }}</span>
-                                        @if ($memberEvents->isNotEmpty())
+
+                                        {{-- A routine in its window earns a place
+                                             in the header; the rest of the day it
+                                             is not the column's business. --}}
+                                        @php $running = $day['is_today'] ? ($this->runningRoutines[$member->id] ?? null) : null; @endphp
+
+                                        @if ($running)
+                                            <button type="button"
+                                                    wire:click="$dispatch('show-my-day', { member: {{ $member->id }}, date: '{{ $day['date'] }}' })"
+                                                    class="ml-auto shrink-0 rounded-full px-2 py-0.5 text-xs font-bold text-white"
+                                                    style="background-color: {{ $member->colour }};">
+                                                {{ $running->allDone() ? 'done 🎉' : $running->routine->label().' '.$running->summary() }}
+                                            </button>
+                                        @elseif ($memberEvents->isNotEmpty())
                                             <span class="ml-auto text-sm text-slate-400">{{ $memberEvents->count() }}</span>
                                         @endif
                                     </div>
