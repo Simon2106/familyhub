@@ -58,6 +58,28 @@ Livewire re-renders on a 60-second poll to pick up edits made from phones.
 - `/admin/calendars`: per-account status, last sync, errors, force resync,
   per-calendar member assignment and visibility
 
+### Household to-dos
+
+The wall's home view carries a **To do** panel under "Coming up", in both the
+today and This week views. To-dos are ordered overdue → due soonest → undated,
+with an optional assignee shown as their colour dot.
+
+- Tap to tick. The tick is optimistic in Alpine and persisted by Livewire; the
+  item lingers a few seconds so the tick registers, then fades off the panel.
+- Ticked items are findable under **Done** on the Lists tab, and can be
+  un-ticked from there.
+- A **dated** to-do also appears in its member's column on that day, below the
+  events and marked as a task. Undated ones live only in the panel — pinning them
+  to an arbitrary day would be a lie. To-dos with no member go to the Household
+  column, which appears on any day that needs it.
+- The **+** on the panel opens a large-text quick add (title, optional due date,
+  optional member) sized for typing on the wall iPad.
+- On phones (`/app`) the same panel is editable — each row gets an edit control
+  for changing the title, date, assignee, or deleting.
+
+There is no separate to-do model. The household to-do list is an ordinary
+`Checklist` with `is_home_list` set, created on demand by `Checklist::home()`.
+
 ### Member attribution
 
 Events are matched to family members by reading their titles and locations.

@@ -129,28 +129,46 @@ class DemoDataSeeder extends Seeder
 
     protected function seedChecklists(Household $household): void
     {
-        $lists = [
-            ['Shopping', 'shopping', ['Milk', 'Bread', 'Bananas', 'Washing up liquid']],
-            ['To do', 'todo', ['Book MOT', 'Return library books', 'Water the plants']],
+        $shopping = Checklist::firstOrCreate(
+            ['household_id' => $household->id, 'name' => 'Shopping'],
+            ['type' => 'shopping', 'sort_order' => 0],
+        );
+
+        if (! $shopping->items()->exists()) {
+            foreach (['Milk', 'Bread', 'Bananas', 'Washing up liquid'] as $i => $title) {
+                ChecklistItem::create(['checklist_id' => $shopping->id, 'title' => $title, 'sort_order' => $i]);
+            }
+        }
+
+        // The home list is what the wall's To do panel shows.
+        $todo = Checklist::home($household);
+        $todo->update(['sort_order' => 1]);
+
+        if ($todo->items()->exists()) {
+            return;
+        }
+
+        $today = $household->todayLocal();
+        $members = $household->members;
+
+        $seed = [
+            // [title, due offset in days or null, member index or null]
+            ['Chase the plumber', -2, 0],
+            ['Book MOT', 0, 0],
+            ['Sign the school trip form', 1, 1],
+            ['Return library books', 3, null],
+            ['Water the plants', null, null],
+            ['Buy Joey new football boots', null, 1],
         ];
 
-        foreach ($lists as $order => [$name, $type, $items]) {
-            $checklist = Checklist::firstOrCreate(
-                ['household_id' => $household->id, 'name' => $name],
-                ['type' => $type, 'sort_order' => $order],
-            );
-
-            if ($checklist->items()->exists()) {
-                continue;
-            }
-
-            foreach ($items as $i => $title) {
-                ChecklistItem::create([
-                    'checklist_id' => $checklist->id,
-                    'title' => $title,
-                    'sort_order' => $i,
-                ]);
-            }
+        foreach ($seed as $i => [$title, $offset, $memberIndex]) {
+            ChecklistItem::create([
+                'checklist_id' => $todo->id,
+                'title' => $title,
+                'due_on' => $offset === null ? null : $today->addDays($offset)->toDateString(),
+                'member_id' => $memberIndex === null ? null : ($members[$memberIndex]->id ?? null),
+                'sort_order' => $i,
+            ]);
         }
     }
 }

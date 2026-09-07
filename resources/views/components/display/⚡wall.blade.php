@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ChecklistItem;
 use App\Models\Event;
 use App\Models\Household;
 use App\Services\PhotoLibrary;
@@ -8,6 +9,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 /**
@@ -198,6 +200,40 @@ new #[Layout('layouts::display')] class extends Component
             ))
             ->take(12)
             ->values();
+    }
+
+    /**
+     * Open, dated to-dos bucketed by date and then by member, for the day
+     * columns. Undated ones live only in the To do panel.
+     *
+     * @return Collection<string, Collection<int|string, Collection<int, ChecklistItem>>>
+     */
+    #[Computed]
+    public function todosByDate(): Collection
+    {
+        $from = $this->weekStart;
+        $to = $from->addDays(self::HORIZON);
+
+        return ChecklistItem::query()
+            ->whereHas('checklist', fn ($q) => $q
+                ->where('household_id', $this->household()->id)
+                ->where('is_home_list', true))
+            ->open()
+            ->whereNotNull('due_on')
+            ->whereBetween('due_on', [$from->toDateString(), $to->toDateString()])
+            ->with('member')
+            ->inDueOrder()
+            ->get()
+            ->groupBy(fn (ChecklistItem $item) => $item->due_on->toDateString())
+            ->map(fn (Collection $items) => $items->groupBy(
+                fn (ChecklistItem $item) => $item->member_id ?? self::HOUSEHOLD
+            ));
+    }
+
+    #[On('todos-changed')]
+    public function refreshTodos(): void
+    {
+        unset($this->todosByDate);
     }
 
     #[Computed]
@@ -516,12 +552,17 @@ new #[Layout('layouts::display')] class extends Component
                         // Only give the household a column on days that need one,
                         // so a normal day is not squeezed by an empty column.
                         $dayHouseholdEvents = $day['events_by_member'][$this::HOUSEHOLD] ?? collect();
-                        $dayColumns = $members->count() + ($dayHouseholdEvents->isNotEmpty() ? 1 : 0);
+                        $dayHouseholdTodos = $this->todosByDate[$day['date']][$this::HOUSEHOLD] ?? collect();
+                        $dayNeedsHousehold = $dayHouseholdEvents->isNotEmpty() || $dayHouseholdTodos->isNotEmpty();
+                        $dayColumns = $members->count() + ($dayNeedsHousehold ? 1 : 0);
                     @endphp
                     <div x-show="isPicked(@js($day['date']))" class="h-full min-h-0" x-cloak wire:key="day-{{ $day['date'] }}">
                         <div class="grid h-full min-h-0 gap-3" style="grid-template-columns: repeat({{ max($dayColumns, 1) }}, minmax(0, 1fr));">
                             @foreach ($members as $member)
-                                @php $memberEvents = $day['events_by_member'][$member->id] ?? collect(); @endphp
+                                @php
+                                    $memberEvents = $day['events_by_member'][$member->id] ?? collect();
+                                    $memberTodos = $this->todosByDate[$day['date']][$member->id] ?? collect();
+                                @endphp
 
                                 <div class="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-slate-900">
                                     <div class="flex items-center gap-2 px-3 py-2" style="background-color: {{ $member->colour }}1a;">
@@ -550,14 +591,31 @@ new #[Layout('layouts::display')] class extends Component
                                                 @endif
                                             </div>
                                         @empty
-                                            <p class="px-1 py-4 text-sm text-slate-400 dark:text-slate-600">Nothing on</p>
+                                            @if ($memberTodos->isEmpty())
+                                                <p class="px-1 py-4 text-sm text-slate-400 dark:text-slate-600">Nothing on</p>
+                                            @endif
                                         @endforelse
+
+                                        {{-- To-dos due this day, below the events and
+                                             visibly a different kind of thing. --}}
+                                        @foreach ($memberTodos as $todo)
+                                            <div class="flex items-start gap-2 rounded-xl border border-dashed p-2 dark:border-slate-700"
+                                                 style="border-color: {{ $member->colour }}66;">
+                                                <svg class="mt-0.5 size-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                                                    <rect x="4" y="4" width="16" height="16" rx="3" />
+                                                </svg>
+                                                <span class="min-w-0 flex-1">
+                                                    <span class="block text-[0.7rem] leading-tight font-semibold tracking-wide text-slate-400 uppercase">To do</span>
+                                                    <span class="block leading-tight font-medium">{{ $todo->title }}</span>
+                                                </span>
+                                            </div>
+                                        @endforeach
                                     </div>
                                 </div>
                             @endforeach
 
                             {{-- Events nobody in particular owns still need somewhere to live. --}}
-                            @if ($dayHouseholdEvents->isNotEmpty())
+                            @if ($dayNeedsHousehold)
                                 @php $householdEvents = $dayHouseholdEvents; @endphp
                                 <div class="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-slate-900">
                                     <div class="flex items-center gap-2 bg-slate-100 px-3 py-2 dark:bg-slate-800">
@@ -580,8 +638,22 @@ new #[Layout('layouts::display')] class extends Component
                                                 @endif
                                             </div>
                                         @empty
-                                            <p class="px-1 py-4 text-sm text-slate-400 dark:text-slate-600">Nothing on</p>
+                                            @if ($dayHouseholdTodos->isEmpty())
+                                                <p class="px-1 py-4 text-sm text-slate-400 dark:text-slate-600">Nothing on</p>
+                                            @endif
                                         @endforelse
+
+                                        @foreach ($dayHouseholdTodos as $todo)
+                                            <div class="flex items-start gap-2 rounded-xl border border-dashed border-slate-300 p-2 dark:border-slate-700">
+                                                <svg class="mt-0.5 size-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                                                    <rect x="4" y="4" width="16" height="16" rx="3" />
+                                                </svg>
+                                                <span class="min-w-0 flex-1">
+                                                    <span class="block text-[0.7rem] leading-tight font-semibold tracking-wide text-slate-400 uppercase">To do</span>
+                                                    <span class="block leading-tight font-medium">{{ $todo->title }}</span>
+                                                </span>
+                                            </div>
+                                        @endforeach
                                     </div>
                                 </div>
                             @endif
@@ -668,6 +740,11 @@ new #[Layout('layouts::display')] class extends Component
                     @empty
                         <p class="px-1 py-4 text-sm text-slate-400">Nothing else coming up.</p>
                     @endforelse
+                </div>
+
+                {{-- Household to-dos, under "Coming up" in both views. --}}
+                <div class="flex max-h-[40%] min-h-0 shrink-0 flex-col rounded-2xl bg-white p-3 dark:bg-slate-900">
+                    <livewire:todos.panel />
                 </div>
             </section>
         </div>

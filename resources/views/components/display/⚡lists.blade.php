@@ -15,7 +15,10 @@ new class extends Component
     #[Computed]
     public function checklists(): Collection
     {
-        return Household::current()->checklists()->with('items')->get();
+        return Household::current()
+            ->checklists()
+            ->with(['items' => fn ($q) => $q->with('member')])
+            ->get();
     }
 
     public function toggle(int $itemId): void
@@ -64,8 +67,13 @@ new class extends Component
                         @endif
                     </header>
 
+                    @php
+                        $openItems = $checklist->items->where('is_done', false);
+                        $doneItems = $checklist->items->where('is_done', true)->sortByDesc('done_at');
+                    @endphp
+
                     <ul>
-                        @foreach ($checklist->items as $item)
+                        @foreach ($openItems as $item)
                             <li wire:key="item-{{ $item->id }}">
                                 <button
                                     type="button"
@@ -94,7 +102,46 @@ new class extends Component
                                 </button>
                             </li>
                         @endforeach
+
+                        @if ($openItems->isEmpty())
+                            <li class="px-1 py-3 text-sm text-slate-400">Nothing left on this list.</li>
+                        @endif
                     </ul>
+
+                    {{-- Ticked items fade off the wall's To do panel; this is
+                         where they can be found again. --}}
+                    @if ($doneItems->isNotEmpty())
+                        <div x-data="{ open: false }" class="mt-2 border-t border-slate-100 pt-1 dark:border-slate-800">
+                            <button type="button" x-on:click="open = ! open"
+                                    class="flex w-full touch-target items-center gap-2 rounded-lg px-1 text-left text-sm font-semibold text-slate-400">
+                                <svg class="size-4 transition-transform" :class="open && 'rotate-90'" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="m9 6 6 6-6 6" />
+                                </svg>
+                                Done ({{ $doneItems->count() }})
+                            </button>
+
+                            <ul x-show="open" x-cloak x-collapse>
+                                @foreach ($doneItems as $item)
+                                    <li wire:key="done-{{ $item->id }}">
+                                        <button type="button" wire:click="toggle({{ $item->id }})"
+                                                class="flex w-full touch-target items-center gap-3 rounded-xl px-1 text-left">
+                                            <span class="grid size-7 shrink-0 place-items-center rounded-lg border-2 border-blue-600 bg-blue-600 text-white">
+                                                <svg class="size-4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                                                    <path d="m5 12 5 5L20 7" />
+                                                </svg>
+                                            </span>
+                                            <span class="min-w-0 flex-1 text-slate-400">
+                                                <span class="block truncate line-through">{{ $item->title }}</span>
+                                                @if ($item->done_at)
+                                                    <span class="block text-sm">{{ $item->done_at->diffForHumans() }}</span>
+                                                @endif
+                                            </span>
+                                        </button>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
                 </section>
             @endforeach
         </div>

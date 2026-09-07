@@ -119,7 +119,7 @@ new #[Layout('layouts::app')] class extends Component
         <span x-text="message"></span>
     </div>
 
-    <div class="pane-scroll min-h-0 flex-1 px-4 pb-4">
+    <div class="pane-scroll min-h-0 flex-1 px-4 pb-24">
         @forelse ($this->eventsByDay as $date => $events)
             @php $day = Carbon::parse($date, $tz); @endphp
 
@@ -154,7 +154,14 @@ new #[Layout('layouts::app')] class extends Component
             </div>
         @endforelse
 
-        <livewire:display.lists />
+        {{-- Editable here: phones are where a to-do actually gets written. --}}
+        <section class="mt-4 rounded-2xl bg-white p-3 dark:bg-slate-900">
+            <livewire:todos.panel :editable="true" />
+        </section>
+
+        <div class="mt-4">
+            <livewire:display.lists />
+        </div>
 
         <form method="POST" action="{{ route('logout') }}" class="pt-6">
             @csrf

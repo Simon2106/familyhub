@@ -23,7 +23,24 @@ adding packages beyond those listed.
 
 These supersede the text they replace. Newest first.
 
-1. **Member attribution from event titles**, plus two wall-display changes.
+1. **Household to-dos on the wall's home view.**
+   - A **"To do" panel under "Coming up"** on the right, in both the today and
+     This week views: the household's open to-dos with an optional due date and
+     an optional assigned member (shown as their colour dot). Sorted
+     **overdue → due soonest → no date**.
+   - Tap to tick, optimistic in Alpine and persisted through Livewire. Ticked
+     items **fade out after a few seconds** and are then findable in a **"Done"**
+     section on the Lists tab.
+   - **Dated** to-dos also appear in that member's column on that day, below the
+     calendar events and marked as a task so they read differently from an
+     appointment. To-dos with no member appear in the Household column.
+   - **Quick add** from the wall: a "+" on the panel opens a large-keyboard
+     input for title, optional due date and optional member.
+   - The same to-dos are **editable in `/app`** on phones.
+   - Reuses the existing **Checklist** model: the household to-do list is a
+     Checklist flagged `is_home_list`. No parallel model.
+
+2. **Member attribution from event titles**, plus two wall-display changes.
    - The week strip runs Monday–Sunday with a **"This week"** segment to the
      left of Monday.
    - **The display opens on today** — the current day selected in the strip,
@@ -61,14 +78,14 @@ These supersede the text they replace. Newest first.
      action on the Calendars page and a `familyhub:attribute` command for
      deploys. Name aliases are seeded from first names.
 
-2. **Calendars are iCloud-only.** Phase 2 was originally "Google (OAuth) + Apple
+3. **Calendars are iCloud-only.** Phase 2 was originally "Google (OAuth) + Apple
    iCloud (CalDAV)". Google is **out of scope** unless asked for later. Phase 2
    below is iCloud only.
-3. **iCloud credentials are entered in `/admin`, not `.env`.** The app must
+4. **iCloud credentials are entered in `/admin`, not `.env`.** The app must
    support **multiple iCloud accounts**.
-4. **Phase 6 ships the Home Assistant driver only.** The VoiceMonkey driver is
+5. **Phase 6 ships the Home Assistant driver only.** The VoiceMonkey driver is
    dropped; see Phase 6.
-5. **Stack is Laravel 13 + Livewire 4 + Tailwind 4**, not the Laravel 11 +
+6. **Stack is Laravel 13 + Livewire 4 + Tailwind 4**, not the Laravel 11 +
    Livewire 3 + Breeze originally specified. Laravel 11 left its security-fix
    window in March 2026 and this app is internet-facing. Breeze is not used — it
    hard-pins Livewire 3 and Tailwind 3 — so auth is a hand-rolled login-only

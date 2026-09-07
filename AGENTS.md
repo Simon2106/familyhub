@@ -33,6 +33,9 @@ conventions. The points most easily got wrong:
   consulted at all. `AttributionMatcher` is compiled once per household and
   reused — never build one per event. Events with `attribution = 'manual'` are off
   limits: a person chose those by hand.
+- **Household to-dos are a `Checklist` with `is_home_list`**, not a separate
+  model — use `Checklist::home()`. Ticked to-dos deliberately linger in the
+  panel query for a few seconds so they can fade rather than vanish mid-tap.
 - Livewire `#[Computed]` only caches on **property** access (`$this->days`).
   Calling `$this->days()` re-runs the method, which is an easy way to
   reintroduce an N+1 in the wall display.
