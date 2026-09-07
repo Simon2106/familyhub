@@ -4,7 +4,6 @@ namespace App\Services\Capture;
 
 use Anthropic\Client;
 use App\Models\Capture;
-use App\Models\CaptureAttachment;
 use App\Services\Capture\Contracts\ItemExtractor;
 use Carbon\CarbonImmutable;
 use RuntimeException;
@@ -24,9 +23,18 @@ class ClaudeItemExtractor implements ItemExtractor
 
     public function extract(Capture $capture): ExtractionResult
     {
-        $content = $this->buildContent($capture);
+        $prepared = $this->attachments->prepareAll($capture->attachments);
+
+        $content = $this->buildContent($capture, $prepared);
 
         if ($content === []) {
+            // Everything that arrived was unreadable. Failing loudly is right:
+            // reporting "nothing found" would look identical to an email that
+            // genuinely had no dates in it.
+            if ($prepared->hasSkipped()) {
+                throw new RuntimeException($prepared->skippedSentence());
+            }
+
             return new ExtractionResult;
         }
 
@@ -49,7 +57,16 @@ class ClaudeItemExtractor implements ItemExtractor
         // No temperature or top_p: Sonnet 5 and the other current models reject
         // sampling parameters outright.
 
-        return $this->interpret($message);
+        $result = $this->interpret($message);
+
+        // A partial read is still a useful read, but the review inbox has to
+        // say what was left out.
+        return $prepared->hasSkipped()
+            ? new ExtractionResult(
+                $result->items,
+                trim(($result->summary ?? '').' '.$prepared->skippedSentence()),
+            )
+            : $result;
     }
 
     /**
@@ -85,19 +102,13 @@ class ClaudeItemExtractor implements ItemExtractor
      *
      * @return list<array<string, mixed>>
      */
-    protected function buildContent(Capture $capture): array
+    protected function buildContent(Capture $capture, PreparedAttachments $prepared): array
     {
-        $content = [];
-
         // Documents first: the API reads them better when they precede the
         // instruction that refers to them.
-        foreach ($capture->attachments as $attachment) {
-            if ($block = $this->attachmentBlock($attachment)) {
-                $content[] = $block;
-            }
-        }
+        $content = $prepared->blocks;
 
-        $text = $this->describe($capture);
+        $text = $this->describe($capture, $prepared);
 
         if (trim($text) === '' && $content === []) {
             return [];
@@ -108,32 +119,8 @@ class ClaudeItemExtractor implements ItemExtractor
         return $content;
     }
 
-    /** @return array<string, mixed>|null */
-    protected function attachmentBlock(CaptureAttachment $attachment): ?array
-    {
-        $prepared = $this->attachments->prepare($attachment);
-
-        if ($prepared === null) {
-            return null;
-        }
-
-        [$data, $mime] = $prepared;
-
-        if ($mime === 'application/pdf') {
-            return [
-                'type' => 'document',
-                'source' => ['type' => 'base64', 'mediaType' => 'application/pdf', 'data' => $data],
-            ];
-        }
-
-        return [
-            'type' => 'image',
-            'source' => ['type' => 'base64', 'mediaType' => $mime, 'data' => $data],
-        ];
-    }
-
     /** The volatile half of the prompt — kept out of the cached system block. */
-    protected function describe(Capture $capture): string
+    protected function describe(Capture $capture, PreparedAttachments $prepared): string
     {
         $household = $capture->household;
         $sentAt = $capture->created_at ?? now();
@@ -169,9 +156,16 @@ class ClaudeItemExtractor implements ItemExtractor
             $lines[] = $capture->body_text;
         }
 
-        if ($capture->attachments->isNotEmpty()) {
+        if ($prepared->blocks !== []) {
             $lines[] = '';
             $lines[] = 'Attachments are included above. Read them fully.';
+        }
+
+        if ($prepared->hasSkipped()) {
+            // Told to the model too, so it does not claim to have read
+            // something that was never sent.
+            $lines[] = '';
+            $lines[] = 'Not included (too large to send): '.implode(', ', $prepared->skipped).'.';
         }
 
         return implode("\n", $lines);

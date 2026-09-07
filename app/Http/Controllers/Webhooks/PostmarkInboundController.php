@@ -16,8 +16,15 @@ use Illuminate\Support\Facades\Log;
  */
 class PostmarkInboundController
 {
-    /** Attachments larger than this are not worth sending to the model. */
-    public const MAX_ATTACHMENT_BYTES = 15_000_000;
+    /**
+     * Postmark accepts up to 35MB of email. Anything past what the model can
+     * actually be sent is still stored — the review inbox reports it as
+     * unread rather than pretending the email was empty.
+     *
+     * Requires nginx client_max_body_size and PHP post_max_size to be raised;
+     * see the deployment section of the README.
+     */
+    public const MAX_ATTACHMENT_BYTES = 35_000_000;
 
     public const READABLE_TYPES = [
         'application/pdf',

@@ -38,6 +38,10 @@ conventions. The points most easily got wrong:
   path to an Event, and it goes through the Phase 2 write-back. Swap
   `ItemExtractor` for `Tests\Support\FakeItemExtractor` to test the pipeline
   without calling the API.
+- **Inbound email needs nginx `client_max_body_size` and PHP `post_max_size` at
+  40M** — Postmark posts attachments base64-encoded inside the JSON body, up to
+  35MB. Attachment limits are layered (see README § Attachment size, end to end);
+  anything too large to send is stored and named, never silently dropped.
 - **A Livewire method must not share a name with a public property** — the
   property shadows it client-side and `$wire.name()` silently does nothing.
   `tests/Feature/Capture/ComponentNamingTest.php` guards this.

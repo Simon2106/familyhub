@@ -333,6 +333,17 @@ php artisan view:cache
 npm run build
 ```
 
+Raise the upload limits before pointing Postmark at the server — inbound email
+with attachments is up to 35MB and returns 413 otherwise:
+
+```nginx
+client_max_body_size 40M;   # nginx server block
+```
+```ini
+post_max_size = 40M         # php.ini
+upload_max_filesize = 40M
+```
+
 Seed the household on first deploy, or `/display` will pair and then fail:
 
 ```sh
@@ -406,6 +417,33 @@ being absent from a response that never covered them.
 
 ### Postmark inbound email
 
+> **Raise the upload limits first, or inbound email with attachments returns
+> 413 and Postmark keeps retrying it.** Postmark posts the whole email —
+> attachments base64-encoded inside the JSON body — and allows up to **35MB**.
+> Base64 inflates by a third, so the request can approach 40MB.
+>
+> **nginx** (Forge: Sites → your site → Edit Nginx Configuration), in `server {}`:
+>
+> ```nginx
+> client_max_body_size 40M;
+> ```
+>
+> **PHP** (Forge: Server → PHP → or edit `/etc/php/8.3/fpm/php.ini`):
+>
+> ```ini
+> post_max_size = 40M
+> upload_max_filesize = 40M
+> ```
+>
+> Reload both afterwards: `sudo service nginx reload && sudo service php8.3-fpm reload`.
+>
+> `upload_max_filesize` matters for the phone upload and share-target paths;
+> `post_max_size` and nginx's limit are what inbound email hits. PHP silently
+> discards a POST body over `post_max_size` — the request arrives with empty
+> input rather than an error — so set both.
+>
+> The same applies in development: a stock PHP has `post_max_size = 2M`.
+
 1. Postmark → your server → **Inbound** stream
 2. Generate a secret: `php -r 'echo bin2hex(random_bytes(24));'` → `POSTMARK_INBOUND_SECRET`
 3. Set the inbound webhook to
@@ -417,6 +455,27 @@ being absent from a response that never covered them.
 A wrong or missing secret returns **404**, not 401 — an unauthenticated caller
 learns nothing about whether the endpoint exists. An empty or unreadable email is
 answered 200 and ignored, because a non-2xx would make Postmark retry it forever.
+
+#### Attachment size, end to end
+
+| Limit | Value | Set where |
+| --- | --- | --- |
+| Postmark's own ceiling | 35MB | Postmark |
+| nginx request body | 40M | `client_max_body_size` |
+| PHP request body | 40M | `post_max_size` |
+| Accepted per attachment | 35MB | `PostmarkInboundController::MAX_ATTACHMENT_BYTES` |
+| Sent to Claude, per attachment | 12MB | `AttachmentPreparer::MAX_BYTES` |
+| Sent to Claude, per request | 20MB | `AttachmentPreparer::MAX_TOTAL_BYTES` |
+
+The last two are lower on purpose: the Messages API caps a request at 32MB and
+base64 costs a third on top, so several attachments share one budget. Anything
+that will not fit is **stored and named** rather than dropped — the review inbox
+says which files went unread, and a capture whose only attachment was unreadable
+fails with that reason instead of reporting "nothing found", which would look
+exactly like an email that had no dates in it.
+
+Photos are downscaled to a 2000px long edge before sending, so a 12MP phone
+photo of a letter is nowhere near these limits.
 
 ### Anthropic
 

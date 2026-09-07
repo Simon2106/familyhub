@@ -18,11 +18,65 @@ use Throwable;
  */
 class AttachmentPreparer
 {
-    /** The API's request ceiling is 32MB; stay well inside it per attachment. */
-    public const MAX_BYTES = 4_500_000;
+    /**
+     * Raw bytes across all attachments in one request.
+     *
+     * The API's ceiling is 32MB for the whole request, and base64 inflates by
+     * a third, so ~24MB of raw bytes is the real limit. 20MB leaves room for
+     * the prompt and keeps a margin.
+     */
+    public const MAX_TOTAL_BYTES = 20_000_000;
+
+    /**
+     * Raw bytes for one attachment.
+     *
+     * Postmark accepts up to 35MB of email, so a single scanned PDF can be
+     * large. Anything past this is reported rather than dropped.
+     */
+    public const MAX_BYTES = 12_000_000;
 
     /** Long edge in pixels. Plenty to read a page of A4. */
     public const MAX_EDGE = 2000;
+
+    /**
+     * Every attachment that fits, and the names of those that do not.
+     *
+     * @param  iterable<CaptureAttachment>  $attachments
+     */
+    public function prepareAll(iterable $attachments): PreparedAttachments
+    {
+        $blocks = [];
+        $skipped = [];
+        $budget = self::MAX_TOTAL_BYTES;
+
+        foreach ($attachments as $attachment) {
+            $prepared = $this->prepare($attachment);
+
+            if ($prepared === null) {
+                $skipped[] = $attachment->filename;
+
+                continue;
+            }
+
+            [$data, $mime] = $prepared;
+
+            // base64 is what actually travels, so the budget is spent in those
+            // bytes rather than the raw ones.
+            if (strlen($data) > $budget) {
+                $skipped[] = $attachment->filename;
+
+                continue;
+            }
+
+            $budget -= strlen($data);
+
+            $blocks[] = $mime === 'application/pdf'
+                ? ['type' => 'document', 'source' => ['type' => 'base64', 'mediaType' => 'application/pdf', 'data' => $data]]
+                : ['type' => 'image', 'source' => ['type' => 'base64', 'mediaType' => $mime, 'data' => $data]];
+        }
+
+        return new PreparedAttachments($blocks, $skipped);
+    }
 
     /**
      * @return array{0: string, 1: string}|null base64 data and media type

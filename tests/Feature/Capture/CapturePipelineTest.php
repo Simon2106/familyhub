@@ -135,6 +135,27 @@ class CapturePipelineTest extends TestCase
     }
 
     #[Test]
+    public function a_capture_whose_only_attachment_was_unreadable_fails_rather_than_reporting_nothing(): void
+    {
+        // "Nothing found" would be indistinguishable from an email that had no
+        // dates in it, and the household would never know the PDF went unread.
+        $this->extractor->throw = '1 attachment could not be read because it was too large: huge.pdf.';
+
+        $capture = $this->capture(['body_text' => null]);
+        $job = new ProcessCaptureJob($capture);
+
+        try {
+            dispatch_sync($job);
+        } catch (\Throwable $e) {
+            $job->failed($e);
+        }
+
+        $capture->refresh();
+        $this->assertSame('failed', $capture->status);
+        $this->assertStringContainsString('huge.pdf', $capture->error);
+    }
+
+    #[Test]
     public function an_upload_becomes_a_capture_with_its_file(): void
     {
         Queue::fake();
