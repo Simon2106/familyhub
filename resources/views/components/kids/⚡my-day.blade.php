@@ -323,10 +323,16 @@ new class extends Component
                         </p>
                     </div>
 
-                    <div class="shrink-0 text-right">
-                        <p class="text-3xl font-bold tabular-nums" style="color: {{ $this->member->colour }};">{{ $this->balance }}</p>
-                        <p class="text-xs font-semibold tracking-wide text-slate-400 uppercase">points</p>
-                    </div>
+                    {{-- The total is the way into the history behind it: "where
+                         did my stars go" is exactly the question an append-only
+                         ledger exists to answer. --}}
+                    <button type="button"
+                            wire:click="$dispatch('show-ledger', { member: {{ $this->member->id }} })"
+                            class="shrink-0 rounded-2xl px-2 py-1 text-right"
+                            aria-label="{{ $this->member->name }}'s points history">
+                        <span class="block text-3xl font-bold tabular-nums" style="color: {{ $this->member->colour }};">{{ $this->balance }}</span>
+                        <span class="block text-xs font-semibold tracking-wide text-slate-400 uppercase">points ›</span>
+                    </button>
 
                     <button type="button" wire:click="close"
                             class="grid touch-target shrink-0 place-items-center rounded-2xl text-slate-400" aria-label="Close">

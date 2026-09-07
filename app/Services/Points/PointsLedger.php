@@ -6,6 +6,7 @@ use App\Models\ChoreInstance;
 use App\Models\Member;
 use App\Models\PointEntry;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -93,6 +94,39 @@ class PointsLedger
             ->whereIn('kind', ['award', 'reversal', 'adjustment'])
             ->whereBetween('created_at', [$from, $to])
             ->sum('points');
+    }
+
+    /**
+     * A child's ledger, newest first, with the balance after each line.
+     *
+     * The running balance is walked backwards from the current one rather than
+     * forwards from zero, so showing the last fifty lines costs fifty rows
+     * instead of every row the child has ever earned.
+     *
+     * @return Collection<int, array{entry: PointEntry, balance: int}>
+     */
+    public function history(Member $member, int $limit = 50): Collection
+    {
+        $balance = $this->balanceFor($member);
+
+        return PointEntry::where('member_id', $member->id)
+            ->orderByDesc('id')
+            ->limit($limit)
+            ->get()
+            ->map(function (PointEntry $entry) use (&$balance) {
+                $row = ['entry' => $entry, 'balance' => $balance];
+
+                // The line above this one left the balance where this one
+                // found it.
+                $balance -= $entry->points;
+
+                return $row;
+            });
+    }
+
+    public function countEntries(Member $member): int
+    {
+        return PointEntry::where('member_id', $member->id)->count();
     }
 
     /** What this source has paid out so far, net of anything taken back. */

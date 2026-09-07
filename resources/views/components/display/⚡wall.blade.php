@@ -963,6 +963,7 @@ new #[Layout('layouts::display')] class extends Component
 
     {{-- A child's day, and the keypad that guards the two things it should. --}}
     <livewire:kids.my-day />
+    <livewire:kids.ledger />
     <livewire:kids.pin />
 
     {{-- ============================ TAB BAR ============================= --}}
