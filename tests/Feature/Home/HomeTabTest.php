@@ -42,7 +42,7 @@ class HomeTabTest extends TestCase
     }
 
     #[Test]
-    public function tiles_are_grouped_by_the_room_home_assistant_says_they_are_in(): void
+    public function tiles_are_grouped_by_kind_with_the_room_on_each_tile(): void
     {
         FakeHomeAssistant::entity('light.kitchen', 'on', ['friendly_name' => 'Kitchen spots'], area: 'Kitchen');
         FakeHomeAssistant::entity('switch.lamp', 'off', ['friendly_name' => 'Corner lamp'], area: 'Living room');
@@ -51,19 +51,141 @@ class HomeTabTest extends TestCase
         $this->tile(['entity_id' => 'switch.lamp', 'domain' => 'switch', 'name' => 'Corner lamp', 'area' => 'Living room']);
 
         Livewire::test('home.panel')
-            ->assertSee('Kitchen')
-            ->assertSee('Living room')
+            ->assertSee('Lights')
+            ->assertSee('Sockets & plugs')
             ->assertSee('Kitchen spots')
-            ->assertSee('Corner lamp');
+            ->assertSee('Corner lamp')
+            // The room is still there, now on the tile rather than over it.
+            ->assertSee('Kitchen')
+            ->assertSee('Living room');
     }
 
     #[Test]
-    public function a_tile_with_no_room_still_gets_somewhere_to_go(): void
+    public function a_section_with_nothing_in_it_is_not_shown(): void
+    {
+        FakeHomeAssistant::entity('light.kitchen', 'on');
+        $this->tile(['entity_id' => 'light.kitchen']);
+
+        Livewire::test('home.panel')
+            ->assertSee('Lights')
+            ->assertDontSee('Blinds & covers')
+            ->assertDontSee('Scenes & scripts')
+            ->assertDontSee('Heating');
+    }
+
+    #[Test]
+    public function the_sections_come_in_a_fixed_order(): void
+    {
+        FakeHomeAssistant::entity('scene.movie', 'unknown');
+        FakeHomeAssistant::entity('climate.hall', 'heat');
+        FakeHomeAssistant::entity('light.kitchen', 'on');
+
+        // Added in the wrong order on purpose.
+        $this->tile(['entity_id' => 'scene.movie', 'domain' => 'scene', 'name' => 'Movie']);
+        $this->tile(['entity_id' => 'climate.hall', 'domain' => 'climate', 'name' => 'Hall']);
+        $this->tile(['entity_id' => 'light.kitchen', 'name' => 'Kitchen spots']);
+
+        $sections = Livewire::test('home.panel')->instance()->sections->keys()->all();
+
+        $this->assertSame(['lights', 'heating', 'runnable'], $sections);
+    }
+
+    #[Test]
+    public function a_tile_with_no_room_simply_has_no_sub_label(): void
     {
         FakeHomeAssistant::entity('light.spare', 'off');
         $this->tile(['entity_id' => 'light.spare', 'name' => 'Spare', 'area' => null]);
 
-        Livewire::test('home.panel')->assertSee(HomeTile::UNGROUPED);
+        Livewire::test('home.panel')
+            ->assertSee('Spare')
+            ->assertDontSee(HomeTile::UNGROUPED);
+    }
+
+    #[Test]
+    public function each_domain_lands_in_the_section_it_belongs_to(): void
+    {
+        $expected = [
+            'light' => 'lights',
+            'switch' => 'sockets',
+            'climate' => 'heating',
+            'cover' => 'covers',
+            'scene' => 'runnable',
+            'script' => 'runnable',
+            'sensor' => 'other',
+        ];
+
+        foreach ($expected as $domain => $section) {
+            $this->assertSame($section, HomeTile::defaultSectionFor($domain), $domain);
+        }
+    }
+
+    #[Test]
+    public function resolving_a_section_works_on_a_tile_straight_out_of_the_database(): void
+    {
+        // A method named after its column is read by Eloquent as a
+        // relationship, and the failure is a LogicException nowhere near the
+        // cause. This is the shape that caught it: the column is absent from
+        // the attributes of a model that was just created without it.
+        $tile = $this->tile(['entity_id' => 'switch.sonoff', 'domain' => 'switch']);
+
+        $this->assertFalse(array_key_exists('section_override', $tile->getAttributes()));
+        $this->assertSame('sockets', $tile->section());
+    }
+
+    #[Test]
+    public function a_plug_that_is_really_a_lamp_can_be_filed_under_lights(): void
+    {
+        FakeHomeAssistant::entity('switch.sonoff', 'on', ['friendly_name' => 'Corner lamp']);
+        $tile = $this->tile([
+            'entity_id' => 'switch.sonoff',
+            'domain' => 'switch',
+            'name' => 'Corner lamp',
+            'section_override' => 'lights',
+        ]);
+
+        $this->assertSame('lights', $tile->section());
+
+        $sections = Livewire::test('home.panel')->instance()->sections;
+
+        $this->assertTrue($sections->get('lights')->contains('id', $tile->id));
+        $this->assertNull($sections->get('sockets'));
+    }
+
+    #[Test]
+    public function filing_a_plug_under_lights_does_not_change_what_tapping_it_does(): void
+    {
+        // It is still a switch entity in Home Assistant. Calling light.toggle
+        // on it would simply fail.
+        FakeHomeAssistant::entity('switch.sonoff', 'on');
+        $tile = $this->tile(['entity_id' => 'switch.sonoff', 'domain' => 'switch', 'section_override' => 'lights']);
+
+        Livewire::test('home.panel')->call('press', $tile->id);
+
+        $this->assertSame('/api/services/switch/toggle', FakeHomeAssistant::serviceCalls()[0]['path']);
+    }
+
+    #[Test]
+    public function a_blind_filed_elsewhere_keeps_its_buttons(): void
+    {
+        FakeHomeAssistant::entity('cover.blind', 'open', ['friendly_name' => 'Blind']);
+        $tile = $this->tile([
+            'entity_id' => 'cover.blind', 'domain' => 'cover', 'name' => 'Blind', 'section_override' => 'other',
+        ]);
+
+        Livewire::test('home.panel')
+            ->assertSee('Other')
+            ->assertSee('Open')
+            ->call('move', $tile->id, 'close');
+
+        $this->assertSame('/api/services/cover/close_cover', FakeHomeAssistant::serviceCalls()[0]['path']);
+    }
+
+    #[Test]
+    public function a_nonsense_stored_kind_falls_back_to_the_domain(): void
+    {
+        $tile = $this->tile(['entity_id' => 'light.kitchen', 'section_override' => 'not-a-section']);
+
+        $this->assertSame('lights', $tile->section());
     }
 
     #[Test]
@@ -230,11 +352,66 @@ class HomeTabTest extends TestCase
         $tile = $this->tile(['entity_id' => 'switch.sonoff', 'name' => 'Sonoff 0x00124b']);
 
         Livewire::test('admin.home')
-            ->call('startRenaming', $tile->id)
+            ->call('startEditing', $tile->id)
             ->set('label', 'Kettle')
-            ->call('saveLabel');
+            ->call('saveTile');
 
         $this->assertSame('Kettle', $tile->fresh()->title());
+    }
+
+    #[Test]
+    public function a_tiles_section_can_be_overridden_in_admin(): void
+    {
+        $tile = $this->tile(['entity_id' => 'switch.sonoff', 'domain' => 'switch', 'name' => 'Corner lamp']);
+
+        $this->assertSame('sockets', $tile->section(), 'HA calls it a switch, so that is where it starts.');
+
+        Livewire::test('admin.home')
+            ->call('startEditing', $tile->id)
+            ->set('section', 'lights')
+            ->call('saveTile')
+            ->assertHasNoErrors();
+
+        $this->assertSame('lights', $tile->fresh()->section());
+    }
+
+    #[Test]
+    public function clearing_the_override_returns_the_tile_to_the_default(): void
+    {
+        $tile = $this->tile(['entity_id' => 'switch.sonoff', 'domain' => 'switch', 'section_override' => 'lights']);
+
+        Livewire::test('admin.home')
+            ->call('startEditing', $tile->id)
+            ->set('section', '')
+            ->call('saveTile');
+
+        // Stored as null, not as the derived value, so a tile nobody has had an
+        // opinion about follows the defaults if those ever change.
+        $this->assertNull($tile->fresh()->section_override);
+        $this->assertSame('sockets', $tile->fresh()->section());
+    }
+
+    #[Test]
+    public function a_section_that_does_not_exist_is_refused(): void
+    {
+        $tile = $this->tile();
+
+        Livewire::test('admin.home')
+            ->call('startEditing', $tile->id)
+            ->set('section', 'nonsense')
+            ->call('saveTile')
+            ->assertHasErrors('section');
+    }
+
+    #[Test]
+    public function the_picker_still_groups_by_room_because_that_is_how_you_find_things(): void
+    {
+        FakeHomeAssistant::entity('light.kitchen', 'on', ['friendly_name' => 'Kitchen spots'], area: 'Kitchen');
+        FakeHomeAssistant::entity('light.spare', 'off', ['friendly_name' => 'Spare'], area: null);
+
+        Livewire::test('admin.home')
+            ->assertSee('Kitchen')
+            ->assertSee(HomeTile::UNGROUPED);
     }
 
     #[Test]

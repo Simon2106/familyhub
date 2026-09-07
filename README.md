@@ -787,9 +787,30 @@ shortlist rather than a mirror: only `light`, `switch`, `climate`, `cover`,
 renamed — "Sonoff 0x00124b" is not a name anyone taps twice — and **Refresh**
 re-reads names and rooms after they change in HA.
 
+#### Sections
+
+The **Switches** tab groups tiles by what they are, not by which room they are
+in — on a wall, "turn a light on" is looked for far more often than "what is in
+the kitchen". Sections appear in a fixed order and only when they hold
+something: **Lights**, **Sockets & plugs**, **Heating**, **Blinds & covers**,
+**Scenes & scripts**, **Other**. The room is still on every tile, as a quiet
+sub-label — it answers a question that gets asked second.
+
+Where a tile is filed can be overridden per tile in `/admin` → Home. Half the
+lamps in this house are Sonoff plugs, and HA calls those switches; filing one
+under Lights puts it where a person would look for it.
+
+> **The override moves a tile; it does not change what the tile does.** A plug
+> filed under Lights is still a `switch` entity, so tapping it calls
+> `switch.toggle` — calling `light.toggle` on it would simply fail. Equally, a
+> blind filed under Other keeps its Open/Stop/Close buttons, because that is
+> what a `cover` can do.
+
 #### What the tiles do
 
-| Kind | Tile |
+Driven by the Home Assistant domain, not by the section:
+
+| Domain | Tile |
 | --- | --- |
 | `light`, `switch` | The whole tile is the switch |
 | `scene`, `script` | Tap to run — there is no "off" to show |

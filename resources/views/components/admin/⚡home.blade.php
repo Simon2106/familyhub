@@ -22,9 +22,12 @@ new #[Layout('layouts::app')] class extends Component
 
     public ?string $error = null;
 
-    public ?int $renaming = null;
+    public ?int $editing = null;
 
     public string $label = '';
+
+    /** Blank means "whatever the Home Assistant domain implies". */
+    public string $section = '';
 
     public function household(): Household
     {
@@ -109,25 +112,34 @@ new #[Layout('layouts::app')] class extends Component
     {
         $this->tile($id)->delete();
 
-        $this->renaming = null;
+        $this->editing = null;
         unset($this->chosen, $this->available);
     }
 
-    public function startRenaming(int $id): void
+    public function startEditing(int $id): void
     {
         $tile = $this->tile($id);
 
-        $this->renaming = $tile->id;
+        $this->editing = $tile->id;
         $this->label = $tile->label ?: '';
+        $this->section = (string) $tile->section_override;
     }
 
-    public function saveLabel(): void
+    public function saveTile(): void
     {
-        $this->validate(['label' => 'nullable|string|max:60']);
+        $this->validate([
+            'label' => 'nullable|string|max:60',
+            'section' => 'nullable|in:'.implode(',', array_keys(HomeTile::SECTIONS)),
+        ]);
 
-        $this->tile((int) $this->renaming)->update(['label' => trim($this->label) ?: null]);
+        $this->tile((int) $this->editing)->update([
+            'label' => trim($this->label) ?: null,
+            // Null rather than the derived value, so a tile nobody has had an
+            // opinion about follows the defaults if those ever change.
+            'section_override' => $this->section ?: null,
+        ]);
 
-        $this->reset(['renaming', 'label']);
+        $this->reset(['editing', 'label', 'section']);
         unset($this->chosen);
     }
 
@@ -213,29 +225,53 @@ new #[Layout('layouts::app')] class extends Component
             <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
                 <h2 class="font-semibold">On the wall</h2>
 
-                @foreach ($this->chosen->groupBy(fn ($tile) => $tile->room()) as $room => $tiles)
-                    <p class="mt-3 text-xs font-semibold tracking-wide text-slate-400 uppercase">{{ $room }}</p>
+                {{-- Grouped the way the wall groups them, so this page is a
+                     preview of it rather than a different filing system. --}}
+                @foreach ($this->chosen->groupBy(fn ($tile) => $tile->section()) as $group => $tiles)
+                    <p class="mt-3 text-xs font-semibold tracking-wide text-slate-400 uppercase">{{ HomeTile::SECTIONS[$group] }}</p>
 
                     <ul class="divide-y divide-slate-100 dark:divide-slate-800">
                         @foreach ($tiles as $tile)
                             <li class="py-2" wire:key="tile-{{ $tile->id }}">
-                                @if ($renaming === $tile->id)
-                                    <form wire:submit="saveLabel" class="flex gap-2">
+                                @if ($editing === $tile->id)
+                                    <form wire:submit="saveTile" class="space-y-2">
                                         <input wire:model="label" type="text" autofocus
                                                placeholder="{{ $tile->name }}"
-                                               class="touch-target min-w-0 flex-1 rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
-                                        <button type="submit" class="touch-target shrink-0 rounded-xl bg-blue-600 px-4 font-semibold text-white">Save</button>
-                                        <button type="button" wire:click="$set('renaming', null)"
-                                                class="touch-target shrink-0 rounded-xl px-3 font-semibold text-slate-500">Cancel</button>
+                                               class="touch-target w-full rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+
+                                        <label class="block">
+                                            <span class="block text-sm font-medium">Show under</span>
+                                            <select wire:model="section"
+                                                    class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                                                <option value="">
+                                                    {{ HomeTile::SECTIONS[HomeTile::defaultSectionFor($tile->domain)] }} (from Home Assistant)
+                                                </option>
+                                                @foreach (HomeTile::SECTIONS as $key => $label)
+                                                    <option value="{{ $key }}">{{ $label }}</option>
+                                                @endforeach
+                                            </select>
+                                            <span class="mt-1 block text-sm text-slate-500 dark:text-slate-400">
+                                                Only where it appears on the wall. What tapping it does still follows
+                                                Home Assistant — a plug filed under Lights is still a plug.
+                                            </span>
+                                        </label>
+
+                                        <div class="flex gap-2">
+                                            <button type="submit" class="touch-target flex-1 rounded-xl bg-blue-600 px-4 font-semibold text-white">Save</button>
+                                            <button type="button" wire:click="$set('editing', null)"
+                                                    class="touch-target shrink-0 rounded-xl px-3 font-semibold text-slate-500">Cancel</button>
+                                        </div>
                                     </form>
                                 @else
                                     <div class="flex items-center gap-3">
                                         <span class="grid size-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-base dark:bg-slate-800" aria-hidden="true">
                                             <x-ha-icon :domain="$tile->domain" />
                                         </span>
-                                        <button type="button" wire:click="startRenaming({{ $tile->id }})" class="min-w-0 flex-1 text-left">
+                                        <button type="button" wire:click="startEditing({{ $tile->id }})" class="min-w-0 flex-1 text-left">
                                             <span class="block truncate font-medium">{{ $tile->title() }}</span>
-                                            <span class="block truncate text-sm text-slate-400">{{ $tile->entity_id }}</span>
+                                            <span class="block truncate text-sm text-slate-400">
+                                                {{ $tile->entity_id }}@if ($tile->area) · {{ $tile->area }} @endif
+                                            </span>
                                         </button>
                                         <button type="button" wire:click="remove({{ $tile->id }})"
                                                 class="shrink-0 touch-target rounded-xl px-3 text-sm font-semibold text-red-600">Remove</button>

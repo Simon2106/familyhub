@@ -80,11 +80,23 @@ new class extends Component
         return $this->error ?: $this->reading['error'];
     }
 
-    /** @return Collection<string, Collection<int, HomeTile>> */
+    /**
+     * Tiles by section, in the order the sections are listed.
+     *
+     * Grouped by kind rather than by room: on a wall, "turn a light on" is the
+     * thing being looked for far more often than "what is in the kitchen", and
+     * the room is still on every tile for when it is the question.
+     *
+     * @return Collection<string, Collection<int, HomeTile>>
+     */
     #[Computed]
-    public function rooms(): Collection
+    public function sections(): Collection
     {
-        return $this->tiles->groupBy(fn (HomeTile $tile) => $tile->room());
+        $grouped = $this->tiles->groupBy(fn (HomeTile $tile) => $tile->section());
+
+        return collect(HomeTile::SECTIONS)
+            ->map(fn (string $label, string $section) => $grouped->get($section, collect()))
+            ->reject(fn (Collection $tiles) => $tiles->isEmpty());
     }
 
     public function stateFor(HomeTile $tile): ?EntityState
@@ -189,9 +201,11 @@ new class extends Component
             </div>
         </div>
     @else
-        @foreach ($this->rooms as $room => $tiles)
-            <section class="mb-5" wire:key="room-{{ $room }}">
-                <h2 class="px-1 pb-2 text-sm font-semibold tracking-wide text-slate-400 uppercase">{{ $room }}</h2>
+        @foreach ($this->sections as $section => $tiles)
+            <section class="mb-5" wire:key="section-{{ $section }}">
+                <h2 class="px-1 pb-2 text-sm font-semibold tracking-wide text-slate-400 uppercase">
+                    {{ \App\Models\HomeTile::SECTIONS[$section] }}
+                </h2>
 
                 <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     @foreach ($tiles as $tile)
@@ -221,6 +235,12 @@ new class extends Component
                                         <span class="block truncate text-sm {{ $missing ? 'text-slate-400' : 'text-slate-500 dark:text-slate-400' }}">
                                             {{ $state?->summary() ?? 'Not responding' }}
                                         </span>
+                                        {{-- The room, now that sections are by
+                                             kind. Quiet, because it answers a
+                                             question that is asked second. --}}
+                                        @if ($tile->area)
+                                            <span class="block truncate text-xs text-slate-400">{{ $tile->area }}</span>
+                                        @endif
                                     </span>
                                 </button>
                             @else
@@ -231,6 +251,9 @@ new class extends Component
                                         <span class="block truncate text-sm text-slate-500 dark:text-slate-400">
                                             {{ $state?->summary() ?? 'Not responding' }}
                                         </span>
+                                        @if ($tile->area)
+                                            <span class="block truncate text-xs text-slate-400">{{ $tile->area }}</span>
+                                        @endif
                                     </span>
                                 </div>
 

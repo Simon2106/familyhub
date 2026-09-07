@@ -83,6 +83,14 @@ conventions. The points most easily got wrong:
 - **Compare due dates as dates.** Household midnight is 23:00 UTC the previous
   day for half the year, so subtracting a UTC-parsed date column from it is off
   by one. `ChecklistItem::daysUntilDue()` reduces both sides to `Y-m-d` first.
+- **Never name a model method after one of its columns.** Eloquent resolves a
+  missing attribute by checking whether a method of that name exists and calling
+  it to see if it returns a relationship, so `section()` reading a `section`
+  column recurses until the process runs out of memory — with a stack trace in
+  HasAttributes, nowhere near the model. It only misbehaves when the attribute
+  is absent from the instance, which is the state of a row created without that
+  column, so it hides from the obvious tests. `ModelNamingTest` checks every
+  model by reflection.
 - **Long-running commands must watch for deploys.** `App\Support\DeployWatch`
   compares the build id the process started on against the current one; a daemon
   that does not do this keeps running the code it booted with forever. Exit 0
