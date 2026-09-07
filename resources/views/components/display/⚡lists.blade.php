@@ -4,6 +4,7 @@ use App\Models\ChecklistItem;
 use App\Models\Household;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 /**
@@ -21,6 +22,20 @@ new class extends Component
             ->get();
     }
 
+    /**
+     * Re-read after a tick anywhere else.
+     *
+     * Without this, these lists only refreshed when a parent component
+     * happened to re-render them — true on the wall, where the wall listens
+     * for this event, and false on a phone, where it does not. An item ticked
+     * on the To do panel then stayed "outstanding" here indefinitely.
+     */
+    #[On('todos-changed')]
+    public function refreshLists(): void
+    {
+        unset($this->checklists);
+    }
+
     public function toggle(int $itemId): void
     {
         $item = ChecklistItem::query()
@@ -30,6 +45,9 @@ new class extends Component
         $item->toggle();
 
         unset($this->checklists);
+
+        // And the other way round: the home To do panel must follow a tick made here.
+        $this->dispatch('todos-changed');
     }
 
     #[Computed]
@@ -47,6 +65,8 @@ new class extends Component
             ->delete();
 
         unset($this->checklists);
+
+        $this->dispatch('todos-changed');
     }
 }; ?>
 

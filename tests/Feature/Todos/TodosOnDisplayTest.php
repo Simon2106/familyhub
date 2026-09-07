@@ -165,6 +165,71 @@ class TodosOnDisplayTest extends TestCase
     }
 
     #[Test]
+    public function ticking_on_the_home_panel_is_reflected_on_the_lists_tab(): void
+    {
+        $todo = $this->todo('Water the plants');
+
+        // An already-rendered Lists tab, as on the wall or below the phone's
+        // To do panel.
+        $lists = Livewire::test('display.lists')
+            ->assertSee('Water the plants')
+            ->assertDontSee('Done (1)');
+
+        // Tick it on the home To do panel.
+        Livewire::test('todos.panel')->call('toggle', $todo->id);
+
+        // The Lists tab has to follow. It used to refresh only when a parent
+        // component happened to re-render it, which was true on the wall and
+        // false on a phone.
+        $lists->dispatch('todos-changed')->assertSee('Done (1)');
+
+        $this->assertTrue($todo->fresh()->is_done);
+    }
+
+    #[Test]
+    public function the_home_panel_announces_a_tick_so_other_views_can_follow(): void
+    {
+        $todo = $this->todo('Water the plants');
+
+        Livewire::test('todos.panel')
+            ->call('toggle', $todo->id)
+            ->assertDispatched('todos-changed');
+    }
+
+    #[Test]
+    public function ticking_on_the_lists_tab_is_reflected_on_the_home_panel(): void
+    {
+        $todo = $this->todo('Water the plants');
+
+        $panel = Livewire::test('todos.panel')->assertSee('Water the plants');
+
+        Livewire::test('display.lists')
+            ->call('toggle', $todo->id)
+            ->assertDispatched('todos-changed');
+
+        // The panel keeps just-ticked items briefly so they can fade, so the
+        // check is on the record rather than the markup.
+        $panel->dispatch('todos-changed');
+
+        $this->assertTrue($todo->fresh()->is_done);
+        $this->assertTrue(
+            $panel->instance()->todos()->firstWhere('id', $todo->id)?->is_done,
+            'The home panel must show the item as ticked after it was ticked on the Lists tab.',
+        );
+    }
+
+    #[Test]
+    public function clearing_done_on_the_lists_tab_announces_the_change(): void
+    {
+        $todo = $this->todo('Water the plants');
+        $todo->toggle();
+
+        Livewire::test('display.lists')
+            ->call('clearDone', Checklist::home($this->household)->id)
+            ->assertDispatched('todos-changed');
+    }
+
+    #[Test]
     public function the_lists_tab_separates_open_from_done(): void
     {
         $this->todo('Still to do');
