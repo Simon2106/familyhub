@@ -33,7 +33,11 @@ class SyncCalendarJob implements ShouldQueue
     /** @return list<object> */
     public function middleware(): array
     {
-        return [(new WithoutOverlapping('caldav-calendar-'.$this->calendar->id))->expireAfter(600)];
+        // dontRelease: releaseAfter defaults to 0, so an overlapping run is
+        // released immediately and burns an attempt, and a slow sync overlapping
+        // the five-minute schedule exhausts tries as MaxAttemptsExceededException.
+        // The next scheduled run picks it up instead.
+        return [(new WithoutOverlapping('caldav-calendar-'.$this->calendar->id))->dontRelease()->expireAfter(600)];
     }
 
     public function handle(CalDavManager $manager): void

@@ -13,7 +13,15 @@ use App\Models\CaptureItem;
  */
 class ExtractionSchema
 {
-    /** @return array<string, mixed> */
+    /**
+     * @return array<string, mixed>
+     *
+     * Structured outputs accept a subset of JSON Schema. Notably: no `minimum`
+     * or `maximum`, and nullability must be expressed with `anyOf` rather than
+     * a `["string", "null"]` union — both are 400s, not warnings. Ranges are
+     * stated in the description and enforced by ExtractionParser instead.
+     * SchemaSupportTest guards this.
+     */
     public static function schema(): array
     {
         return [
@@ -34,32 +42,24 @@ class ExtractionSchema
                                 'type' => 'string',
                                 'description' => 'Short, in the household\'s words. No trailing dates — those go in start.',
                             ],
-                            'start' => [
-                                'type' => ['string', 'null'],
-                                'description' => 'ISO 8601 local date-time (2026-09-15T09:00:00) or date (2026-09-15) for all-day. Null only if genuinely undated.',
-                            ],
-                            'end' => [
-                                'type' => ['string', 'null'],
-                                'description' => 'ISO 8601, same form as start. Null if unknown.',
-                            ],
+                            'start' => self::nullableString(
+                                'ISO 8601 local date-time (2026-09-15T09:00:00) or date (2026-09-15) for all-day. Null only if genuinely undated.'
+                            ),
+                            'end' => self::nullableString('ISO 8601, same form as start. Null if unknown.'),
                             'all_day' => [
                                 'type' => 'boolean',
                                 'description' => 'True when no time of day was given.',
                             ],
-                            'location' => ['type' => ['string', 'null']],
-                            'notes' => [
-                                'type' => ['string', 'null'],
-                                'description' => 'Anything a parent would want, including what was ambiguous and why.',
-                            ],
-                            'member_hint' => [
-                                'type' => ['string', 'null'],
-                                'description' => 'Any name, class, year group or school mentioned that says who this is for. Verbatim.',
-                            ],
+                            'location' => self::nullableString('Where it happens, if stated.'),
+                            'notes' => self::nullableString(
+                                'Anything a parent would want, including what was ambiguous and why.'
+                            ),
+                            'member_hint' => self::nullableString(
+                                'Any name, class, year group or school mentioned that says who this is for. Verbatim.'
+                            ),
                             'confidence' => [
                                 'type' => 'integer',
-                                'minimum' => 0,
-                                'maximum' => 100,
-                                'description' => 'How sure you are of BOTH the date and that this is a real commitment. Below 80 if the year was inferred, the date was relative, or the text was unclear.',
+                                'description' => 'A whole number from 0 to 100. How sure you are of BOTH the date and that this is a real commitment. Below 80 if the year was inferred, the date was relative, or the text was unclear.',
                             ],
                         ],
                         'required' => ['type', 'title', 'start', 'end', 'all_day', 'location', 'notes', 'member_hint', 'confidence'],
@@ -73,6 +73,22 @@ class ExtractionSchema
             ],
             'required' => ['items', 'summary'],
             'additionalProperties' => false,
+        ];
+    }
+
+    /**
+     * A string that may be null.
+     *
+     * Union types (`["string", "null"]`) are rejected; anyOf is the supported
+     * way to say this.
+     *
+     * @return array<string, mixed>
+     */
+    protected static function nullableString(string $description): array
+    {
+        return [
+            'anyOf' => [['type' => 'string'], ['type' => 'null']],
+            'description' => $description,
         ];
     }
 

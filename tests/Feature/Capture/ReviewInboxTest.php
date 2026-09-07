@@ -270,6 +270,72 @@ class ReviewInboxTest extends TestCase
     }
 
     #[Test]
+    public function a_failed_capture_shows_its_reason_and_a_retry(): void
+    {
+        Capture::factory()->failed('Claude declined to read this capture.')->create([
+            'household_id' => $this->household->id,
+        ]);
+
+        Livewire::test('capture.review')
+            ->assertSee('Claude declined to read this capture.')
+            ->assertSee('Try again')
+            // The spinner must be gone: it said the job was still working.
+            ->assertDontSee('Reading it…');
+    }
+
+    #[Test]
+    public function a_capture_stuck_reading_for_too_long_is_offered_back(): void
+    {
+        // A worker killed mid-job leaves this on 'processing' with nothing to
+        // move it on; spinning forever tells the household nothing.
+        $capture = Capture::factory()->create([
+            'household_id' => $this->household->id,
+            'status' => 'processing',
+        ]);
+        $capture->forceFill(['updated_at' => CarbonImmutable::now()->subHour()])->saveQuietly();
+
+        $this->assertTrue($capture->fresh()->seemsStalled());
+
+        Livewire::test('capture.review')
+            ->assertSee('did not finish')
+            ->assertSee('Try again')
+            ->assertDontSee('Reading it…');
+    }
+
+    #[Test]
+    public function a_capture_that_only_just_started_still_shows_as_reading(): void
+    {
+        Capture::factory()->create([
+            'household_id' => $this->household->id,
+            'status' => 'processing',
+        ]);
+
+        Livewire::test('capture.review')
+            ->assertSee('Reading it…')
+            ->assertDontSee('did not finish');
+    }
+
+    #[Test]
+    public function retrying_a_stalled_capture_clears_the_stall(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+
+        $capture = Capture::factory()->create([
+            'household_id' => $this->household->id,
+            'status' => 'processing',
+        ]);
+        $capture->forceFill(['updated_at' => CarbonImmutable::now()->subHour()])->saveQuietly();
+
+        Livewire::test('capture.review')->call('retry', $capture->id);
+
+        $capture->refresh();
+        $this->assertSame('pending', $capture->status);
+        // Judged on updated_at, so a retry that left it stale would still look stuck.
+        $this->assertFalse($capture->seemsStalled());
+        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\ProcessCaptureJob::class);
+    }
+
+    #[Test]
     public function another_households_item_is_out_of_reach(): void
     {
         $other = Capture::factory()->reviewing()->create(['household_id' => Household::factory()->create()->id]);

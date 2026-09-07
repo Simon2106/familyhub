@@ -36,14 +36,24 @@ class ProcessCaptureJob implements ShouldQueue
     /** @return list<object> */
     public function middleware(): array
     {
-        return [(new WithoutOverlapping('capture-'.$this->capture->id))->expireAfter(600)];
+        // dontRelease: releaseAfter defaults to 0, not null, so a job that
+        // cannot get the lock is re-released immediately and burns an attempt
+        // each time until it exceeds tries. Dropping it is right here — the
+        // job already holding the lock is doing the same work.
+        return [(new WithoutOverlapping('capture-'.$this->capture->id))->dontRelease()->expireAfter(600)];
     }
 
     public function handle(ItemExtractor $extractor): void
     {
-        // Already reviewed or in flight; a duplicate delivery must not double
-        // the items in the inbox.
-        if (! in_array($this->capture->status, ['pending', 'failed'], strict: true)) {
+        // Only skip a capture that already produced a result: a duplicate
+        // delivery must not double the items in the inbox.
+        //
+        // Deliberately NOT skipping 'processing'. A worker leaves that status
+        // behind between attempts, so treating it as "someone else has this"
+        // made every retry return early — which counts as success, so failed()
+        // never ran and the capture sat on "Reading it…" for good. Concurrency
+        // is handled by WithoutOverlapping, not by this check.
+        if (in_array($this->capture->status, ['reviewing', 'done'], strict: true)) {
             return;
         }
 

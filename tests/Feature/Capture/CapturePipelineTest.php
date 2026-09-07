@@ -106,6 +106,49 @@ class CapturePipelineTest extends TestCase
     }
 
     #[Test]
+    public function a_retry_actually_tries_again(): void
+    {
+        // handle() directly, not dispatch_sync: a real worker calls failed()
+        // only after the LAST attempt, so between attempts the capture sits on
+        // "processing". dispatch_sync calls failed() on every exception, which
+        // hides the bug this guards.
+        $this->extractor->throw = 'The API is having a moment.';
+
+        $capture = $this->capture();
+
+        foreach (range(1, 2) as $attempt) {
+            try {
+                (new ProcessCaptureJob($capture->fresh()))->handle($this->extractor);
+            } catch (\Throwable) {
+                // The worker would release this for another attempt.
+            }
+        }
+
+        // An attempt that returns early "succeeds", so failed() never runs and
+        // the capture sits on "Reading it…" forever.
+        $this->assertCount(2, $this->extractor->sawCaptures, 'The retry never reached the extractor.');
+    }
+
+    #[Test]
+    public function a_capture_that_never_finishes_does_not_look_like_it_is_still_reading(): void
+    {
+        $this->extractor->throw = 'The API is having a moment.';
+
+        $capture = $this->capture();
+        $job = new ProcessCaptureJob($capture);
+
+        try {
+            $job->handle($this->extractor);
+        } catch (\Throwable $e) {
+            $job->failed($e);
+        }
+
+        $capture->refresh();
+        $this->assertSame('failed', $capture->status);
+        $this->assertStringContainsString('having a moment', $capture->error);
+    }
+
+    #[Test]
     public function a_duplicate_delivery_does_not_double_the_items(): void
     {
         $this->extractor->queueItems([

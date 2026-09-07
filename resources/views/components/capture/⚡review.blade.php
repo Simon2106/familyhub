@@ -153,7 +153,10 @@ new class extends Component
     {
         $capture = $this->findCapture($captureId);
 
+        // touch() as well as the status: a stalled capture is judged on
+        // updated_at, and a retry that left it stale would still look stuck.
         $capture->forceFill(['status' => 'pending', 'error' => null])->save();
+        $capture->touch();
 
         \App\Jobs\ProcessCaptureJob::dispatch($capture);
 
@@ -273,7 +276,25 @@ new class extends Component
                 <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">{{ $capture->summary }}</p>
             @endif
 
-            @if (in_array($capture->status, ['pending', 'processing'], true))
+            @if ($capture->status === 'failed' || $capture->seemsStalled())
+                {{-- A stalled capture gets the same treatment as a failed one:
+                     a worker killed mid-job leaves nothing to move it on, and
+                     spinning forever tells the household nothing. --}}
+                <p class="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-300">
+                    {{ $capture->status === 'failed'
+                        ? ($capture->error ?: 'Something went wrong reading this.')
+                        : 'This stopped part-way through and did not finish.' }}
+                </p>
+                <div class="mt-2 flex flex-wrap gap-2">
+                    <button type="button" wire:click="retry({{ $capture->id }})"
+                            class="touch-target rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white">
+                        <span wire:loading.remove wire:target="retry({{ $capture->id }})">Try again</span>
+                        <span wire:loading wire:target="retry({{ $capture->id }})">Queueing…</span>
+                    </button>
+                    <button type="button" wire:click="dismissCapture({{ $capture->id }})"
+                            class="touch-target rounded-xl px-4 text-sm font-semibold text-slate-500">Dismiss</button>
+                </div>
+            @elseif (in_array($capture->status, ['pending', 'processing'], true))
                 <p class="mt-3 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                     <svg class="size-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"/>
@@ -281,16 +302,6 @@ new class extends Component
                     </svg>
                     Reading it…
                 </p>
-            @elseif ($capture->status === 'failed')
-                <p class="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-300">
-                    {{ $capture->error ?: 'Something went wrong reading this.' }}
-                </p>
-                <div class="mt-2 flex gap-2">
-                    <button type="button" wire:click="retry({{ $capture->id }})"
-                            class="touch-target rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white">Try again</button>
-                    <button type="button" wire:click="dismissCapture({{ $capture->id }})"
-                            class="touch-target rounded-xl px-4 text-sm font-semibold text-slate-500">Dismiss</button>
-                </div>
             @endif
 
             @if ($capture->items->isNotEmpty())

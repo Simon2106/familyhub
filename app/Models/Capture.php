@@ -57,6 +57,25 @@ class Capture extends Model
         $query->where('status', 'reviewing')->whereHas('items', fn ($q) => $q->where('status', 'pending'));
     }
 
+    /**
+     * Has this been "reading" for implausibly long?
+     *
+     * A worker killed mid-job, or one that ran out of memory, leaves a capture
+     * on 'processing' with nothing left to move it on. Rather than spin
+     * forever, the review inbox offers it back to the household.
+     *
+     * The window covers the job's own worst case: three attempts at a
+     * five-minute timeout, with backoff between them.
+     */
+    public const STALL_AFTER_MINUTES = 30;
+
+    public function seemsStalled(): bool
+    {
+        return in_array($this->status, ['pending', 'processing'], strict: true)
+            && $this->updated_at !== null
+            && $this->updated_at->lt(now()->subMinutes(self::STALL_AFTER_MINUTES));
+    }
+
     public function markProcessing(): void
     {
         $this->forceFill(['status' => 'processing', 'error' => null])->save();

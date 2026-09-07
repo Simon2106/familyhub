@@ -74,7 +74,11 @@ Entry points, all landing in the same queue and running the same job:
 | **Share sheet** | The PWA declares a `share_target`, so anything can be shared to FamilyHub from iOS |
 
 Extraction uses structured outputs (`output_config.format`) against a strict JSON
-schema, so the response cannot come back as prose that needs hunting through. The
+schema, so the response cannot come back as prose that needs hunting through.
+That schema is restricted to the keywords the API accepts — no `minimum`,
+`maximum` or union types; `anyOf` for nullability — because an unsupported
+keyword is a 400 at request time. `SchemaSupportTest` checks this, and the
+confidence range is stated in the description and clamped after parsing. The
 prompt is told today's date, when the material was received, the household's
 timezone and its members' names, and is pushed to find *every* date, infer a
 missing year from context, and lower its own confidence when it had to guess.

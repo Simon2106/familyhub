@@ -38,6 +38,20 @@ conventions. The points most easily got wrong:
   path to an Event, and it goes through the Phase 2 write-back. Swap
   `ItemExtractor` for `Tests\Support\FakeItemExtractor` to test the pipeline
   without calling the API.
+- **Structured outputs accept only a subset of JSON Schema.** No `minimum`,
+  `maximum`, `minLength`, `maxLength`, `pattern` or `maxItems`; nullability is
+  `anyOf: [{type:...},{type:'null'}]`, never a `["string","null"]` union; every
+  object needs `additionalProperties: false`. An unsupported keyword is a 400 at
+  request time, one keyword per attempt. `SchemaSupportTest` guards this — state
+  ranges in the description and enforce them in `ExtractionParser`.
+- **`WithoutOverlapping` releases by default** (`$releaseAfter` is `0`, not
+  `null`), which burns an attempt every time the lock is held and ends in
+  `MaxAttemptsExceededException`. Every job here uses `->dontRelease()`.
+- **A job's status guard must not swallow the queue's own retries.** A worker
+  calls `failed()` only after the last attempt, so a capture sits on
+  'processing' in between; skipping that status made retries return early —
+  which counts as success, so `failed()` never ran. Note that `dispatch_sync`
+  calls `failed()` on every exception, so it hides this: test `handle()` directly.
 - **Inbound email is filtered by recipient** (`FAMILYHUB_INBOUND_ADDRESS`).
   Anything addressed elsewhere gets a 200 and a log line — never a non-2xx,
   which would have Postmark retrying it forever. Match on the envelope
