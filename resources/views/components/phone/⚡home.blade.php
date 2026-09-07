@@ -154,6 +154,29 @@ new #[Layout('layouts::app')] class extends Component
             </div>
         @endforelse
 
+        {{-- Capture inbox --}}
+        @php $waiting = \App\Models\CaptureItem::query()
+            ->whereHas('capture', fn ($q) => $q->where('household_id', \App\Models\Household::current()->id))
+            ->pending()->count(); @endphp
+
+        <a href="{{ route('review') }}" wire:navigate
+           class="mt-4 flex touch-target items-center gap-3 rounded-2xl bg-white p-3 dark:bg-slate-900">
+            <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                <svg class="size-5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 4h16v12H8l-4 4z" />
+                </svg>
+            </span>
+            <span class="min-w-0 flex-1">
+                <span class="block font-medium">Review</span>
+                <span class="block text-sm text-slate-500 dark:text-slate-400">
+                    {{ $waiting === 0 ? 'Capture a letter, email or link' : $waiting.' waiting to be checked' }}
+                </span>
+            </span>
+            @if ($waiting > 0)
+                <span class="shrink-0 rounded-full bg-blue-600 px-2.5 py-1 text-xs font-bold text-white">{{ $waiting }}</span>
+            @endif
+        </a>
+
         {{-- Editable here: phones are where a to-do actually gets written. --}}
         <section class="mt-4 rounded-2xl bg-white p-3 dark:bg-slate-900">
             <livewire:todos.panel :editable="true" />

@@ -33,6 +33,14 @@ conventions. The points most easily got wrong:
   consulted at all. `AttributionMatcher` is compiled once per household and
   reused — never build one per event. Events with `attribution = 'manual'` are off
   limits: a person chose those by hand.
+- **Capture (Phase 3) never writes to a calendar directly.** Everything lands in
+  `captures`/`capture_items` and waits for a person; `ItemAcceptor` is the only
+  path to an Event, and it goes through the Phase 2 write-back. Swap
+  `ItemExtractor` for `Tests\Support\FakeItemExtractor` to test the pipeline
+  without calling the API.
+- **A Livewire method must not share a name with a public property** — the
+  property shadows it client-side and `$wire.name()` silently does nothing.
+  `tests/Feature/Capture/ComponentNamingTest.php` guards this.
 - **The wall self-updates.** `/version` exposes the build id, the page embeds it,
   and `resources/js/updater.js` polls and reloads — only when idle. Keep that
   module free of DOM and timers so it stays testable; it is covered by

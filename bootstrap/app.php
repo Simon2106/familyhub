@@ -18,8 +18,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // cookie and leaves the iPad stuck on "not paired".
         $middleware->trustProxies(at: '*');
 
+        // Postmark cannot present a CSRF token; the route authenticates with
+        // the shared secret in VerifyPostmarkWebhook instead.
+        $middleware->validateCsrfTokens(except: ['webhooks/postmark/*', 'webhooks/postmark']);
+
         $middleware->alias([
             'display.token' => \App\Http\Middleware\EnsureDisplayToken::class,
+            'postmark' => \App\Http\Middleware\VerifyPostmarkWebhook::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

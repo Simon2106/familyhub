@@ -150,7 +150,7 @@ These supersede the text they replace. Newest first.
 
 ---
 
-## Phase 3 — Capture (the Magic Import replacement)
+## Phase 3 — Capture (the Magic Import replacement) ✅ done
 
 1. Inbound email: Postmark inbound webhook → store raw + attachments (S3) → CaptureJob.
 2. CaptureJob: send email body + any PDF/image attachments to Claude with a strict
@@ -166,7 +166,7 @@ These supersede the text they replace. Newest first.
    Phase 2 write-back.
 4. Additional capture entry points using the same job: photo upload from phone
    camera, PDF upload, paste text, PWA share-target (text/URL/files), URL fetcher.
-5. WhatsApp: optional, via Twilio inbound webhook — stub only, behind a config flag.
+5. WhatsApp: **dropped** — not built, at Simon's direction (2026-09-07).
 
 ---
 

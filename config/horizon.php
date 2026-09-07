@@ -199,9 +199,9 @@ return [
     'defaults' => [
         'supervisor-1' => [
             'connection' => 'redis',
-            // 'sync' carries the CalDAV jobs. Listed first so calendar work is
-            // picked up ahead of anything queued behind it.
-            'queue' => ['sync', 'default'],
+            // 'capture' first: someone is usually waiting on the review inbox.
+            // 'sync' next, then everything else.
+            'queue' => ['capture', 'sync', 'default'],
             'balance' => 'auto',
             'autoScalingStrategy' => 'time',
             'maxProcesses' => 1,

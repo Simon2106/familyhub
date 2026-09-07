@@ -12,6 +12,17 @@ use Illuminate\Support\Facades\Route;
 */
 
 /*
+| Postmark inbound email. Verified by a secret in the path or by basic auth —
+| Postmark signs nothing, so those are the two options it offers.
+|
+| CSRF is skipped for this route only (see bootstrap/app.php); it authenticates
+| with the shared secret instead.
+*/
+Route::post('/webhooks/postmark/{token?}', \App\Http\Controllers\Webhooks\PostmarkInboundController::class)
+    ->middleware('postmark')
+    ->name('webhooks.postmark');
+
+/*
 | The deployed build id. The wall display polls this and reloads itself when it
 | changes, so a deploy reaches the iPad without anyone touching it.
 |
@@ -42,8 +53,24 @@ Route::get('/manifest.webmanifest', function () {
             ['src' => asset('icons/icon-512.png'), 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'],
             ['src' => asset('icons/icon-512.png'), 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'maskable'],
         ],
-        // Phase 3 adds a share_target here so newsletters can be shared straight
-        // into the capture queue from iOS.
+        // Sharing a newsletter, photo or link to FamilyHub posts it straight
+        // into the capture queue.
+        'share_target' => [
+            'action' => route('share-target'),
+            'method' => 'POST',
+            'enctype' => 'multipart/form-data',
+            'params' => [
+                'title' => 'title',
+                'text' => 'text',
+                'url' => 'url',
+                'files' => [
+                    [
+                        'name' => 'files',
+                        'accept' => ['image/*', 'application/pdf'],
+                    ],
+                ],
+            ],
+        ],
     ])->withHeaders(['Content-Type' => 'application/manifest+json']);
 })->name('pwa.manifest');
 
@@ -92,6 +119,13 @@ Route::post('/logout', LogoutController::class)
 
 Route::middleware('auth')->group(function () {
     Route::livewire('/app', 'phone.home')->name('app');
+    Route::livewire('/app/review', 'capture.review-page')->name('review');
+
+    /*
+    | PWA share target. iOS posts the shared payload here; anything with
+    | content becomes a capture and the user lands on the review inbox.
+    */
+    Route::post('/app/share', \App\Http\Controllers\ShareTargetController::class)->name('share-target');
     Route::livewire('/admin', 'admin.settings')->name('admin');
     Route::livewire('/admin/calendars', 'admin.calendars')->name('admin.calendars');
     Route::livewire('/admin/places', 'admin.places')->name('admin.places');

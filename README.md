@@ -22,7 +22,7 @@ Access) and on family phones.
 | ----- | ----- | ----- |
 | **1** | Foundation, models, wall display, PWA | **Done** |
 | **2** | iCloud CalDAV sync, two-way | **Done** |
-| 3 | Capture — inbound email, photo/PDF/URL, Claude extraction, review queue | Not started |
+| **3** | Capture — inbound email, photo/PDF/URL, Claude extraction, review queue | **Done** |
 | 4 | Kids — chores, routines, rewards | Not started |
 | 5 | Meals & shopping | Not started |
 | 6 | Home Assistant, weather, bins, AI assistant | Not started |
@@ -57,6 +57,49 @@ Livewire re-renders on a 60-second poll to pick up edits made from phones.
 - Horizon-backed queues, a 5-minute poll and a nightly full pass
 - `/admin/calendars`: per-account status, last sync, errors, force resync,
   per-calendar member assignment and visibility
+
+### What Phase 3 ships
+
+Things arrive, Claude reads them, a person decides. **Nothing reaches a calendar
+until it is accepted.**
+
+Entry points, all landing in the same queue and running the same job:
+
+| | |
+| --- | --- |
+| **Inbound email** | Postmark posts to `/webhooks/postmark/<secret>`; body and readable attachments are stored |
+| **Photo / PDF** | From `/app` — the camera, the photo library, or a file |
+| **Pasted text** | From `/app` |
+| **Link** | Fetched and reduced to readable text |
+| **Share sheet** | The PWA declares a `share_target`, so anything can be shared to FamilyHub from iOS |
+
+Extraction uses structured outputs (`output_config.format`) against a strict JSON
+schema, so the response cannot come back as prose that needs hunting through. The
+prompt is told today's date, when the material was received, the household's
+timezone and its members' names, and is pushed to find *every* date, infer a
+missing year from context, and lower its own confidence when it had to guess.
+
+The review inbox is on the wall's **Review** tab and at `/app/review`. Each item
+shows what it is, when, who it seems to be about, and how sure the model was.
+Accept writes an event through the Phase 2 iCloud write-back, or creates a to-do
+for a task. **Accept all confident** takes only the items scoring 80+. Phones can
+correct an item before accepting; the wall accepts or rejects.
+
+Some deliberate behaviour:
+
+- An **undated event becomes a to-do** rather than being refused — inventing a
+  date would be worse, and refusing loses the item.
+- **iPhone HEIC photos are converted** to JPEG before sending, because the
+  Messages API does not read HEIC. Large photos are downscaled first.
+- A capture that finds **nothing is finished, not failed**.
+- A **duplicate delivery** does not double the items.
+- Failures keep their reason and can be retried from the inbox.
+
+```sh
+php artisan capture:process              # queue anything waiting
+php artisan capture:process --now        # run inline
+php artisan capture:process --retry-failed
+```
 
 ### Keeping the wall up to date
 
@@ -361,13 +404,26 @@ A full pass asks iCloud for `CALDAV_WINDOW_BACK` days of history and
 window are never requested — and, importantly, are never deleted locally for
 being absent from a response that never covered them.
 
-### Postmark inbound email — *Phase 3*
+### Postmark inbound email
 
 1. Postmark → your server → **Inbound** stream
-2. Set the inbound webhook to
-   `https://hub.yourdomain.com/webhooks/postmark/{POSTMARK_INBOUND_SECRET}`
-3. Note the inbound address Postmark gives you and forward school newsletters to it
-4. Set `POSTMARK_TOKEN` and `POSTMARK_INBOUND_SECRET`
+2. Generate a secret: `php -r 'echo bin2hex(random_bytes(24));'` → `POSTMARK_INBOUND_SECRET`
+3. Set the inbound webhook to
+   `https://hub.yourdomain.com/webhooks/postmark/<that secret>`
+   (Postmark signs nothing, so the secret in the path is the authentication.
+   Basic auth with the same value as the password works too.)
+4. Forward school newsletters to the inbound address Postmark gives you
+
+A wrong or missing secret returns **404**, not 401 — an unauthenticated caller
+learns nothing about whether the endpoint exists. An empty or unreadable email is
+answered 200 and ignored, because a non-2xx would make Postmark retry it forever.
+
+### Anthropic
+
+`ANTHROPIC_API_KEY` is required for capture; without it captures are stored but
+never read. `ANTHROPIC_MODEL` defaults to `claude-sonnet-4-6` as the brief
+specifies — `claude-sonnet-5` and `claude-opus-5` are current and read term
+calendars more reliably, and it is a one-line change.
 
 ### Home Assistant — *Phase 6*
 
@@ -381,11 +437,6 @@ inside HA, and HA bridges the Alexa household.
 Home tab tiles will show live entity state over the websocket API and toggle
 `light`, `switch`, `climate`, `cover`, `scene` and `script` entities, grouped by
 HA area.
-
-### Anthropic — *Phase 3*
-
-Set `ANTHROPIC_API_KEY`. All extraction goes through a review queue; nothing is
-written to a calendar without a person accepting it.
 
 ---
 
@@ -416,4 +467,4 @@ written to a calendar without a person accepting it.
 | `sync:calendars` | Sync connected iCloud accounts (`--force` full pass, `--account=` one account, `--now` inline) |
 | `familyhub:attribute` | Re-run member attribution over existing events (`--dry-run` to preview) |
 | `familyhub:prune-done` | Delete completed to-dos past the retention window (`--dry-run` to preview) |
-| `capture:process` | *Phase 3* |
+| `capture:process` | Extract items from waiting captures (`--now` inline, `--retry-failed`, `--capture=`) |
