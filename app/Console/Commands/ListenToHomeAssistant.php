@@ -2,11 +2,13 @@
 
 namespace App\Console\Commands;
 
+use App\Events\HomeStateChanged;
 use App\Services\HomeAssistant\Client;
 use App\Services\HomeAssistant\HomeAssistant;
 use App\Services\HomeAssistant\StateStore;
 use App\Support\DeployWatch;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 use WebSocket\Client as WebSocketClient;
@@ -55,6 +57,18 @@ class ListenToHomeAssistant extends Command
 
     /** Whether a connection was ever established, which is what --once reports on. */
     protected bool $connected = false;
+
+    /**
+     * The least time between nudges to the wall.
+     *
+     * A house coming to life in the morning produces a burst of state changes,
+     * and the wall does not need one round trip per light. It re-reads
+     * everything it shows in a single local cache read, so one nudge covers
+     * them all.
+     */
+    protected const BROADCAST_EVERY_MS = 400;
+
+    protected float $lastBroadcastAt = 0;
 
     public function handle(Client $client, HomeAssistant $ha): int
     {
@@ -107,6 +121,7 @@ class ListenToHomeAssistant extends Command
             // answer, and it keeps one shape of "all the states" in the app.
             $store->seed($ha->rawStates());
             $ha->remember($store->rows());
+            $this->nudge(force: true);
 
             $this->connected = true;
 
@@ -141,7 +156,32 @@ class ListenToHomeAssistant extends Command
 
             if (is_array($message) && $store->apply($message)) {
                 $ha->remember($store->rows());
+                $this->nudge();
             }
+        }
+    }
+
+    /**
+     * Tell the wall to look again.
+     *
+     * Never fatal: a Reverb that is down or not configured at all must not stop
+     * the listener keeping the cache warm, because the wall's poll is still
+     * reading from it. Broadcasting is the fast path, not the only one.
+     */
+    protected function nudge(bool $force = false): void
+    {
+        $now = microtime(true) * 1000;
+
+        if (! $force && $now - $this->lastBroadcastAt < self::BROADCAST_EVERY_MS) {
+            return;
+        }
+
+        $this->lastBroadcastAt = $now;
+
+        try {
+            HomeStateChanged::dispatch();
+        } catch (Throwable $e) {
+            Log::warning('Could not tell the wall about a state change', ['error' => $e->getMessage()]);
         }
     }
 

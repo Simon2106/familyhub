@@ -853,6 +853,84 @@ Detection takes up to a minute, because the build id is cached for that long.
 Backoff waits are slept in one-second slices for the same reason: an HA that has
 been down all morning is exactly when a fix is most likely to be on its way.
 
+#### Push instead of poll (Reverb)
+
+Optional, and off unless configured. With `BROADCAST_CONNECTION=reverb` the
+listener nudges the wall over a websocket whenever Home Assistant reports a
+change, so a light switched from Alexa or a physical switch reaches the tile in
+well under a second instead of on the next poll.
+
+The nudge **carries no payload**. The wall already has the state in the local
+cache the listener keeps warm, so it only needs permission to look again — and
+an empty event is what lets it subscribe to a *public* channel without a
+session. The wall has no logged-in user; it is gated by a display token, and a
+private channel would need an auth endpoint that understood that token for no
+benefit.
+
+A burst of changes — a house coming to life in the morning — is throttled to one
+nudge every 400ms, because the wall re-reads everything it shows in a single
+cache read regardless. A Reverb that is down or misconfigured is logged and
+ignored: the listener's job is keeping the cache warm, and the poll is still
+reading from it.
+
+**The poll never goes away.** With broadcasting on it relaxes to 10s as a safety
+net for a dropped socket; without it, it stays at 3s and does all the work.
+
+##### Two processes on Forge
+
+Reverb is a *second* daemon alongside the listener. Both want
+`autorestart=true`:
+
+```sh
+# Daemon 1 — the websocket server
+php /home/forge/hub.thewills.uk/artisan reverb:start --host=127.0.0.1 --port=8080
+
+# Daemon 2 — the Home Assistant listener
+php /home/forge/hub.thewills.uk/artisan familyhub:ha-listen
+```
+
+Reverb binds to localhost and nginx puts it behind the site's existing TLS, so
+nothing new is exposed and no second certificate is needed. Note the two pairs
+of host settings, which are easy to confuse:
+
+| Variable | Meaning |
+| --- | --- |
+| `REVERB_SERVER_HOST` / `REVERB_SERVER_PORT` | where the process **binds** — `127.0.0.1:8080` |
+| `REVERB_HOST` / `REVERB_PORT` / `REVERB_SCHEME` | what the **browser** connects to — `hub.thewills.uk:443` over https |
+
+##### nginx
+
+> **Reverb must be moved off its default path here.** Its own endpoints are
+> `/app/{key}` and `/apps/{id}/events` — and FamilyHub already serves the phone
+> UI at `/app`. Proxying `/app` to Reverb would swallow `/app/review`,
+> `/app/meals` and the rest. `REVERB_SERVER_PATH=reverb` moves Reverb under
+> `/reverb`, which is what `.env.example` sets and what the page tells the
+> browser to connect to.
+
+Add this to the site's nginx config, above the `location /` block:
+
+```nginx
+location /reverb {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # A wall display holds one connection open for months.
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+}
+```
+
+Check it is up without a browser:
+
+```sh
+php artisan reverb:ping
+```
+
 Check the credentials without leaving a process running. It connects, seeds the
 cache and exits, **failing** if it could not get in — so it is usable in a deploy
 script or by hand:

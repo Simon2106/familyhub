@@ -7,6 +7,7 @@ use App\Services\HomeAssistant\EntityState;
 use App\Services\HomeAssistant\HomeAssistant;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 /**
@@ -52,6 +53,32 @@ new class extends Component
     public function configured(): bool
     {
         return app(HomeAssistant::class)->isConfigured();
+    }
+
+    /**
+     * Home Assistant changed something. Look again.
+     *
+     * The event carries nothing; everything the wall shows comes from a local
+     * cache the listener has already updated, so this is a cheap re-read
+     * rather than a round trip to the Pi.
+     */
+    #[On('echo:'.\App\Events\HomeStateChanged::CHANNEL.',.state-changed')]
+    public function refreshFromHome(): void
+    {
+        unset($this->reading, $this->states, $this->problem, $this->sections);
+    }
+
+    /**
+     * How often to poll when nothing is pushing.
+     *
+     * With broadcasting on, the poll is only a safety net for a dropped
+     * socket, so it can be lazy. Without it, the poll is the only thing
+     * keeping the tiles honest and has to be brisk.
+     */
+    #[Computed]
+    public function pollInterval(): string
+    {
+        return config('broadcasting.default') === 'reverb' ? '10s' : '3s';
     }
 
     /** @return Collection<int, HomeTile> */
@@ -311,9 +338,11 @@ new class extends Component
     }
 }; ?>
 
-{{-- Polled rather than pushed: the listener keeps the cache warm, so this is a
-     cheap read of local state rather than a round trip to the Pi. --}}
-<div class="pane-scroll h-full min-h-0" @if ($this->tiles->isNotEmpty()) wire:poll.3s="$refresh" @endif>
+{{-- Pushed when Reverb is running, polled when it is not — and polled anyway,
+     slowly, so a dropped socket costs a few seconds rather than the tab. Either
+     way this reads the local cache the listener keeps warm, not the Pi. --}}
+<div class="pane-scroll h-full min-h-0"
+     @if ($this->tiles->isNotEmpty()) wire:poll.{{ $this->pollInterval }}="$refresh" @endif>
 
     @if ($this->problem)
         <p class="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">

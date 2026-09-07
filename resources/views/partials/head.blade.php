@@ -31,4 +31,17 @@
     data-daily-at="03:45"
 >
 
+{{-- Realtime, when it is switched on. Absent entirely otherwise, so an
+     install without Reverb never loads a websocket client it cannot use. --}}
+@if (config('broadcasting.default') === 'reverb' && filled(config('broadcasting.connections.reverb.key')))
+    <meta
+        name="reverb-key"
+        content="{{ config('broadcasting.connections.reverb.key') }}"
+        data-host="{{ config('broadcasting.connections.reverb.options.host') }}"
+        data-port="{{ config('broadcasting.connections.reverb.options.port') }}"
+        data-scheme="{{ config('broadcasting.connections.reverb.options.scheme') }}"
+        data-path="{{ config('reverb.servers.reverb.path') ? '/'.trim(config('reverb.servers.reverb.path'), '/') : '' }}"
+    >
+@endif
+
 @vite(['resources/css/app.css', 'resources/js/app.js'])

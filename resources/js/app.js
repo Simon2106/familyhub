@@ -8,6 +8,7 @@
 
 import { isDarkNow } from './dark-mode';
 import { createDragBoard } from './dragboard';
+import { startEcho, watchConnection } from './echo';
 import { createUpdater } from './updater';
 
 /* -------------------------------------------------------------------------
@@ -202,6 +203,42 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 });
+
+/* -------------------------------------------------------------------------
+ * Realtime, if it is switched on
+ *
+ * Home Assistant state changes arrive as a nudge over Reverb; Livewire
+ * components listen for it and re-read their own local cache. With no Reverb
+ * configured none of this runs and the wall polls as it always did.
+ * ---------------------------------------------------------------------- */
+
+const echoMeta = document.querySelector('meta[name="reverb-key"]');
+
+if (echoMeta?.content) {
+    startEcho({
+        key: echoMeta.content,
+        host: echoMeta.dataset.host,
+        port: Number(echoMeta.dataset.port) || 443,
+        scheme: echoMeta.dataset.scheme || 'https',
+        path: echoMeta.dataset.path || '',
+    })
+        .then((echo) => {
+            if (!echo) return;
+
+            window.Echo = echo;
+
+            // Published on the document so any component can slow its own poll
+            // down while the socket is doing the work.
+            watchConnection(echo, (connected) => {
+                document.documentElement.dataset.realtime = connected ? 'on' : 'off';
+                window.dispatchEvent(new CustomEvent('realtime-changed', { detail: { connected } }));
+            });
+        })
+        .catch(() => {
+            // A wall that cannot reach Reverb still polls. Nothing to say.
+            document.documentElement.dataset.realtime = 'off';
+        });
+}
 
 /* -------------------------------------------------------------------------
  * Service worker (offline shell only)
