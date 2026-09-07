@@ -23,7 +23,7 @@ Access) and on family phones.
 | **1** | Foundation, models, wall display, PWA | **Done** |
 | **2** | iCloud CalDAV sync, two-way | **Done** |
 | **3** | Capture — inbound email, photo/PDF/URL, Claude extraction, review queue | **Done** |
-| 4 | Kids — chores, routines, rewards | Not started |
+| **4** | Kids — chores, routines, rewards | **Done** |
 | **5** | Meals & shopping — recipe box, meal plan, shopping list | **Done** |
 | 6 | Home Assistant, weather, bins, AI assistant | Not started |
 
@@ -212,6 +212,73 @@ those forgetting to update the mirror would leave a stale reminder on everyone's
 calendar. The observer queues `SyncTodoMirrorJob`, which makes iCloud match the
 to-do rather than trying to infer which edit just happened. A calendar that
 refuses the write is logged, not raised — the to-do itself is already saved.
+
+### Chores
+
+A **chore** is the standing arrangement — "feed the cat, every day, 2 points".
+An **instance** is one day's worth of it, and only exists once something has
+happened to it. Nothing is written by looking at the board, which means no cron
+job stands between a child and their chore list, and a fortnight away leaves no
+fortnight of accusing empty rows.
+
+Recurrence is four fixed shapes rather than an RRULE — **every day**, **school
+days**, **pick days**, **weekly**. A parent setting up "bins on Thursdays"
+should be answering a question, not composing a rule. `Chore::occursOn()` is the
+only place any of it is interpreted.
+
+Chores appear in each child's column on the wall, and behind their avatar in a
+big-tap **My day** view. Two things are locked in at the moment of ticking: what
+the chore was worth that day, and who it was for. Re-pricing a chore or
+reassigning it later never restates history.
+
+### Routines
+
+Morning, after-school and bedtime checklists, each with a **window**. Outside it
+the wall leaves the routine alone — a list of everything a child does all day is
+a poster, not something to act on during the morning rush. Inside it, the
+child's column carries a live progress chip. Windows may cross midnight.
+
+Routines carry **no points**. A chore is a job with a value attached; a routine
+is a sequence a child is learning to run without being told, and putting a price
+on brushing your teeth turns the wrong screw. Like chores, nothing is written by
+looking, and a routine resets simply by the date changing.
+
+### Points, rewards and PINs
+
+The ledger is **append-only**. A balance is the sum of the rows, never a stored
+number, and taking points back writes a reversal beside the award rather than
+deleting it — the account holder is seven, and the whole point is that they can
+see where their stars went.
+
+Every write says *"make the net for this source equal N"* rather than *"add N"*.
+Awarding twice is therefore a no-op instead of a double payment, and ticking,
+un-ticking and re-ticking settles on the right number however many times it
+happens — which matters on a screen two children can reach at once.
+
+Spending is two steps:
+
+| Step | Who | Why |
+| --- | --- | --- |
+| **Request** | the child's own PIN | stops a sibling emptying their savings |
+| **Grant** | any grown-up's PIN at the wall, or a signed-in parent in `/app` | the moment the reward is actually handed over |
+
+Points move only on the grant. A request that is never granted costs nothing, a
+declined one leaves no mark, and affordability is checked at both ends because
+points can come and go in between. A redemption keeps its own copy of the name
+and cost, so the catalogue can change without rewriting what a child saved up
+for.
+
+**PINs are only ever asked for two things**: spending points, and undoing
+something a grown-up has checked. Ticking your own chores and routine steps is
+always free — a scheme where doing your jobs needs a password is a scheme nobody
+uses.
+
+Pocket money is **off by default**, at a configurable pence per point. A
+household that wants stars to stay stars should not have to turn money off.
+
+`/app/kids` is the grown-ups' side: what is waiting on them at the top, then
+today's chores per child, then the week so far. No PIN anywhere on it — they
+have already signed in, and asking again would be theatre.
 
 ### The recipe box
 

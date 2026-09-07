@@ -39,6 +39,7 @@ class ComponentNamingTest extends TestCase
             ['admin.chores'],
             ['admin.routines'],
             ['admin.rewards'],
+            ['kids.parent'],
         ];
     }
 

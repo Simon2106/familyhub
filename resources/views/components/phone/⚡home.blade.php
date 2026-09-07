@@ -178,6 +178,39 @@ new #[Layout('layouts::app')] class extends Component
         </a>
 
         @php
+            $waitingOnMe = \App\Models\Redemption::where('household_id', $this->household()->id)->pending()->count()
+                + \App\Models\ChoreInstance::query()
+                    ->whereNotNull('completed_at')
+                    ->whereNull('approved_at')
+                    ->whereHas('chore', fn ($q) => $q
+                        ->where('household_id', $this->household()->id)
+                        ->where('needs_approval', true))
+                    ->where('on', $this->household()->todayLocal()->toDateString())
+                    ->count();
+            $hasChildren = $this->household()->members()->children()->exists();
+        @endphp
+
+        @if ($hasChildren)
+            <a href="{{ route('kids') }}" wire:navigate
+               class="mt-3 flex touch-target items-center gap-3 rounded-2xl bg-white p-3 dark:bg-slate-900">
+                <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
+                    <svg class="size-5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="m12 3 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3-5.8 3 1.1-6.5L2.6 9.8l6.5-.9z" />
+                    </svg>
+                </span>
+                <span class="min-w-0 flex-1">
+                    <span class="block font-medium">Kids</span>
+                    <span class="block text-sm text-slate-500 dark:text-slate-400">
+                        {{ $waitingOnMe === 0 ? 'Chores, rewards and the week so far' : trans_choice('{1}:count thing|[2,*]:count things', $waitingOnMe, ['count' => $waitingOnMe]).' waiting for you' }}
+                    </span>
+                </span>
+                @if ($waitingOnMe > 0)
+                    <span class="shrink-0 rounded-full bg-amber-500 px-2.5 py-1 text-xs font-bold text-white">{{ $waitingOnMe }}</span>
+                @endif
+            </a>
+        @endif
+
+        @php
             $tonight = \App\Models\Meal::where('household_id', $this->household()->id)
                 ->where('slot', 'dinner')
                 ->where('on', $this->household()->todayLocal()->toDateString())

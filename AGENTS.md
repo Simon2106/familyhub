@@ -83,6 +83,17 @@ conventions. The points most easily got wrong:
 - **Compare due dates as dates.** Household midnight is 23:00 UTC the previous
   day for half the year, so subtracting a UTC-parsed date column from it is off
   by one. `ChecklistItem::daysUntilDue()` reduces both sides to `Y-m-d` first.
+- **Nothing is written by rendering.** Chores, routines and meal plans all
+  project from a rule onto a date and only create a row when something is
+  ticked. Adding a nightly sweep would undo that: a missed run then means
+  missing state, and looking at last month would backfill it.
+- **The points ledger is append-only and settles to a target**, never `+= n`.
+  Use `PointsLedger`; do not write `PointEntry` rows directly, or double
+  payments and un-reversible deductions come straight back.
+- **A model with column defaults needs `protected $attributes` too.** A freshly
+  created `Chore` had `null` for `is_active` in memory — the database default
+  applies on insert but is never read back — so `occursOn()` answered "no" for
+  every day until something reloaded it.
 - **Livewire owns some names on the component, and shadowing one fails
   silently.** A `#[Computed] slots()` is swallowed by Livewire 4's own slots
   feature: the property reads as an empty collection, every write guarded on it
