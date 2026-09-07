@@ -364,7 +364,9 @@ new #[Layout('layouts::display')] class extends Component
         </div>
 
         <div class="text-right">
-            <p class="text-sm font-medium text-slate-500 dark:text-slate-400">{{ $this->household()->name }}</p>
+            <p class="text-sm font-medium text-slate-500 dark:text-slate-400"
+               title="Build {{ \App\Support\BuildVersion::current() }}"
+               data-build-version="{{ \App\Support\BuildVersion::current() }}">{{ $this->household()->name }}</p>
             <button
                 type="button"
                 x-show="! onToday"

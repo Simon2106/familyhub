@@ -21,4 +21,14 @@
 <link rel="apple-touch-icon" href="{{ asset('icons/icon-180.png') }}">
 <link rel="icon" href="{{ asset('icons/icon-192.png') }}">
 
+{{-- The deployed build id, so the display can notice a deploy and reload. --}}
+<meta
+    name="build-version"
+    content="{{ \App\Support\BuildVersion::current() }}"
+    data-endpoint="{{ route('version') }}"
+    data-poll-ms="60000"
+    data-idle-ms="30000"
+    data-daily-at="03:45"
+>
+
 @vite(['resources/css/app.css', 'resources/js/app.js'])

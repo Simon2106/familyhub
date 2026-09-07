@@ -2,6 +2,7 @@
 
 use App\Models\Household;
 use App\Services\Attribution\EventAttributor;
+use App\Support\BuildVersion;
 use App\Models\Member;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -38,6 +39,12 @@ new #[Layout('layouts::app')] class extends Component
     public function members(): Collection
     {
         return Household::current()->members()->with('aliases')->get();
+    }
+
+    #[Computed]
+    public function buildVersion(): string
+    {
+        return BuildVersion::current();
     }
 
     public function placesSummary(): string
@@ -328,6 +335,25 @@ new #[Layout('layouts::app')] class extends Component
             <a href="{{ route('display') }}" wire:navigate class="mt-3 inline-flex touch-target items-center font-semibold text-blue-600 dark:text-blue-400">
                 Preview the wall display
             </a>
+        </section>
+
+        {{-- About --}}
+        <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
+            <h2 class="font-semibold">About</h2>
+            <dl class="mt-2 space-y-1 text-sm">
+                <div class="flex items-baseline justify-between gap-4">
+                    <dt class="text-slate-500 dark:text-slate-400">Build</dt>
+                    <dd class="font-mono text-xs" data-build-version>{{ $this->buildVersion }}</dd>
+                </div>
+                <div class="flex items-baseline justify-between gap-4">
+                    <dt class="text-slate-500 dark:text-slate-400">Laravel</dt>
+                    <dd>{{ app()->version() }}</dd>
+                </div>
+            </dl>
+            <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                The wall display checks this every minute and reloads itself after a deploy,
+                once nobody has touched the screen for 30 seconds.
+            </p>
         </section>
 
         {{-- Calendars --}}

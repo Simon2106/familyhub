@@ -58,6 +58,34 @@ Livewire re-renders on a 60-second poll to pick up edits made from phones.
 - `/admin/calendars`: per-account status, last sync, errors, force resync,
   per-calendar member assignment and visibility
 
+### Keeping the wall up to date
+
+The wall iPad is never reloaded by hand, so it updates itself.
+
+- `/version` returns the deployed build id — the hash of the Vite manifest,
+  falling back to the git SHA, then to a file mtime. It is unauthenticated and
+  never cached, because the display must read it before Livewire boots and it
+  reveals nothing beyond "the app was redeployed".
+- The page embeds that id in a `<meta name="build-version">` and polls the
+  endpoint every 60s. When it changes, the display reloads — **but only after
+  30 seconds with no touch**, so it never reloads under someone's finger. A
+  reload found while the screen is in use is deferred to the next quiet moment.
+- Belt and braces: a reload when the daily time (03:45) is crossed, and a check
+  whenever the page returns from background.
+- A dropped connection is never mistaken for a new version, and a page that has
+  just started will not reload itself for a minute — that guards against a boot
+  loop if the embedded id and the endpoint disagree mid-deploy.
+- The service worker caches **only** content-hashed build assets and the offline
+  card. HTML and Livewire traffic are never cached. A new worker calls
+  `skipWaiting()` and `clients.claim()`, since a wall display has no second tab
+  to close.
+- The running build is shown under **About** in `/admin`, and on the wall as the
+  title tooltip on the household name.
+
+Nothing on the deploy side is required beyond building assets — the version is
+derived from them, and is cached for only 60 seconds so detection does not
+depend on remembering `cache:clear`.
+
 ### Household to-dos
 
 The wall's home view carries a **To do** panel under "Coming up", in both the

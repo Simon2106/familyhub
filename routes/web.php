@@ -11,6 +11,19 @@ use Illuminate\Support\Facades\Route;
 |   /admin    settings — authenticated
 */
 
+/*
+| The deployed build id. The wall display polls this and reloads itself when it
+| changes, so a deploy reaches the iPad without anyone touching it.
+|
+| Deliberately unauthenticated and tiny: it leaks nothing beyond "the app was
+| redeployed", and the display must be able to reach it before Livewire boots.
+*/
+Route::get('/version', function () {
+    return response()
+        ->json(['version' => \App\Support\BuildVersion::current()])
+        ->header('Cache-Control', 'no-store, max-age=0');
+})->name('version');
+
 /* --- PWA ------------------------------------------------------------------ */
 
 Route::get('/manifest.webmanifest', function () {

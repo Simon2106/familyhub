@@ -7,6 +7,7 @@
  */
 
 import { isDarkNow } from './dark-mode';
+import { createUpdater } from './updater';
 
 /* -------------------------------------------------------------------------
  * Dark mode by schedule
@@ -109,13 +110,59 @@ document.addEventListener(
 );
 
 /* -------------------------------------------------------------------------
+ * Self-updating display
+ *
+ * The wall iPad is never reloaded by hand, so it polls for the deployed build
+ * id and reloads itself when that changes — but only once nobody has touched
+ * the screen for a while, so it never reloads under someone's finger.
+ * ---------------------------------------------------------------------- */
+
+const versionMeta = document.querySelector('meta[name="build-version"]');
+
+if (versionMeta) {
+    const updater = createUpdater({
+        version: versionMeta.content,
+        endpoint: versionMeta.dataset.endpoint || '/version',
+        pollMs: Number(versionMeta.dataset.pollMs) || undefined,
+        idleMs: Number(versionMeta.dataset.idleMs) || undefined,
+        dailyReloadAt: versionMeta.dataset.dailyAt || undefined,
+    });
+
+    for (const event of ['pointerdown', 'keydown', 'touchstart', 'wheel']) {
+        window.addEventListener(event, () => updater.touched(), { passive: true });
+    }
+
+    setInterval(() => updater.tick(), updater.config.pollMs);
+
+    // Coming back from background is the cheapest chance to catch up, and the
+    // moment a stale page is most likely to be noticed.
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) updater.tick();
+    });
+
+    // A worker that has taken over is, by definition, a new build.
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener('controllerchange', () => updater.reloadWhenIdle());
+    }
+
+    window.familyhubUpdater = updater;
+}
+
+/* -------------------------------------------------------------------------
  * Service worker (offline shell only)
  * ---------------------------------------------------------------------- */
 
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {
-            // An unregistered worker only costs the offline shell; never block boot.
-        });
+        navigator.serviceWorker
+            .register('/sw.js')
+            .then((registration) => {
+                // Pick up a new worker promptly rather than on the next cold start.
+                registration.update();
+                setInterval(() => registration.update(), 60 * 60 * 1000);
+            })
+            .catch(() => {
+                // An unregistered worker only costs the offline shell; never block boot.
+            });
     });
 }

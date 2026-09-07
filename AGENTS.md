@@ -33,6 +33,11 @@ conventions. The points most easily got wrong:
   consulted at all. `AttributionMatcher` is compiled once per household and
   reused — never build one per event. Events with `attribution = 'manual'` are off
   limits: a person chose those by hand.
+- **The wall self-updates.** `/version` exposes the build id, the page embeds it,
+  and `resources/js/updater.js` polls and reloads — only when idle. Keep that
+  module free of DOM and timers so it stays testable; it is covered by
+  `tests/js/updater.test.mjs`. The service worker must never cache HTML or
+  Livewire traffic.
 - **Household to-dos are a `Checklist` with `is_home_list`**, not a separate
   model — use `Checklist::home()`. Ticked to-dos deliberately linger in the
   panel query for a few seconds so they can fade rather than vanish mid-tap.
