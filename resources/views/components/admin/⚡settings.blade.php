@@ -395,14 +395,19 @@ new #[Layout('layouts::app')] class extends Component
                         @error('aliases') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
                     </div>
 
-                    @if ($isChild)
-                        <div>
-                            <label class="block text-sm font-medium" for="member-pin">PIN (leave blank to keep)</label>
-                            <input wire:model="pin" id="member-pin" type="text" inputmode="numeric" autocomplete="off"
-                                   class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-4 tracking-widest dark:border-slate-700 dark:bg-slate-900">
-                            @error('pin') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
-                        </div>
-                    @endif
+                    {{-- Adults need one too: granting a reward at the wall
+                         asks for a grown-up's PIN, and the wall has no login. --}}
+                    <div>
+                        <label class="block text-sm font-medium" for="member-pin">PIN (leave blank to keep)</label>
+                        <input wire:model="pin" id="member-pin" type="text" inputmode="numeric" autocomplete="off"
+                               class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-4 tracking-widest dark:border-slate-700 dark:bg-slate-900">
+                        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                            {{ $isChild
+                                ? 'Asked for when spending points, or undoing something a grown-up checked. Never for ticking their own chores.'
+                                : 'Asked for when handing over a reward at the wall.' }}
+                        </p>
+                        @error('pin') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                    </div>
 
                     <div class="flex gap-2">
                         <button type="submit" class="touch-target flex-1 rounded-xl bg-blue-600 font-semibold text-white">Save</button>
@@ -458,6 +463,21 @@ new #[Layout('layouts::app')] class extends Component
                     </p>
                 </div>
                 <a href="{{ route('admin.routines') }}" wire:navigate
+                   class="grid touch-target shrink-0 place-items-center rounded-xl px-4 font-semibold text-blue-600 dark:text-blue-400">
+                    Manage
+                </a>
+            </div>
+        </section>
+
+        <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
+            <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <h2 class="font-semibold">Rewards</h2>
+                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        What points can be spent on, and whether they are worth pocket money.
+                    </p>
+                </div>
+                <a href="{{ route('admin.rewards') }}" wire:navigate
                    class="grid touch-target shrink-0 place-items-center rounded-xl px-4 font-semibold text-blue-600 dark:text-blue-400">
                     Manage
                 </a>

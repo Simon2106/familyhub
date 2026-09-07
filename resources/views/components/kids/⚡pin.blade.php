@@ -15,7 +15,11 @@ use Livewire\Component;
  */
 new class extends Component
 {
+    /** The member whose PIN is wanted, or null for "any grown-up". */
     public ?int $memberId = null;
+
+    /** True when any adult's PIN will do, rather than one person's. */
+    public bool $anyAdult = false;
 
     /** What the PIN is being asked for, handed back on success. */
     public string $action = '';
@@ -30,12 +34,32 @@ new class extends Component
     public function ask(int $member, string $action, int $subject = 0): void
     {
         $this->memberId = $member;
+        $this->anyAdult = false;
         $this->action = $action;
         $this->subject = $subject;
         $this->entered = '';
         $this->error = null;
 
-        unset($this->member);
+        unset($this->member, $this->adults);
+    }
+
+    /**
+     * Ask for a grown-up, without saying which.
+     *
+     * Whichever parent is standing in the kitchen should be able to say yes;
+     * making the child fetch a specific one would be worse than useless.
+     */
+    #[On('need-adult-pin')]
+    public function askAnyAdult(string $action, int $subject = 0): void
+    {
+        $this->memberId = null;
+        $this->anyAdult = true;
+        $this->action = $action;
+        $this->subject = $subject;
+        $this->entered = '';
+        $this->error = null;
+
+        unset($this->member, $this->adults);
     }
 
     #[Computed]
@@ -46,6 +70,33 @@ new class extends Component
             : null;
     }
 
+    /** @return \Illuminate\Support\Collection<int, Member> */
+    #[Computed]
+    public function adults(): \Illuminate\Support\Collection
+    {
+        return Member::where('household_id', Household::current()->id)
+            ->where('is_child', false)
+            ->whereNotNull('pin')
+            ->get();
+    }
+
+    /** Whether the pad is open at all. */
+    public function isOpen(): bool
+    {
+        return $this->member !== null || $this->anyAdult;
+    }
+
+    public function heading(): string
+    {
+        return $this->anyAdult ? "A grown-up's PIN" : $this->member->name."'s PIN";
+    }
+
+    /** The colour the dots take, which is whose PIN it is. */
+    public function tint(): string
+    {
+        return $this->member?->colour ?? '#2563eb';
+    }
+
     /** What the keypad is about to let them do, in their own words. */
     #[Computed]
     public function prompt(): string
@@ -53,6 +104,7 @@ new class extends Component
         return match ($this->action) {
             'undo-chore' => 'Undo a chore a grown-up has checked',
             'redeem' => 'Spend your points',
+            'grant-redemption' => 'Hand over a reward',
             default => 'Confirm it is you',
         };
     }
@@ -81,9 +133,7 @@ new class extends Component
 
     public function submit(): void
     {
-        $member = $this->member;
-
-        if (! $member || ! $member->checkPin($this->entered)) {
+        if (! $this->accepts($this->entered)) {
             // Only wrong once it is at least as long as a PIN, so typing the
             // first digit does not flash an error.
             if (mb_strlen($this->entered) >= 4) {
@@ -99,28 +149,38 @@ new class extends Component
         $this->close();
     }
 
+    /** One person's PIN, or any grown-up's, depending on what was asked. */
+    protected function accepts(string $pin): bool
+    {
+        if ($this->anyAdult) {
+            return $this->adults->contains(fn (Member $adult) => $adult->checkPin($pin));
+        }
+
+        return $this->member?->checkPin($pin) ?? false;
+    }
+
     public function close(): void
     {
-        $this->reset(['memberId', 'action', 'subject', 'entered', 'error']);
+        $this->reset(['memberId', 'anyAdult', 'action', 'subject', 'entered', 'error']);
     }
 }; ?>
 
 <div>
-    @if ($this->member)
+    @if ($this->isOpen())
         <div class="fixed inset-0 z-[60] bg-slate-900/80" wire:click="close" aria-hidden="true"></div>
 
         <div class="modal-viewport z-[60]" role="dialog" aria-modal="true" aria-label="{{ $this->prompt }}">
             <div class="w-full max-w-xs rounded-3xl bg-white p-5 shadow-2xl dark:bg-slate-900">
                 <div class="text-center">
                     <p class="text-sm text-slate-500 dark:text-slate-400">{{ $this->prompt }}</p>
-                    <h2 class="text-xl font-bold">{{ $this->member->name }}'s PIN</h2>
+                    <h2 class="text-xl font-bold">{{ $this->heading() }}</h2>
                 </div>
 
                 <div class="mt-4 flex justify-center gap-3" aria-hidden="true">
                     @for ($i = 0; $i < 4; $i++)
                         <span class="size-4 rounded-full transition-colors
                                      {{ mb_strlen($entered) > $i ? '' : 'bg-slate-200 dark:bg-slate-700' }}"
-                              style="{{ mb_strlen($entered) > $i ? 'background-color: '.$this->member->colour.';' : '' }}"></span>
+                              style="{{ mb_strlen($entered) > $i ? 'background-color: '.$this->tint().';' : '' }}"></span>
                     @endfor
                 </div>
 

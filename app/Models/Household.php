@@ -179,6 +179,31 @@ class Household extends Model
         return ($from ?? $this->todayLocal())->startOfWeek(CarbonInterface::MONDAY);
     }
 
+    /**
+     * Whether points also become pocket money.
+     *
+     * Off by default: a household that wants stars to stay stars should not
+     * have to turn money off.
+     */
+    public function allowanceEnabled(): bool
+    {
+        return (bool) ($this->settings['allowance_enabled'] ?? false);
+    }
+
+    /** Pence per point, so a rate of 5 makes 20 points a pound. */
+    public function allowancePencePerPoint(): float
+    {
+        return max((float) ($this->settings['allowance_pence_per_point'] ?? 0), 0);
+    }
+
+    public function setAllowance(bool $enabled, float $pencePerPoint): void
+    {
+        $this->putSettings([
+            'allowance_enabled' => $enabled,
+            'allowance_pence_per_point' => max($pencePerPoint, 0),
+        ]);
+    }
+
     /** @param array<string, mixed> $values */
     protected function putSettings(array $values): void
     {

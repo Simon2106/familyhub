@@ -3,8 +3,10 @@
 use App\Models\Chore;
 use App\Models\Household;
 use App\Models\Member;
+use App\Models\Reward;
 use App\Models\RoutineStep;
 use App\Services\Chores\ChoreBoard;
+use App\Services\Points\RewardShop;
 use App\Services\Routines\RoutineBoard;
 use App\Services\Points\PointsLedger;
 use Carbon\CarbonImmutable;
@@ -32,6 +34,8 @@ new class extends Component
 
     public ?int $justDoneStep = null;
 
+    public ?string $redeemError = null;
+
     #[On('show-my-day')]
     public function show(int $member, ?string $date = null): void
     {
@@ -39,13 +43,14 @@ new class extends Component
         $this->date = $date ?: Household::current()->todayLocal()->toDateString();
         $this->justDone = null;
         $this->justDoneStep = null;
+        $this->redeemError = null;
 
-        unset($this->member, $this->chores, $this->balance, $this->routines);
+        unset($this->member, $this->chores, $this->balance, $this->routines, $this->pendingRedemptions);
     }
 
     public function close(): void
     {
-        $this->reset(['memberId', 'date', 'justDone', 'justDoneStep']);
+        $this->reset(['memberId', 'date', 'justDone', 'justDoneStep', 'redeemError']);
     }
 
     #[Computed]
@@ -130,6 +135,40 @@ new class extends Component
         return $this->member ? app(PointsLedger::class)->balanceFor($this->member) : 0;
     }
 
+    /** @return Collection<int, Reward> */
+    #[Computed]
+    public function rewards(): Collection
+    {
+        return Reward::query()
+            ->where('household_id', Household::current()->id)
+            ->active()
+            ->orderBy('cost')
+            ->get();
+    }
+
+    /** @return Collection<int, \App\Models\Redemption> */
+    #[Computed]
+    public function pendingRedemptions(): Collection
+    {
+        return $this->member
+            ? \App\Models\Redemption::where('member_id', $this->member->id)->pending()->get()
+            : collect();
+    }
+
+    /**
+     * Ask to spend points.
+     *
+     * The child's own PIN, because in a house with two children and one
+     * wall-mounted screen the thing worth guarding is a sibling emptying your
+     * savings — not you spending them.
+     */
+    public function askFor(int $rewardId): void
+    {
+        $this->redeemError = null;
+
+        $this->dispatch('need-pin', member: $this->member->id, action: 'redeem', subject: $rewardId);
+    }
+
     #[Computed]
     public function done(): int
     {
@@ -173,17 +212,77 @@ new class extends Component
     #[On('pin-accepted')]
     public function pinAccepted(string $action, int $subject): void
     {
-        if ($action !== 'undo-chore' || ! $this->member) {
+        if (! $this->member) {
             return;
         }
 
-        $slot = $this->chores->firstWhere(fn ($s) => $s->chore->id === $subject);
+        match ($action) {
+            'undo-chore' => $this->undoChore($subject),
+            'redeem' => $this->redeem($subject),
+            'grant-redemption' => $this->grantRedemption($subject),
+            default => null,
+        };
+    }
+
+    protected function undoChore(int $choreId): void
+    {
+        $slot = $this->chores->firstWhere(fn ($s) => $s->chore->id === $choreId);
 
         if ($slot?->instance) {
             app(ChoreBoard::class)->uncomplete($slot->instance);
         }
 
         $this->refresh();
+    }
+
+    /** A grown-up standing in the kitchen says yes. */
+    public function grant(int $redemptionId): void
+    {
+        $this->redeemError = null;
+
+        $this->dispatch('need-adult-pin', action: 'grant-redemption', subject: $redemptionId);
+    }
+
+    protected function grantRedemption(int $redemptionId): void
+    {
+        $redemption = \App\Models\Redemption::where('member_id', $this->memberId)->pending()->find($redemptionId);
+
+        if (! $redemption) {
+            return;
+        }
+
+        try {
+            app(RewardShop::class)->grant($redemption, null);
+        } catch (Throwable $e) {
+            $this->redeemError = $e->getMessage();
+
+            return;
+        }
+
+        unset($this->pendingRedemptions, $this->balance);
+
+        $this->dispatch('redemptions-changed');
+    }
+
+    protected function redeem(int $rewardId): void
+    {
+        $reward = Reward::where('household_id', Household::current()->id)->active()->find($rewardId);
+
+        if (! $reward) {
+            return;
+        }
+
+        try {
+            app(RewardShop::class)->request($this->member, $reward);
+        } catch (Throwable $e) {
+            $this->redeemError = $e->getMessage();
+
+            return;
+        }
+
+        unset($this->pendingRedemptions);
+
+        $this->dispatch('redemptions-changed');
     }
 
     protected function choreFor(int $id): Chore
@@ -350,6 +449,69 @@ new class extends Component
                         </ul>
                     @endif
                 </div>
+
+                {{-- ---------------------------- REWARDS ----------------------- --}}
+                @if ($this->rewards->isNotEmpty())
+                    <section class="mt-6 border-t border-slate-100 pt-4 dark:border-slate-800">
+                        <div class="flex items-baseline gap-2">
+                            <h3 class="text-lg font-bold">Spend your points</h3>
+                            @if (\App\Models\Household::current()->allowanceEnabled())
+                                <span class="text-sm text-slate-400">
+                                    worth £{{ number_format(app(\App\Services\Points\RewardShop::class)->allowancePence($this->member, $this->balance) / 100, 2) }}
+                                </span>
+                            @endif
+                        </div>
+
+                        @if ($redeemError)
+                            <p class="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                {{ $redeemError }}
+                            </p>
+                        @endif
+
+                        {{-- Pending requests sit here with a Grant button, so a
+                             parent already at the wall can settle it rather than
+                             going to find a phone. --}}
+                        @foreach ($this->pendingRedemptions as $pending)
+                            <div class="mt-2 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 dark:bg-amber-950/40"
+                                 wire:key="pending-{{ $pending->id }}">
+                                <span class="min-w-0 flex-1 text-sm font-medium text-amber-900 dark:text-amber-200">
+                                    {{ $pending->name }} · {{ $pending->cost }} points · waiting for a grown-up
+                                </span>
+                                <button type="button" wire:click="grant({{ $pending->id }})"
+                                        class="shrink-0 touch-target rounded-xl bg-amber-600 px-3 text-sm font-semibold text-white">
+                                    Grant
+                                </button>
+                            </div>
+                        @endforeach
+
+                        <ul class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                            @foreach ($this->rewards as $reward)
+                                @php $affordable = $this->balance >= $reward->cost; @endphp
+                                <li wire:key="reward-{{ $reward->id }}">
+                                    <button
+                                        type="button"
+                                        wire:click="askFor({{ $reward->id }})"
+                                        @disabled(! $affordable)
+                                        class="flex w-full flex-col items-center gap-1 overflow-hidden rounded-2xl border-2 p-3 text-center
+                                               {{ $affordable ? 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900' : 'border-transparent bg-slate-50 opacity-50 dark:bg-slate-800/60' }}"
+                                    >
+                                        @if ($reward->imageUrl())
+                                            <img src="{{ $reward->imageUrl() }}" alt="" class="size-14 rounded-xl object-cover">
+                                        @else
+                                            <span class="text-3xl leading-none" aria-hidden="true">🎁</span>
+                                        @endif
+                                        <span class="text-sm leading-tight font-semibold">{{ $reward->name }}</span>
+                                        <span class="rounded-full px-2 py-0.5 text-sm font-bold tabular-nums
+                                                     {{ $affordable ? 'text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-700' }}"
+                                              style="{{ $affordable ? 'background-color: '.$this->member->colour.';' : '' }}">
+                                            {{ $reward->cost }}
+                                        </span>
+                                    </button>
+                                </li>
+                            @endforeach
+                        </ul>
+                    </section>
+                @endif
             </div>
         </div>
     @endif
