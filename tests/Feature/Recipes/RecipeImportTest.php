@@ -141,8 +141,11 @@ class RecipeImportTest extends TestCase
     {
         Storage::fake();
 
+        // Small on purpose: this asserts an image block is sent, not that
+        // Imagick can resize. A full-size fake is several megabytes of GD
+        // allocation and pushes the whole suite past its memory limit.
         $recipe = app(RecipeIntake::class)->fromPhoto(
-            UploadedFile::fake()->image('cookbook.jpg', 1200, 1600)
+            UploadedFile::fake()->image('cookbook.jpg', 320, 240)
         );
 
         $recipe->refresh();

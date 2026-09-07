@@ -98,7 +98,7 @@ class ParentViewTest extends TestCase
         $chore = $this->chore(['title' => 'Feed the cat']);
 
         Livewire::test('kids.parent')
-            ->call('tick', $chore->id)
+            ->call('toggle', $chore->id, '2026-09-09')
             ->assertNotDispatched('need-pin');
 
         $this->assertSame(5, $this->balance());
@@ -111,7 +111,7 @@ class ParentViewTest extends TestCase
         app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-09'), $this->joey);
 
         Livewire::test('kids.parent')
-            ->call('undo', $chore->id)
+            ->call('toggle', $chore->id, '2026-09-09')
             ->assertNotDispatched('need-pin');
 
         $this->assertSame(0, $this->balance());
@@ -134,7 +134,7 @@ class ParentViewTest extends TestCase
         $chore = $this->chore(['needs_approval' => true]);
         $instance = app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-09'), $this->joey);
 
-        Livewire::test('kids.parent')->call('approve', $chore->id);
+        Livewire::test('kids.parent')->call('approve', $chore->id, '2026-09-09');
 
         $this->assertSame(5, $this->balance());
         $this->assertSame($this->simon->id, $instance->fresh()->approved_by_member_id);
@@ -145,7 +145,7 @@ class ParentViewTest extends TestCase
     {
         $chore = $this->chore(['needs_approval' => true]);
 
-        Livewire::test('kids.parent')->call('approve', $chore->id);
+        Livewire::test('kids.parent')->call('approve', $chore->id, '2026-09-09');
 
         $this->assertSame(5, $this->balance());
         $this->assertDatabaseCount('chore_instances', 1);
@@ -263,5 +263,188 @@ class ParentViewTest extends TestCase
         }
 
         $this->assertSame($withThree, $measure(), 'Query count grew with the number of chores.');
+    }
+
+    #[Test]
+    public function a_chore_ticked_yesterday_still_reaches_the_approval_queue(): void
+    {
+        // The reported bug: the queue only looked at today, so a Sunday-evening
+        // tick was never shown to anybody and the child waited forever.
+        $chore = $this->chore(['title' => 'Take the bag upstairs', 'needs_approval' => true]);
+        app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-08'), $this->joey);
+
+        Livewire::test('kids.parent')
+            ->assertSee('Waiting for you')
+            ->assertSee('Take the bag upstairs')
+            ->assertSee('yesterday');
+    }
+
+    #[Test]
+    public function a_chore_from_the_queue_can_be_approved_whatever_day_it_was_done(): void
+    {
+        $chore = $this->chore(['needs_approval' => true]);
+        $instance = app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-08'), $this->joey);
+
+        Livewire::test('kids.parent')->call('approveInstance', $instance->id);
+
+        $this->assertTrue($instance->fresh()->isApproved());
+        $this->assertSame(5, $this->balance());
+    }
+
+    #[Test]
+    public function a_chore_from_the_queue_can_be_undone(): void
+    {
+        $chore = $this->chore(['needs_approval' => true]);
+        $instance = app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-08'), $this->joey);
+
+        Livewire::test('kids.parent')->call('undoInstance', $instance->id);
+
+        $this->assertFalse($instance->fresh()->isDone());
+        $this->assertSame(0, $this->balance());
+    }
+
+    #[Test]
+    public function the_queue_reaches_back_but_not_forever(): void
+    {
+        $chore = $this->chore(['title' => 'Ancient history', 'needs_approval' => true]);
+
+        app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-08-20'), $this->joey);
+        app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-06-01'), $this->joey);
+
+        // Three weeks back is still worth chasing; three months is history.
+        $awaiting = Livewire::test('kids.parent')->instance()->awaiting;
+
+        $this->assertSame(['2026-08-20'], $awaiting->map(fn ($i) => $i->on->toDateString())->all());
+    }
+
+    #[Test]
+    public function an_approved_chore_leaves_the_queue(): void
+    {
+        $chore = $this->chore(['title' => 'Take the bag upstairs', 'needs_approval' => true]);
+        $instance = app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-08'), $this->joey);
+
+        Livewire::test('kids.parent')
+            ->assertSee('Take the bag upstairs')
+            ->call('approveInstance', $instance->id)
+            ->assertDontSee('Waiting for you');
+    }
+
+    #[Test]
+    public function a_chore_that_needs_no_checking_never_joins_the_queue(): void
+    {
+        $chore = $this->chore(['title' => 'Feed the cat']);
+        app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-08'), $this->joey);
+
+        Livewire::test('kids.parent')->assertDontSee('Waiting for you');
+    }
+
+    #[Test]
+    public function a_childs_card_opens_a_day_picker_for_the_week(): void
+    {
+        $chore = $this->chore(['title' => 'Monday only', 'recurrence' => 'days', 'days' => [1]]);
+
+        $component = Livewire::test('kids.parent')
+            ->assertDontSee('Monday only')
+            ->call('togglePicker', $this->joey->id)
+            ->call('pickDay', $this->joey->id, '2026-09-07');
+
+        $component->assertSee('Monday only');
+        $this->assertSame('2026-09-07', $component->instance()->dateFor($this->joey->id));
+    }
+
+    #[Test]
+    public function a_chore_can_be_approved_on_a_day_that_is_not_today(): void
+    {
+        $chore = $this->chore(['needs_approval' => true, 'recurrence' => 'daily']);
+        app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-07'), $this->joey);
+
+        Livewire::test('kids.parent')
+            ->call('pickDay', $this->joey->id, '2026-09-07')
+            ->call('approve', $chore->id, '2026-09-07');
+
+        $this->assertSame(5, $this->balance());
+    }
+
+    #[Test]
+    public function a_day_outside_this_week_is_refused(): void
+    {
+        // The date comes from the browser, so it is not to be trusted.
+        $chore = $this->chore(['recurrence' => 'daily']);
+
+        $component = Livewire::test('kids.parent')
+            ->call('pickDay', $this->joey->id, '2026-12-25')
+            ->call('toggle', $chore->id, '2026-12-25');
+
+        $this->assertSame('2026-09-09', $component->instance()->dateFor($this->joey->id));
+        $this->assertSame(0, $this->balance());
+    }
+
+    #[Test]
+    public function each_childs_day_is_picked_independently(): void
+    {
+        $sienna = Member::factory()->create([
+            'household_id' => $this->household->id, 'name' => 'Sienna', 'is_child' => true,
+        ]);
+
+        $component = Livewire::test('kids.parent')->call('pickDay', $this->joey->id, '2026-09-07');
+
+        $this->assertSame('2026-09-07', $component->instance()->dateFor($this->joey->id));
+        $this->assertSame('2026-09-09', $component->instance()->dateFor($sienna->id));
+    }
+
+    #[Test]
+    public function held_back_points_are_labelled_rather_than_shown_as_nothing(): void
+    {
+        // The reported confusion: one chore done, nothing saved, no explanation.
+        $chore = $this->chore(['needs_approval' => true]);
+        app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-08'), $this->joey);
+
+        $component = Livewire::test('kids.parent');
+        $row = $component->instance()->summary->first();
+
+        $this->assertSame(1, $row['done']);
+        $this->assertSame(0, $row['earned']);
+        $this->assertSame(5, $row['pending']);
+
+        $component->assertSee('5 pending your check');
+    }
+
+    #[Test]
+    public function nothing_is_pending_once_it_has_been_checked(): void
+    {
+        $chore = $this->chore(['needs_approval' => true]);
+        $instance = app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-08'), $this->joey);
+        app(ChoreBoard::class)->approve($instance, $this->simon);
+
+        $row = Livewire::test('kids.parent')->instance()->summary->first();
+
+        $this->assertSame(0, $row['pending']);
+        $this->assertSame(5, $row['earned']);
+    }
+
+    #[Test]
+    public function a_chore_taken_on_trust_is_never_pending(): void
+    {
+        $chore = $this->chore();
+        app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-09'), $this->joey);
+
+        $row = Livewire::test('kids.parent')->instance()->summary->first();
+
+        $this->assertSame(0, $row['pending']);
+        $this->assertSame(5, $row['earned']);
+    }
+
+    #[Test]
+    public function the_week_total_counts_every_day_including_sunday(): void
+    {
+        $chore = $this->chore(['recurrence' => 'daily']);
+        $board = app(ChoreBoard::class);
+
+        $board->complete($chore, CarbonImmutable::parse('2026-09-07'), $this->joey);
+        $board->complete($chore, CarbonImmutable::parse('2026-09-13'), $this->joey);
+
+        $row = Livewire::test('kids.parent')->instance()->summary->first();
+
+        $this->assertSame(2, $row['done'], 'Sunday is part of the week.');
     }
 }

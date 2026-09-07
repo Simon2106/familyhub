@@ -146,6 +146,47 @@ class ChoreBoard
         return $instance->fresh();
     }
 
+    /**
+     * Everything done but not yet signed off, whatever day it was done on.
+     *
+     * Deliberately not limited to today. A chore ticked on Sunday evening
+     * needs approving on Monday, and an approval queue that only looks at
+     * today strands it silently — the child sees "waiting to be checked"
+     * forever and nobody is ever shown the thing to check.
+     *
+     * @return Collection<int, ChoreInstance>
+     */
+    public function awaitingApproval(Household $household, int $days = 30): Collection
+    {
+        return ChoreInstance::query()
+            ->whereNotNull('completed_at')
+            ->whereNull('approved_at')
+            ->where('on', '>=', $household->todayLocal()->subDays($days)->toDateString())
+            ->whereHas('chore', fn ($q) => $q
+                ->where('household_id', $household->id)
+                ->where('needs_approval', true))
+            ->with(['chore.member', 'member'])
+            ->orderByDesc('on')
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * Points earned but not yet released, because nobody has checked them.
+     *
+     * The number that explains a child having done things and saved nothing.
+     */
+    public function pendingPoints(Member $member, string $from, string $to): int
+    {
+        return (int) ChoreInstance::query()
+            ->where('member_id', $member->id)
+            ->whereNotNull('completed_at')
+            ->whereNull('approved_at')
+            ->whereBetween('on', [$from, $to])
+            ->whereHas('chore', fn ($q) => $q->where('needs_approval', true))
+            ->sum('points');
+    }
+
     /** The row for one chore on one day, made only when something happens. */
     public function instanceFor(Chore $chore, CarbonImmutable $date): ChoreInstance
     {
