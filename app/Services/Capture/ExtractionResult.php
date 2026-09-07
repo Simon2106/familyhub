@@ -4,11 +4,39 @@ namespace App\Services\Capture;
 
 class ExtractionResult
 {
-    /** @param list<ExtractedItem> $items */
+    /**
+     * @param  list<ExtractedItem>  $items
+     * @param  list<SourceResult>  $sources
+     */
     public function __construct(
         public readonly array $items = [],
         public readonly ?string $summary = null,
+        public readonly array $sources = [],
     ) {}
+
+    /**
+     * Fold the per-source results into one reviewable set, keeping the sources
+     * themselves so the card can show where each item came from.
+     *
+     * @param  list<SourceResult>  $sources
+     */
+    public static function fromSources(array $sources): self
+    {
+        $merged = self::merge(array_map(
+            fn (SourceResult $source) => new self(
+                array_map(fn (ExtractedItem $item) => $item->from($source->label), $source->items),
+                $source->summary,
+            ),
+            $sources,
+        ));
+
+        return new self($merged->items, $merged->summary, $sources);
+    }
+
+    public function withSummary(?string $summary): self
+    {
+        return new self($this->items, $summary, $this->sources);
+    }
 
     public function isEmpty(): bool
     {

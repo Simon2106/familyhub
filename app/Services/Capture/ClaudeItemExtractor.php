@@ -43,17 +43,17 @@ class ClaudeItemExtractor implements ItemExtractor
         // with two large PDFs otherwise spends most of a single response's
         // budget on the first, and the rest come back truncated or missing —
         // and a term calendar needs every date, not most of them.
-        $results = array_map(fn (array $part) => $this->ask($part['content'], $capture, $part['label']), $parts);
+        $sources = array_map(
+            fn (array $part) => $this->ask($part['content'], $capture, $part['label'], $part['kind']),
+            $parts,
+        );
 
-        $result = ExtractionResult::merge($results);
+        $result = ExtractionResult::fromSources($sources);
 
         // A partial read is still a useful read, but the review inbox has to
         // say what was left out.
         return $prepared->hasSkipped()
-            ? new ExtractionResult(
-                $result->items,
-                trim(($result->summary ?? '').' '.$prepared->skippedSentence()),
-            )
+            ? $result->withSummary(trim(($result->summary ?? '').' '.$prepared->skippedSentence()))
             : $result;
     }
 
@@ -71,6 +71,7 @@ class ClaudeItemExtractor implements ItemExtractor
         foreach ($prepared->blocks as $index => $block) {
             $parts[] = [
                 'label' => $prepared->names[$index] ?? 'attachment '.($index + 1),
+                'kind' => 'attachment',
                 'content' => [
                     // Documents first: the API reads them better when they
                     // precede the instruction that refers to them.
@@ -89,6 +90,7 @@ class ClaudeItemExtractor implements ItemExtractor
         if (filled($capture->body_text)) {
             $parts[] = [
                 'label' => 'message body',
+                'kind' => 'body',
                 'content' => [['type' => 'text', 'text' => $this->describe(
                     $capture,
                     $prepared,
@@ -106,7 +108,7 @@ class ClaudeItemExtractor implements ItemExtractor
     }
 
     /** @param list<array<string, mixed>> $content */
-    protected function ask(array $content, Capture $capture, string $label): ExtractionResult
+    protected function ask(array $content, Capture $capture, string $label, string $kind): SourceResult
     {
         $message = $this->send([
             'model' => config('familyhub.anthropic.model'),
@@ -144,7 +146,16 @@ class ClaudeItemExtractor implements ItemExtractor
             'cache_read_tokens' => $message->usage->cacheReadInputTokens ?? null,
         ]);
 
-        return $this->interpret($message);
+        $result = $this->interpret($message);
+
+        return new SourceResult(
+            label: $label,
+            kind: $kind,
+            items: $result->items,
+            summary: $result->summary,
+            inputTokens: $message->usage->inputTokens ?? null,
+            outputTokens: $message->usage->outputTokens ?? null,
+        );
     }
 
     /**

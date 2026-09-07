@@ -100,7 +100,12 @@ timezone and its members' names, and is pushed to find *every* date, infer a
 missing year from context, and lower its own confidence when it had to guess.
 
 The review inbox is on the wall's **Review** tab and at `/app/review`. Each item
-shows what it is, when, who it seems to be about, and how sure the model was.
+shows what it is, when, who it seems to be about, how sure the model was, and
+**which source it came from** — the message itself, or the attachment by name.
+**Show source** expands to the model's one-line summary of each document and how
+many items it yielded, so a card that looks thin can be checked against what the
+model actually read rather than being taken on trust. Sources are persisted as
+`capture_sources` rows, so the answer survives a page reload.
 Accept writes an event through the Phase 2 iCloud write-back, or creates a to-do
 for a task. **Accept all confident** takes only the items scoring 80+. Phones can
 correct an item before accepting; the wall accepts or rejects.
@@ -506,15 +511,15 @@ answered 200 and ignored, because a non-2xx would make Postmark retry it forever
 | nginx request body | 40M | `client_max_body_size` |
 | PHP request body | 40M | `post_max_size` |
 | Accepted per attachment | 35MB | `PostmarkInboundController::MAX_ATTACHMENT_BYTES` |
-| Sent to Claude, per attachment | 12MB | `AttachmentPreparer::MAX_BYTES` |
-| Sent to Claude, per request | 20MB | `AttachmentPreparer::MAX_TOTAL_BYTES` |
+| Sent to Claude, per attachment | 20MB | `AttachmentPreparer::MAX_BYTES` |
 
-The last two are lower on purpose: the Messages API caps a request at 32MB and
-base64 costs a third on top, so several attachments share one budget. Anything
-that will not fit is **stored and named** rather than dropped — the review inbox
-says which files went unread, and a capture whose only attachment was unreadable
-fails with that reason instead of reporting "nothing found", which would look
-exactly like an email that had no dates in it.
+That last one is lower on purpose: the Messages API caps a request at 32MB and
+base64 costs a third on top. There is no *combined* budget, because each
+attachment is sent in its own request — a big PDF cannot crowd out the others.
+Anything that will not fit is **stored and named** rather than dropped — the
+review inbox says which files went unread, and a capture whose only attachment
+was unreadable fails with that reason instead of reporting "nothing found",
+which would look exactly like an email that had no dates in it.
 
 Photos are downscaled to a 2000px long edge before sending, so a 12MP phone
 photo of a letter is nowhere near these limits.

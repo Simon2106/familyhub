@@ -16,7 +16,7 @@ use Throwable;
 class ExtractionParser
 {
     /** @param array<string, mixed> $decoded */
-    public static function fromArray(array $decoded): ExtractionResult
+    public static function fromArray(array $decoded, ?string $sourceLabel = null): ExtractionResult
     {
         $items = [];
 
@@ -28,7 +28,7 @@ class ExtractionParser
             $item = self::item($raw);
 
             if ($item !== null) {
-                $items[] = $item;
+                $items[] = $sourceLabel === null ? $item : $item->from($sourceLabel);
             }
         }
 

@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * One thing the model found in a capture, awaiting a person's decision.
  */
 #[Fillable([
-    'capture_id', 'type', 'title', 'start_at', 'end_at', 'all_day', 'location', 'notes',
+    'capture_id', 'capture_source_id', 'type', 'title', 'start_at', 'end_at', 'all_day', 'location', 'notes',
     'member_hint', 'confidence', 'status', 'member_id', 'calendar_id', 'event_id',
     'checklist_item_id', 'reviewed_at',
 ])]
@@ -40,6 +40,13 @@ class CaptureItem extends Model
     public function capture(): BelongsTo
     {
         return $this->belongsTo(Capture::class);
+    }
+
+    /** Which document this was read from. */
+    /** @return BelongsTo<CaptureSource, $this> */
+    public function source(): BelongsTo
+    {
+        return $this->belongsTo(CaptureSource::class, 'capture_source_id');
     }
 
     /** @return BelongsTo<Member, $this> */

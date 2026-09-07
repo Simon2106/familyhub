@@ -6,6 +6,7 @@ use App\Models\Capture;
 use App\Services\Capture\Contracts\ItemExtractor;
 use App\Services\Capture\ExtractionParser;
 use App\Services\Capture\ExtractionResult;
+use App\Services\Capture\SourceResult;
 use RuntimeException;
 
 /**
@@ -38,6 +39,19 @@ class FakeItemExtractor implements ItemExtractor
         return $this->queue(['items' => $items, 'summary' => $summary]);
     }
 
+    /** The label to attribute queued items to, as the real extractor would. */
+    public ?string $sourceLabel = null;
+
+    public ?string $sourceKind = null;
+
+    public function fromSource(string $label, string $kind = 'attachment'): self
+    {
+        $this->sourceLabel = $label;
+        $this->sourceKind = $kind;
+
+        return $this;
+    }
+
     public function extract(Capture $capture): ExtractionResult
     {
         $this->sawCaptures[] = $capture;
@@ -48,6 +62,17 @@ class FakeItemExtractor implements ItemExtractor
 
         $response = array_shift($this->responses) ?? ['items' => [], 'summary' => 'Nothing found.'];
 
-        return ExtractionParser::fromArray($response);
+        $result = ExtractionParser::fromArray($response, $this->sourceLabel);
+
+        if ($this->sourceLabel === null) {
+            return $result;
+        }
+
+        return ExtractionResult::fromSources([new SourceResult(
+            label: $this->sourceLabel,
+            kind: $this->sourceKind ?? 'attachment',
+            items: $result->items,
+            summary: $result->summary,
+        )]);
     }
 }

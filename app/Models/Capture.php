@@ -39,6 +39,12 @@ class Capture extends Model
         return $this->hasMany(CaptureAttachment::class);
     }
 
+    /** @return HasMany<CaptureSource, $this> */
+    public function sources(): HasMany
+    {
+        return $this->hasMany(CaptureSource::class)->orderByRaw("kind = 'body'")->orderBy('id');
+    }
+
     /** @return HasMany<CaptureItem, $this> */
     public function items(): HasMany
     {

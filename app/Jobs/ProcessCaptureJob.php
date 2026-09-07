@@ -69,8 +69,23 @@ class ProcessCaptureJob implements ShouldQueue
             'household.places.members',
         ]));
 
+        // Sources first, so each item can point at the document it came from.
+        $sourceIds = [];
+
+        foreach ($result->sources as $source) {
+            $sourceIds[$source->label] = $this->capture->sources()->create([
+                'label' => $source->label,
+                'kind' => $source->kind,
+                'summary' => $source->summary,
+                'input_tokens' => $source->inputTokens,
+                'output_tokens' => $source->outputTokens,
+            ])->id;
+        }
+
         foreach ($result->items as $item) {
-            $this->capture->items()->create($item->toAttributes());
+            $this->capture->items()->create($item->toAttributes() + [
+                'capture_source_id' => $sourceIds[$item->sourceLabel] ?? null,
+            ]);
         }
 
         $this->capture->markReviewed($result->summary, count($result->items));

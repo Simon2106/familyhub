@@ -51,7 +51,14 @@ new class extends Component
         return Capture::query()
             ->where('household_id', Household::current()->id)
             ->whereIn('status', ['reviewing', 'processing', 'pending', 'failed'])
-            ->with(['items' => fn ($q) => $q->where('status', 'pending'), 'items.member'])
+            ->with([
+                'items' => fn ($q) => $q->where('status', 'pending'),
+                'items.member',
+                'items.source',
+                // Counted here rather than per row: the card renders one line
+                // per source and a query each would be an N+1.
+                'sources' => fn ($q) => $q->withCount('items'),
+            ])
             ->orderByDesc('created_at')
             ->get()
             // A capture whose items have all been dealt with drops out, but one
@@ -276,6 +283,47 @@ new class extends Component
                 <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">{{ $capture->summary }}</p>
             @endif
 
+            @if ($capture->sources->isNotEmpty())
+                {{-- What each document was, in the model's words. Worth being
+                     able to see when an item looks wrong: it usually says
+                     whether the document was misread or simply says that. --}}
+                <div x-data="{ open: false }" class="mt-2">
+                    <button type="button" x-on:click="open = ! open"
+                            class="flex touch-target items-center gap-1.5 rounded-lg text-sm font-semibold text-blue-600 dark:text-blue-400">
+                        <svg class="size-4 transition-transform" :class="open && 'rotate-90'" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="m9 6 6 6-6 6" />
+                        </svg>
+                        <span x-text="open ? 'Hide sources' : 'Show source'"></span>
+                        <span class="font-normal text-slate-400">({{ $capture->sources->count() }})</span>
+                    </button>
+
+                    <ul x-show="open" x-cloak x-collapse class="mt-1 space-y-2">
+                        @foreach ($capture->sources as $source)
+                            <li class="rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800/60" wire:key="source-{{ $source->id }}">
+                                <p class="flex items-center gap-2 font-semibold">
+                                    @if ($source->isAttachment())
+                                        <svg class="size-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="M14 3v5h5M8 3h7l5 5v11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+                                        </svg>
+                                    @else
+                                        <svg class="size-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="M4 5h16v14H4z M4 6l8 6 8-6" />
+                                        </svg>
+                                    @endif
+                                    <span class="min-w-0 truncate">{{ $source->label }}</span>
+                                    <span class="ml-auto shrink-0 text-xs font-normal text-slate-400">
+                                        {{ $source->items_count }} found
+                                    </span>
+                                </p>
+                                <p class="mt-1 text-slate-500 dark:text-slate-400">
+                                    {{ $source->summary ?: 'Nothing recorded for this one.' }}
+                                </p>
+                            </li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+
             @if ($capture->status === 'failed' || $capture->seemsStalled())
                 {{-- A stalled capture gets the same treatment as a failed one:
                      a worker killed mid-job leaves nothing to move it on, and
@@ -378,6 +426,15 @@ new class extends Component
 
                                 @if ($item->member_hint)
                                     <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Mentions: {{ $item->member_hint }}</p>
+                                @endif
+
+                                @if ($item->source)
+                                    {{-- Which document this came from: an item
+                                         read out of the PDF carries different
+                                         weight from one guessed off a cover note. --}}
+                                    <p class="mt-0.5 truncate text-xs text-slate-400">
+                                        from {{ $item->source->shortLabel() }}
+                                    </p>
                                 @endif
 
                                 @if ($item->notes)
