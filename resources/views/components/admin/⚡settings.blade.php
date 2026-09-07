@@ -84,6 +84,19 @@ new #[Layout('layouts::app')] class extends Component
             : trans_choice('{1}:count place|[2,*]:count places', $places, ['count' => $places]).' recognised in event titles.';
     }
 
+    public function homeSummary(): string
+    {
+        if (! app(\App\Services\HomeAssistant\HomeAssistant::class)->isConfigured()) {
+            return 'Not connected — set HA_URL and HA_TOKEN in .env.';
+        }
+
+        $tiles = \App\Models\HomeTile::where('household_id', Household::current()->id)->count();
+
+        return $tiles === 0
+            ? 'Connected. Choose what belongs on the wall.'
+            : trans_choice('{1}:count tile|[2,*]:count tiles', $tiles, ['count' => $tiles]).' on the wall.';
+    }
+
     public function choresSummary(): string
     {
         $chores = \App\Models\Chore::where('household_id', Household::current()->id)->active()->count();
@@ -478,6 +491,22 @@ new #[Layout('layouts::app')] class extends Component
                     </p>
                 </div>
                 <a href="{{ route('admin.rewards') }}" wire:navigate
+                   class="grid touch-target shrink-0 place-items-center rounded-xl px-4 font-semibold text-blue-600 dark:text-blue-400">
+                    Manage
+                </a>
+            </div>
+        </section>
+
+        {{-- Smart home --}}
+        <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
+            <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <h2 class="font-semibold">Home Assistant</h2>
+                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        {{ $this->homeSummary() }}
+                    </p>
+                </div>
+                <a href="{{ route('admin.home') }}" wire:navigate
                    class="grid touch-target shrink-0 place-items-center rounded-xl px-4 font-semibold text-blue-600 dark:text-blue-400">
                     Manage
                 </a>

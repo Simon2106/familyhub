@@ -4,6 +4,7 @@ namespace Tests\Feature\Capture;
 
 use App\Models\Household;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Component;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
@@ -41,20 +42,63 @@ class ComponentNamingTest extends TestCase
             ['admin.routines'],
             ['admin.rewards'],
             ['kids.parent'],
+            ['admin.home'],
+            ['home.panel'],
         ];
     }
 
     /**
-     * Names Livewire itself owns on the component.
+     * Overrides that are the point of writing a component.
      *
-     * `slots` is here because it cost an afternoon: Livewire 4 has a slots
-     * feature, so a #[Computed] slots() is shadowed by an empty collection.
-     * Every write guarded on it then failed silently — no exception, no
-     * validation error, simply nothing saved.
+     * Everything else Livewire declares is off limits — see below.
+     *
+     * @var list<string>
      */
-    public static function reserved(): array
+    public const INTENTIONAL_OVERRIDES = [
+        'render', 'mount', 'boot', 'booted', 'hydrate', 'dehydrate',
+        'updated', 'updating', 'rules', 'messages', 'validationAttributes',
+        'exceptionHandler', 'placeholder',
+    ];
+
+    /**
+     * Names Livewire owns through magic, which reflection cannot see.
+     *
+     * `slots` is the one that cost an afternoon. It is not a declared member —
+     * Livewire 4 resolves it through __get — so a #[Computed] slots() is
+     * shadowed by an empty one and every write guarded on it fails with no
+     * exception and no validation error. Reflection finds nothing to warn
+     * about, hence this list.
+     *
+     * @var list<string>
+     */
+    public const MAGIC_NAMES = ['slots'];
+
+    /**
+     * Names Livewire itself owns, read off the base class rather than listed.
+     *
+     * A hand-kept list only holds the collisions already paid for. `slots` cost
+     * an afternoon — a #[Computed] slots() is shadowed by Livewire 4's own
+     * empty one, so every write guarded on it failed with no exception and no
+     * validation error. `tap` cost another: Livewire\Component has one, and an
+     * override with a different signature is a fatal error at render. Asking
+     * the base class means the next one is caught before it is written.
+     *
+     * @return list<string>
+     */
+    public static function reservedNames(): array
     {
-        return [['slots'], ['id'], ['props'], ['view'], ['redirect'], ['dispatch'], ['skipRender']];
+        $base = new ReflectionClass(Component::class);
+
+        $names = collect($base->getMethods(\ReflectionMethod::IS_PUBLIC))
+            ->merge($base->getProperties(\ReflectionProperty::IS_PUBLIC))
+            ->map(fn ($member) => $member->getName())
+            ->reject(fn (string $name) => str_starts_with($name, '__'))
+            ->merge(self::MAGIC_NAMES)
+            ->diff(self::INTENTIONAL_OVERRIDES)
+            ->unique()
+            ->values();
+
+        return $names->all();
     }
 
     #[Test]
@@ -87,7 +131,7 @@ class ComponentNamingTest extends TestCase
         Household::factory()->create();
 
         $reflection = new ReflectionClass(Livewire::test($name)->instance());
-        $reserved = collect(self::reserved())->flatten();
+        $reserved = collect(self::reservedNames());
 
         $declared = collect($reflection->getMethods(\ReflectionMethod::IS_PUBLIC))
             ->merge($reflection->getProperties(\ReflectionProperty::IS_PUBLIC))
@@ -99,7 +143,26 @@ class ComponentNamingTest extends TestCase
         $this->assertTrue(
             $clashes->isEmpty(),
             "{$name} declares ".$clashes->implode(', ').', which Livewire owns. '
-            .'It will be shadowed by the framework and fail silently — rename it.'
+            .'It will be shadowed by the framework, or clash fatally on signature — rename it.'
         );
+    }
+
+    #[Test]
+    public function the_reserved_list_is_read_from_livewire_rather_than_remembered(): void
+    {
+        $reserved = self::reservedNames();
+
+        // `tap` and `dispatch` come from the base class, so the guard follows
+        // Livewire if they ever move; `slots` is magic and has to be listed.
+        foreach (['tap', 'dispatch'] as $name) {
+            $this->assertContains($name, $reserved, 'Reflection should find declared members.');
+        }
+
+        $this->assertContains('slots', $reserved, 'Magic names still have to be listed by hand.');
+
+        // ...and the overrides a component exists to write.
+        foreach (self::INTENTIONAL_OVERRIDES as $name) {
+            $this->assertNotContains($name, $reserved);
+        }
     }
 }

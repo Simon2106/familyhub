@@ -993,6 +993,11 @@ new #[Layout('layouts::display')] class extends Component
             </div>
         </div>
 
+        {{-- ------------------------------ HOME ---------------------------- --}}
+        <div x-show="tab === 'home-devices'" x-cloak class="h-full min-h-0">
+            <livewire:home.panel />
+        </div>
+
         {{-- ------------------- PLACEHOLDERS FOR LATER PHASES ------------ --}}
         @foreach (['photos' => 'Photo library'] as $key => $label)
             <div x-show="tab === '{{ $key }}'" x-cloak class="grid h-full place-items-center">
@@ -1010,12 +1015,13 @@ new #[Layout('layouts::display')] class extends Component
     <livewire:kids.pin />
 
     {{-- ============================ TAB BAR ============================= --}}
-    <nav data-tab-bar class="grid shrink-0 grid-cols-5 gap-1 border-t border-slate-200 px-4 py-1.5 dark:border-slate-800">
+    <nav data-tab-bar class="grid shrink-0 grid-cols-6 gap-1 border-t border-slate-200 px-4 py-1.5 dark:border-slate-800">
         @foreach ([
             ['home', 'Home', 'M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z'],
             ['review', 'Review', 'M4 4h16v12H8l-4 4z'],
             ['meals', 'Meals', 'M6 3v9a3 3 0 0 0 6 0V3M9 12v9M17 3c-1.5 2-2 4-2 6s.5 3 2 3 2-1 2-3-.5-4-2-6zm0 9v9'],
             ['lists', 'Lists', 'M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01'],
+            ['home-devices', 'Lights', 'M9 21h6M10 18h4M12 3a6 6 0 0 0-3.5 10.9c.3.2.5.6.5 1V15h6v-.1c0-.4.2-.8.5-1A6 6 0 0 0 12 3z'],
             ['photos', 'Photos', 'M3 7a2 2 0 0 1 2-2h3l1.5-2h5L16 5h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M12 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z'],
         ] as [$key, $label, $path])
             <button

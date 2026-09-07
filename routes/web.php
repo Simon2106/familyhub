@@ -136,4 +136,5 @@ Route::middleware('auth')->group(function () {
     Route::livewire('/admin/chores', 'admin.chores')->name('admin.chores');
     Route::livewire('/admin/routines', 'admin.routines')->name('admin.routines');
     Route::livewire('/admin/rewards', 'admin.rewards')->name('admin.rewards');
+    Route::livewire('/admin/home', 'admin.home')->name('admin.home');
 });

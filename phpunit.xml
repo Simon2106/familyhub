@@ -18,6 +18,13 @@
         </include>
     </source>
     <php>
+        <!--
+            The wall display renders a fortnight of day columns, a rail per day
+            and every tab in one response, and the suite runs in a single
+            process. 128M is not enough for that and the failure is an opaque
+            "premature end of PHP process" rather than a test failure.
+        -->
+        <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_URL" value="http://localhost"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>

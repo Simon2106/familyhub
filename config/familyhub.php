@@ -143,13 +143,27 @@ return [
     // Phase 6: Home Assistant is the only smart-home driver. Zigbee switches
     // arrive via Zigbee2MQTT inside HA, and HA bridges the Alexa household.
     'homeassistant' => [
-        'url' => env('HOMEASSISTANT_URL'),
-        'token' => env('HOMEASSISTANT_TOKEN'),
+        /*
+        | The base URL exactly as HA is reached, port and all — or no port,
+        | which is the case here: this install answers on 80, not the 8123
+        | everyone assumes. Nothing appends a port to this, so
+        | http://homeassistant.local and http://10.0.0.5:8123 both work.
+        */
+        'url' => env('HA_URL', env('HOMEASSISTANT_URL')),
+        'token' => env('HA_TOKEN', env('HOMEASSISTANT_TOKEN')),
+
+        // How long a state read is reused before going back to HA. Short,
+        // because a wall tile that lies about a light is worse than a slow one.
+        'cache_seconds' => (int) env('HA_CACHE_SECONDS', 5),
+
+        'timeout' => (int) env('HA_TIMEOUT', 10),
     ],
 
     'weather' => [
         'latitude' => env('WEATHER_LATITUDE'),
         'longitude' => env('WEATHER_LONGITUDE'),
+        // Open-Meteo needs no key, which is the whole reason it was chosen.
+        'cache_minutes' => (int) env('WEATHER_CACHE_MINUTES', 20),
     ],
 
 ];
