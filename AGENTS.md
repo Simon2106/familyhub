@@ -200,6 +200,18 @@ is designed and tested against. Change it and the layout is untested.
   that does not do this keeps running the code it booted with forever. Exit 0
   when it changes and let the process manager restart it — and never write a
   deploy hook that restarts daemons by name.
+- **The assistant's read-only promise is the tool surface, not the prompt.**
+  `AssistantTools` is what the model can reach, and every method behind it is a
+  read. Adding a tool that writes would break a promise the page makes in
+  words, so do not — and `HouseholdFactsTest` runs every reader and asserts the
+  database is byte-for-byte unchanged. Household context comes from
+  `HouseholdBrief`, shared with the capture pipeline: two descriptions that
+  drift are two families as far as a model is concerned.
+- **Media players are found, not configured.** They are deliberately outside
+  `HomeAssistant::DOMAINS` (which is what the tile picker offers), and read from
+  the same `/api/states` reading the tiles use — resolve `HomeAssistant` once
+  per render, because the shared cache may be off entirely. Controls are an
+  allow-list of actions; never pass a service name through from the browser.
 - **Nothing is written by rendering.** Chores, routines and meal plans all
   project from a rule onto a date and only create a row when something is
   ticked. Adding a nightly sweep would undo that: a missed run then means
