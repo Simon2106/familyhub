@@ -199,8 +199,9 @@ class BinCollectionTest extends TestCase
             'kind' => 'recycling',
         ]);
 
+        // The badge shows the bin, not the word "Bins" — the colours and the
+        // name carry it.
         Livewire::test('display.wall')
-            ->assertSee('Bins')
             ->assertSee('Recycling')
             ->assertSee('tonight');
     }
@@ -261,5 +262,42 @@ class BinCollectionTest extends TestCase
             ->set('binCalendarUrl', 'https://council.test/wrong')
             ->call('checkBins')
             ->assertSee('did not return a calendar');
+    }
+
+    #[Test]
+    public function the_badge_shouts_on_the_day_and_the_day_before(): void
+    {
+        // Loud while it can still be acted on.
+        BinCollection::factory()->create([
+            'household_id' => $this->household->id, 'on' => '2026-09-10', 'kind' => 'recycling',
+        ]);
+
+        Livewire::test('display.wall')->assertSee('background-color: #2563eb', false);
+    }
+
+    #[Test]
+    public function the_badge_is_quiet_the_rest_of_the_time(): void
+    {
+        // A badge that always shouts is a badge nobody reads by Thursday.
+        BinCollection::factory()->create([
+            'household_id' => $this->household->id, 'on' => '2026-09-12', 'kind' => 'recycling',
+        ]);
+
+        $html = Livewire::test('display.wall')->html();
+
+        $this->assertStringContainsString('Recycling', $html);
+        $this->assertStringContainsString('bg-slate-100 dark:bg-slate-800', $html);
+    }
+
+    #[Test]
+    public function two_bins_are_named_together_on_one_badge(): void
+    {
+        foreach (['refuse', 'food'] as $kind) {
+            BinCollection::factory()->create([
+                'household_id' => $this->household->id, 'on' => '2026-09-10', 'kind' => $kind,
+            ]);
+        }
+
+        Livewire::test('display.wall')->assertSee('Food + Rubbish');
     }
 }

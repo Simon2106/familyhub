@@ -561,20 +561,40 @@ new #[Layout('layouts::display')] class extends Component
             {{-- Bins, when they are close enough to matter. Beside the clock
                  because it is a thing you check on your way past. --}}
             @if ($this->nextBins->isNotEmpty())
-                @php $binDay = $this->nextBins->first()->on; @endphp
-                <div class="hidden min-w-0 items-baseline gap-2 rounded-xl px-3 py-1 sm:flex">
-                    <span class="text-sm font-semibold tracking-wide text-slate-400 uppercase">Bins</span>
-                    <span class="flex items-baseline gap-1.5">
+                @php
+                    $binDay = $this->nextBins->first()->on;
+                    $isToday = $binDay->isSameDay($this->today);
+                    $isTomorrow = $binDay->isSameDay($this->today->addDay());
+                    // Loud on the two days it can still be acted on, quiet the
+                    // rest of the fortnight. A badge that always shouts is a
+                    // badge nobody reads by Thursday.
+                    $urgent = $isToday || $isTomorrow;
+                    $when = $isToday ? 'today' : ($isTomorrow ? 'tonight' : $binDay->format('D'));
+                @endphp
+
+                <div class="hidden shrink-0 items-center gap-2.5 rounded-full px-4 py-1.5 sm:flex
+                            {{ $urgent ? 'text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800' }}"
+                     @if ($urgent) style="background-color: {{ $this->nextBins->first()->colour() }};" @endif>
+
+                    {{-- The colours first: from across a kitchen the dots are
+                         read before any of the words are.
+
+                         Backed by a dark chip when the pill is coloured, or a
+                         yellow food bin on a yellow pill disappears into it. --}}
+                    <span class="flex shrink-0 items-center gap-1 rounded-full {{ $urgent ? 'bg-black/25 px-1.5 py-1' : '' }}"
+                          aria-hidden="true">
                         @foreach ($this->nextBins as $bin)
-                            <span class="text-lg font-semibold" style="color: {{ $bin->colour() }};">
-                                {{ $bin->icon() }} {{ $bin->label() }}
-                            </span>
+                            <span class="size-3.5 rounded-full {{ $urgent ? '' : 'ring-2 ring-white dark:ring-slate-800' }}"
+                                  style="background-color: {{ $bin->colour() }};"></span>
                         @endforeach
                     </span>
-                    <span class="text-sm text-slate-500 dark:text-slate-400">
-                        {{ $binDay->isSameDay($this->today)
-                            ? 'today'
-                            : ($binDay->isSameDay($this->today->addDay()) ? 'tonight' : $binDay->format('D')) }}
+
+                    <span class="truncate font-bold {{ $urgent ? 'text-lg' : 'text-base text-slate-700 dark:text-slate-200' }}">
+                        {{ $this->nextBins->map(fn ($bin) => $bin->label())->join(' + ') }}
+                    </span>
+
+                    <span class="shrink-0 font-bold {{ $urgent ? 'text-lg text-white/85' : 'text-base text-slate-500 dark:text-slate-400' }}">
+                        {{ $when }}
                     </span>
                 </div>
             @endif

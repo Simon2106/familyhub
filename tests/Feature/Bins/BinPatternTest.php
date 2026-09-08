@@ -250,9 +250,7 @@ class BinPatternTest extends TestCase
         // is close enough yet.
         CarbonImmutable::setTestNow('2026-09-14 07:00:00');
 
-        Livewire::test('display.wall')
-            ->assertSee('Bins')
-            ->assertSee('Recycling');
+        Livewire::test('display.wall')->assertSee('Recycling');
     }
 
     #[Test]
