@@ -360,9 +360,8 @@ new class extends Component
 
     {{-- ------------------------- SAVE A MEAL IDEA ------------------------ --}}
     @if ($saving)
-        <div wire:click.self="$set('saving', false)" class="modal-backdrop modal-viewport z-50" role="dialog" aria-modal="true" aria-label="Save a meal idea">
-            <form wire:submit="save"
-                  class="pane-scroll max-h-full w-full max-w-md space-y-3 overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl dark:bg-slate-900">
+        <x-modal dismiss="$set('saving', false)" label="Save a meal idea">
+            <form wire:submit="save" class="space-y-3 p-4">
                 <h3 class="text-lg font-semibold">Save a meal idea</h3>
 
                 <div class="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
@@ -410,15 +409,15 @@ new class extends Component
                             class="touch-target rounded-xl px-4 font-semibold text-slate-500">Cancel</button>
                 </div>
             </form>
-        </div>
+        </x-modal>
     @endif
 
     {{-- ----------------------------- ONE RECIPE -------------------------- --}}
     @if ($this->openRecipe)
         @php $recipe = $this->openRecipe; @endphp
 
-        <div wire:click.self="close" class="modal-backdrop modal-viewport z-50" role="dialog" aria-modal="true" aria-label="{{ $recipe->title }}">
-            <div class="pane-scroll max-h-full w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
+        <x-modal dismiss="close" :label="$recipe->title" width="max-w-lg">
+            <div>
                 @if ($recipe->imageUrl())
                     <img src="{{ $recipe->imageUrl() }}" alt="" class="h-44 w-full bg-slate-100 object-cover dark:bg-slate-800">
                 @endif
@@ -498,6 +497,6 @@ new class extends Component
                     @endif
                 </div>
             </div>
-        </div>
+        </x-modal>
     @endif
 </div>

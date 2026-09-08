@@ -109,8 +109,8 @@ new class extends Component
     </button>
 
     @if ($open)
-        <div wire:click.self="$set('open', false)" class="modal-backdrop modal-viewport z-50" role="dialog" aria-modal="true" aria-label="Capture something">
-            <div class="pane-scroll max-h-full w-full max-w-md space-y-3 overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl dark:bg-slate-900">
+        <x-modal dismiss="$set('open', false)" label="Capture something">
+            <div class="space-y-3 p-4">
                 <h3 class="text-lg font-semibold">Capture something</h3>
 
                 <div class="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
@@ -161,6 +161,6 @@ new class extends Component
                     </div>
                 </form>
             </div>
-        </div>
+        </x-modal>
     @endif
 </div>

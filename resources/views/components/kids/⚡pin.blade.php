@@ -167,8 +167,8 @@ new class extends Component
 
 <div>
     @if ($this->isOpen())
-        <div wire:click.self="close" class="modal-backdrop modal-viewport z-[60]" role="dialog" aria-modal="true" aria-label="{{ $this->prompt }}">
-            <div class="w-full max-w-xs rounded-3xl bg-white p-5 shadow-2xl dark:bg-slate-900">
+        <x-modal dismiss="close" :label="$this->prompt" layer="top" width="max-w-xs" class="rounded-3xl">
+            <div class="p-5">
                 <div class="text-center">
                     <p class="text-sm text-slate-500 dark:text-slate-400">{{ $this->prompt }}</p>
                     <h2 class="text-xl font-bold">{{ $this->heading() }}</h2>
@@ -208,6 +208,6 @@ new class extends Component
                     </button>
                 </div>
             </div>
-        </div>
+        </x-modal>
     @endif
 </div>

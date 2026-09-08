@@ -83,6 +83,14 @@ conventions. The points most easily got wrong:
 - **Compare due dates as dates.** Household midnight is 23:00 UTC the previous
   day for half the year, so subtracting a UTC-parsed date column from it is off
   by one. `ChecklistItem::daysUntilDue()` reduces both sides to `Y-m-d` first.
+- **Every dialog is `<x-modal>`.** Two bugs came out of hand-rolling them, both
+  invisible until someone used a device. The dim and the centring must be the
+  same element — as two, the full-screen centring layer covers the backdrop and
+  "tap outside" silently does nothing. And a dialog must be measured against the
+  **visual** viewport (`--vv-top` / `--vv-height`), not the layout one: on iOS
+  the keyboard shrinks the visual viewport and leaves the layout viewport at
+  full height, so `fixed ... bottom-0` puts the Save button behind the keyboard.
+  `ModalDismissalTest` fails any view that builds its own.
 - **Never name a model method after one of its columns.** Eloquent resolves a
   missing attribute by checking whether a method of that name exists and calling
   it to see if it returns a relationship, so `section()` reading a `section`

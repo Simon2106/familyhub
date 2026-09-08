@@ -302,8 +302,8 @@ new class extends Component
 
 <div>
     @if ($this->member)
-        <div wire:click.self="close" class="modal-backdrop modal-viewport z-50" role="dialog" aria-modal="true" aria-label="{{ $this->member->name }}'s day">
-            <div class="pane-scroll flex max-h-full w-full max-w-2xl flex-col overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl dark:bg-slate-900">
+        <x-modal dismiss="close" :label="$this->member->name.'\'s day'" width="max-w-2xl" class="rounded-3xl">
+            <div class="flex min-h-0 flex-col p-5">
 
                 {{-- ---------------------------- WHO --------------------------- --}}
                 <div class="flex shrink-0 items-center gap-4">
@@ -517,6 +517,6 @@ new class extends Component
                     </section>
                 @endif
             </div>
-        </div>
+        </x-modal>
     @endif
 </div>

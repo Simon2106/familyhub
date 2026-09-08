@@ -952,6 +952,12 @@ Cached for 20 minutes, and a failed fetch costs the tile rather than the wall.
 
 - **Touch first.** Every interactive element is at least 44×44px (`.touch-target`).
   No hover-only affordances, no double-taps.
+- **Dialogs are `<x-modal>`, always.** It measures against the *visual* viewport,
+  so it follows the iOS keyboard up rather than hiding behind it, and it keeps
+  clear of the wall's tab bar. It also dims and centres on one element, which is
+  what makes tapping outside actually close it. Inline forms and bottom sheets
+  both failed on a phone with the keyboard up; `ModalDismissalTest` now fails any
+  view that builds its own.
 - **Alpine for local state, Livewire for persistence.** If tapping something can
   be answered from data already on the page, it must not hit the server.
 - Livewire 4 single-file components live in `resources/views/components/`, named

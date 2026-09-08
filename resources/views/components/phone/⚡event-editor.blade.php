@@ -234,11 +234,11 @@ new class extends Component
 
 <div>
     @if ($open)
-        <div class="fixed inset-0 z-40 bg-black/50" wire:click="$set('open', false)"></div>
-
-        <div class="pane-scroll fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] rounded-t-3xl bg-white p-4 pb-8 dark:bg-slate-900">
-            <div class="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-300 dark:bg-slate-700"></div>
-
+        {{-- Was a bottom sheet pinned to the layout viewport, which on iOS is
+             underneath the keyboard: ten of its controls, Save included, sat
+             off-screen the moment a field was focused. --}}
+        <x-modal dismiss="$set('open', false)" :label="$eventId ? 'Edit event' : 'New event'">
+            <div class="p-4">
             <h2 class="mb-3 text-lg font-semibold">{{ $eventId ? 'Edit event' : 'New event' }}</h2>
 
             @if ($this->writableCalendars->isEmpty())
@@ -351,6 +351,7 @@ new class extends Component
                     </div>
                 </form>
             @endif
-        </div>
+            </div>
+        </x-modal>
     @endif
 </div>

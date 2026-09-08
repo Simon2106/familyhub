@@ -176,6 +176,7 @@ new #[Layout('layouts::app')] class extends Component
 
     <div class="pane-scroll min-h-0 flex-1 space-y-3 px-4 pb-8">
         @if ($editingId !== null)
+            <x-modal dismiss="$set('editingId', null)" :label="$editingId ? 'Edit chore' : 'New chore'" width="max-w-md">
             <form wire:submit="save" class="space-y-3 rounded-2xl bg-white p-4 dark:bg-slate-900">
                 <h2 class="font-semibold">{{ $editingId ? 'Edit chore' : 'New chore' }}</h2>
 
@@ -271,6 +272,7 @@ new #[Layout('layouts::app')] class extends Component
                     @endif
                 </div>
             </form>
+        </x-modal>
         @endif
 
         @forelse ($this->chores as $chore)

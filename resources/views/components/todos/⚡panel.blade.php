@@ -203,17 +203,13 @@ new class extends Component
     </div>
 
     {{-- Quick add / edit.
-         A centred dialog on its own layer rather than an inline form: inline,
-         it pushed the panel down over the wall's tab bar and squeezed the list
-         out of sight. .modal-viewport keeps it inside the visible viewport and
-         clear of the tab bar, and follows the keyboard up on iOS. --}}
+         A dialog rather than an inline form: inline, it pushed the panel down
+         over the wall's tab bar and squeezed the list out of sight. <x-modal>
+         keeps it inside the visible viewport, clear of the tab bar, and
+         following the keyboard up on iOS. --}}
     @if ($adding)
-        <div wire:click.self="$set('adding', false)" class="modal-backdrop modal-viewport z-50" role="dialog" aria-modal="true" aria-label="{{ $editingId ? 'Edit to-do' : 'Add a to-do' }}">
-            <form
-                wire:submit="save"
-                data-todo-dialog
-                class="pane-scroll max-h-full w-full max-w-md space-y-3 overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl dark:bg-slate-900"
-            >
+        <x-modal dismiss="$set('adding', false)" :label="$editingId ? 'Edit to-do' : 'Add a to-do'">
+            <form wire:submit="save" data-todo-dialog class="space-y-3 p-4">
                 <h3 class="text-lg font-semibold">{{ $editingId ? 'Edit to-do' : 'New to-do' }}</h3>
 
                 <input
@@ -277,7 +273,7 @@ new class extends Component
                     @endif
                 </div>
             </form>
-        </div>
+        </x-modal>
     @endif
 
     <ul class="pane-scroll min-h-0 flex-1">

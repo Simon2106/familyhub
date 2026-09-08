@@ -7,68 +7,108 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Every centred dialog must be dismissable by tapping outside it.
+ * There is one dialog in this app, and everything uses it.
  *
- * `.modal-viewport` is a full-screen fixed layer. Given a separate backdrop
- * element underneath it, the viewport covers the backdrop completely and the
- * backdrop's click handler can never fire — so "tap outside to close" silently
- * stops working everywhere, and a dialog whose own buttons are awkward to reach
- * cannot be dismissed at all. The two are one element now, and this keeps them
- * that way.
+ * Two bugs came out of hand-rolling them, and both were invisible until
+ * somebody tried to use the thing on a device:
+ *
+ *   The dim and the centring have to be the *same element*. As two, the
+ *   full-screen centring layer covers the backdrop and "tap outside to close"
+ *   silently does nothing.
+ *
+ *   The dialog has to be measured against the **visual** viewport. On iOS the
+ *   keyboard shrinks that and leaves the layout viewport at full height, so a
+ *   form positioned against the latter puts its Save button behind the
+ *   keyboard — which is exactly what the event editor did.
+ *
+ * `<x-modal>` gets both right once. These keep everything else using it.
  */
 class ModalDismissalTest extends TestCase
 {
+    protected const COMPONENT = __DIR__.'/../../resources/views/components/modal.blade.php';
+
     /** @return list<array{0: string}> */
     public static function views(): array
     {
-        // A plain path: data providers run before the application is booted.
-        $files = glob(__DIR__.'/../../resources/views/components/**/*.blade.php') ?: [];
+        $files = array_merge(
+            glob(__DIR__.'/../../resources/views/components/*.blade.php') ?: [],
+            glob(__DIR__.'/../../resources/views/components/**/*.blade.php') ?: [],
+            glob(__DIR__.'/../../resources/views/*.blade.php') ?: [],
+        );
 
         return array_values(array_map(
             fn (string $file) => [$file],
-            array_filter($files, fn (string $file) => str_contains(file_get_contents($file), 'modal-viewport')),
+            array_filter($files, fn (string $file) => realpath($file) !== realpath(self::COMPONENT)),
         ));
     }
 
     #[Test]
-    public function there_are_modals_to_check(): void
+    public function there_are_views_to_check(): void
     {
-        $this->assertNotEmpty(self::views(), 'Found no modals, so this guard proves nothing.');
+        $this->assertNotEmpty(self::views());
+    }
+
+    #[Test]
+    public function the_one_dialog_dims_and_centres_on_the_same_element(): void
+    {
+        $markup = file_get_contents(self::COMPONENT);
+
+        $this->assertMatchesRegularExpression(
+            '/class="modal-backdrop modal-viewport/',
+            $markup,
+            'The dim and the centring must be one element, or the backdrop can never be clicked.'
+        );
+
+        $this->assertStringContainsString('wire:click.self', $markup,
+            'A dialog needs a tap-outside that ignores taps inside it.');
+    }
+
+    #[Test]
+    public function the_dialog_is_measured_against_the_visual_viewport(): void
+    {
+        $css = file_get_contents(__DIR__.'/../../resources/css/app.css');
+
+        preg_match('/\.modal-viewport \{(.*?)\}/s', $css, $rule);
+
+        $this->assertNotEmpty($rule, 'No .modal-viewport rule found.');
+        $this->assertStringContainsString('--vv-top', $rule[1]);
+        $this->assertStringContainsString('--vv-height', $rule[1],
+            'Measured against the layout viewport, a dialog hides behind the keyboard.');
+        $this->assertStringContainsString('--tab-bar-height', $rule[1],
+            'The wall tab bar has to stay clear of it.');
     }
 
     #[Test]
     #[DataProvider('views')]
-    public function a_centred_dialog_dims_and_dismisses_on_the_same_element(string $file): void
+    public function nothing_hand_rolls_a_dialog(string $file): void
     {
         $markup = file_get_contents($file);
         $name = basename($file);
 
-        preg_match_all('/<div[^>]*class="[^"]*modal-viewport[^"]*"[^>]*>/', $markup, $matches);
+        $this->assertStringNotContainsString('modal-viewport', $markup,
+            "{$name} builds its own dialog. Use <x-modal> so it gets the keyboard and the "
+            .'backdrop right without having to remember to.');
 
-        $this->assertNotEmpty($matches[0], "{$name} uses modal-viewport but no element carries it.");
-
-        foreach ($matches[0] as $tag) {
-            $this->assertStringContainsString('modal-backdrop', $tag,
-                "{$name} has a modal-viewport without the dim on the same element. "
-                .'A separate backdrop underneath it can never be clicked.');
-
-            $this->assertMatchesRegularExpression('/wire:click\.self=|x-on:click\.self=/', $tag,
-                "{$name} has a modal-viewport with no way to dismiss it by tapping outside. "
-                .'Use wire:click.self so taps inside the dialog do not close it.');
-        }
+        $this->assertDoesNotMatchRegularExpression(
+            '/<div[^>]*class="fixed inset-0 z-\[?\d+\]? bg-(black|slate-900)/',
+            $markup,
+            "{$name} has a separate full-screen backdrop. A centring layer over it makes it unclickable."
+        );
     }
 
     #[Test]
     #[DataProvider('views')]
-    public function no_separate_full_screen_backdrop_is_left_underneath(string $file): void
+    public function nothing_pins_a_form_to_the_layout_viewport(string $file): void
     {
         $markup = file_get_contents($file);
 
+        // `fixed ... bottom-0` measures from the bottom of the *layout*
+        // viewport, which on iOS is underneath the keyboard.
         $this->assertDoesNotMatchRegularExpression(
-            '/<div class="fixed inset-0 z-\[?\d+\]? bg-(black|slate-900)/',
+            '/class="[^"]*\bfixed\b[^"]*\bbottom-0\b[^"]*"/',
             $markup,
-            basename($file).' still has a separate full-screen backdrop. '
-            .'modal-viewport sits on top of it, so its click handler is dead.'
+            basename($file).' pins something to the bottom of the layout viewport. '
+            .'With a keyboard up that is off-screen — use <x-modal>.'
         );
     }
 }

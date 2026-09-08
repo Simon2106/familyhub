@@ -485,9 +485,9 @@ new class extends Component
     @if ($editing)
         @php [$editDate, $editSlot] = explode('|', $editing); @endphp
 
-        <div wire:click.self="$set('editing', null)" class="modal-backdrop modal-viewport z-50" role="dialog" aria-modal="true"
-             aria-label="{{ $slotLabels[$editSlot] }} on {{ \Carbon\CarbonImmutable::parse($editDate)->format('l j F') }}">
-            <div class="pane-scroll flex max-h-full w-full max-w-md flex-col overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl dark:bg-slate-900">
+        <x-modal dismiss="$set('editing', null)"
+                 :label="$slotLabels[$editSlot].' on '.\Carbon\CarbonImmutable::parse($editDate)->format('l j F')">
+            <div class="flex min-h-0 flex-col p-4">
                 <h3 class="text-lg font-semibold">
                     {{ $slotLabels[$editSlot] }} · {{ \Carbon\CarbonImmutable::parse($editDate)->format('l j F') }}
                 </h3>
@@ -547,6 +547,6 @@ new class extends Component
                     @endif
                 </div>
             </div>
-        </div>
+        </x-modal>
     @endif
 </div>

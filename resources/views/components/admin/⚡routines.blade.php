@@ -180,7 +180,8 @@ new #[Layout('layouts::app')] class extends Component
         @endif
 
         @if ($editingId !== null)
-            <form wire:submit="save" class="space-y-3 rounded-2xl bg-white p-4 dark:bg-slate-900">
+            <x-modal dismiss="$set('editingId', null)" :label="$editingId ? 'Edit routine' : 'New routine'">
+                <form wire:submit="save" class="space-y-3 rounded-2xl bg-white p-4 dark:bg-slate-900">
                 <h2 class="font-semibold">{{ $editingId ? 'Edit routine' : 'New routine' }}</h2>
 
                 <div class="flex flex-wrap gap-2">
@@ -237,7 +238,8 @@ new #[Layout('layouts::app')] class extends Component
                                 class="touch-target rounded-xl px-4 font-semibold text-red-600">Delete</button>
                     @endif
                 </div>
-            </form>
+                </form>
+            </x-modal>
         @endif
 
         @foreach ($this->routines as $routine)
