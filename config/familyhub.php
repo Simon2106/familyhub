@@ -151,6 +151,36 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Speech
+    |--------------------------------------------------------------------------
+    | The wall's microphone: OpenAI for both directions, behind interfaces so
+    | either half can be swapped for something local later. Without a key the
+    | mic button simply does not appear — nothing else changes.
+    */
+
+    'openai' => [
+        'key' => env('OPENAI_API_KEY'),
+
+        'stt_model' => env('OPENAI_STT_MODEL', 'whisper-1'),
+
+        // Told, not guessed: given the choice, Whisper will occasionally
+        // decide a mumbled English sentence is Welsh.
+        'language' => env('OPENAI_STT_LANGUAGE', 'en'),
+
+        'tts_model' => env('OPENAI_TTS_MODEL', 'tts-1'),
+
+        // The British-sounding one of the six OpenAI offers.
+        'voice' => env('OPENAI_TTS_VOICE', 'fable'),
+
+        'timeout' => (int) env('OPENAI_TIMEOUT', 45),
+
+        // Fifteen seconds of Opus is well under this; the ceiling is here so a
+        // token-holding device cannot post a film at the transcription API.
+        'max_upload_kb' => (int) env('OPENAI_MAX_UPLOAD_KB', 2048),
+    ],
+
     'postmark' => [
         'inbound_secret' => env('POSTMARK_INBOUND_SECRET'),
     ],

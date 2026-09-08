@@ -8,6 +8,7 @@
 
 import { isDarkNow } from './dark-mode';
 import { createDragBoard } from './dragboard';
+import { createSilenceWatch, followUntilDone, levelOf } from './listen';
 import { startEcho, watchConnection } from './echo';
 import { createScreenOff } from './screen-off';
 import { createUpdater } from './updater';
@@ -226,6 +227,259 @@ if (document.documentElement.hasAttribute('data-kiosk')) {
     // is fixed at 1920x1080 and zooming only breaks it.
     document.addEventListener('gesturestart', (event) => event.preventDefault());
 }
+
+/* -------------------------------------------------------------------------
+ * The wall's microphone
+ *
+ * Tap, ask, listen. Registered as an Alpine component because the recording
+ * has to survive Livewire re-rendering the header underneath it — a question
+ * cut short by a tab switch would be a question nobody asks twice.
+ *
+ * Everything here is glue over MediaRecorder; the deciding lives in listen.js,
+ * where it can be tested.
+ * ---------------------------------------------------------------------- */
+
+document.addEventListener('alpine:init', () => {
+    window.Alpine.data('wallMic', (endpoints = {}) => ({
+        // idle | listening | thinking | speaking | failed
+        state: 'idle',
+        open: false,
+        transcript: '',
+        answer: '',
+        error: '',
+
+        recorder: null,
+        stream: null,
+        audioContext: null,
+        frame: null,
+        dismissTimer: null,
+        player: null,
+
+        get busy() {
+            return this.state === 'listening' || this.state === 'thinking' || this.state === 'speaking';
+        },
+
+        press() {
+            // The tap that wakes a sleeping wall wakes it and nothing else.
+            // The blackout swallows pointerdown at capture, so this is belt and
+            // braces — but a microphone that starts recording in a dark kitchen
+            // is the one thing here worth being doubly sure about.
+            if (window.familyhubScreen?.asleep) return;
+
+            if (this.state === 'listening') return this.finish('tapped');
+            if (this.busy) return;
+
+            this.listen();
+        },
+
+        async listen() {
+            this.reset();
+            this.state = 'listening';
+            this.open = true;
+
+            try {
+                this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            } catch {
+                // On the kiosk this cannot happen — the permission prompt is
+                // pre-answered by a Chromium flag. Anywhere else it is a no.
+                return this.fail('I need permission to use the microphone.');
+            }
+
+            const chunks = [];
+            const type = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                ? 'audio/webm;codecs=opus'
+                : 'audio/webm';
+
+            this.recorder = new MediaRecorder(this.stream, { mimeType: type });
+            this.recorder.addEventListener('dataavailable', (e) => e.data.size && chunks.push(e.data));
+            this.recorder.addEventListener('stop', () => this.send(new Blob(chunks, { type })));
+            this.recorder.start();
+
+            this.watchForSilence();
+        },
+
+        /** Stop when the room goes quiet, or at the ceiling. */
+        watchForSilence() {
+            const watch = createSilenceWatch();
+
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+            const analyser = this.audioContext.createAnalyser();
+            analyser.fftSize = 1024;
+            this.audioContext.createMediaStreamSource(this.stream).connect(analyser);
+
+            const samples = new Uint8Array(analyser.frequencyBinCount);
+            watch.start(Date.now());
+
+            const tick = () => {
+                if (this.state !== 'listening') return;
+
+                analyser.getByteTimeDomainData(samples);
+
+                const reason = watch.sample(levelOf(samples), Date.now());
+
+                if (reason) return this.finish(reason);
+
+                this.frame = requestAnimationFrame(tick);
+            };
+
+            this.frame = requestAnimationFrame(tick);
+        },
+
+        finish(reason) {
+            if (this.state !== 'listening') return;
+
+            this.stopListening();
+
+            // Nobody said anything, so there is nothing worth sending.
+            if (reason === 'nothing') {
+                this.recorder = null;
+                this.state = 'failed';
+                this.error = "I didn't hear anything.";
+
+                return this.dismissLater();
+            }
+
+            this.state = 'thinking';
+
+            if (this.recorder?.state === 'recording') this.recorder.stop();
+        },
+
+        async send(blob) {
+            if (this.state !== 'thinking') return;
+
+            const body = new FormData();
+            body.append('audio', blob, 'question.webm');
+
+            let started;
+
+            try {
+                const response = await fetch(endpoints.listen, {
+                    method: 'POST',
+                    body,
+                    // Explicit: the pairing cookie is the only thing that gets
+                    // this past the display gate.
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '',
+                        Accept: 'application/json',
+                    },
+                });
+
+                started = await response.json();
+
+                if (!response.ok) return this.fail(started.error ?? 'That did not work.');
+            } catch {
+                return this.fail("I couldn't reach the server.");
+            }
+
+            const final = await followUntilDone({
+                id: started.id,
+                fetchState: async (id) => {
+                    const response = await fetch(`${endpoints.listen}/${id}`, {
+                        credentials: 'same-origin',
+                        headers: { Accept: 'application/json' },
+                    });
+
+                    return response.json();
+                },
+                onState: (state) => {
+                    if (state.transcript) this.transcript = state.transcript;
+                    if (state.answer) this.answer = state.answer;
+                },
+            });
+
+            if (final.status === 'failed') return this.fail(final.error ?? 'That did not work.');
+
+            this.answer = final.answer ?? '';
+            this.say(final);
+        },
+
+        say(final) {
+            if (!final.speaks) {
+                this.state = 'idle';
+
+                return this.dismissLater();
+            }
+
+            this.state = 'speaking';
+            this.player = new Audio(`${endpoints.speech}/${final.id}`);
+
+            const done = () => {
+                this.state = 'idle';
+                this.dismissLater();
+            };
+
+            this.player.addEventListener('ended', done);
+            // A speaker that will not play is not a failed answer: the words
+            // are already on the screen.
+            this.player.addEventListener('error', done);
+            this.player.play().catch(done);
+        },
+
+        fail(message) {
+            this.state = 'failed';
+            this.error = message;
+            this.stopListening();
+            this.dismissLater();
+        },
+
+        /** Let go of the microphone the moment we stop needing it. */
+        stopListening() {
+            if (this.frame) cancelAnimationFrame(this.frame);
+            this.frame = null;
+
+            this.stream?.getTracks().forEach((track) => track.stop());
+            this.stream = null;
+
+            this.audioContext?.close();
+            this.audioContext = null;
+        },
+
+        /** The wall clears itself: nobody walks back to dismiss a dialog. */
+        dismissLater(ms = 30_000) {
+            clearTimeout(this.dismissTimer);
+            this.dismissTimer = setTimeout(() => this.dismiss(), ms);
+        },
+
+        /**
+         * A tap on the dialog.
+         *
+         * While it is listening this ends the question, which is the only way
+         * a second tap can reach anything: the dialog covers the whole screen,
+         * mic button included, the moment it opens.
+         */
+        tapped() {
+            if (this.state === 'listening') return this.finish('tapped');
+
+            this.dismiss();
+        },
+
+        dismiss() {
+            // Not mid-question: a stray tap must not throw away an answer
+            // that is on its way.
+            if (this.state === 'listening' || this.state === 'thinking') return;
+
+            this.player?.pause();
+            this.player = null;
+            this.open = false;
+            this.state = 'idle';
+            this.reset();
+        },
+
+        reset() {
+            clearTimeout(this.dismissTimer);
+            this.transcript = '';
+            this.answer = '';
+            this.error = '';
+        },
+
+        destroy() {
+            this.stopListening();
+            clearTimeout(this.dismissTimer);
+        },
+    }));
+});
 
 /* -------------------------------------------------------------------------
  * Overnight screen off

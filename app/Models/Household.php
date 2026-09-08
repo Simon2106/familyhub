@@ -242,6 +242,23 @@ class Household extends Model
         return preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', trim($value)) ? trim($value) : $fallback;
     }
 
+    /**
+     * Whether the wall reads its answers out loud.
+     *
+     * On by default, because a microphone you have to read the reply from is a
+     * strange thing to have installed. Turned off in /admin for the evenings
+     * when a talking kitchen is the last thing anybody wants.
+     */
+    public function wallSpeaks(): bool
+    {
+        return (bool) ($this->settings['wall_speaks'] ?? true);
+    }
+
+    public function setWallSpeaks(bool $speaks): void
+    {
+        $this->putSettings(['wall_speaks' => $speaks]);
+    }
+
     /** Where bin dates come from: 'pattern', 'ical', or nowhere. */
     public function binSource(): string
     {

@@ -216,6 +216,19 @@ new #[Layout('layouts::display')] class extends Component
      *
      * @return Collection<string, Collection<int, \App\Services\Schools\SchoolClosure>>
      */
+    /**
+     * Whether the wall has anything to listen with.
+     *
+     * Without a key the microphone can only ever apologise, so the button does
+     * not appear at all — a kiosk with no keyboard is the worst possible place
+     * to discover a missing setting.
+     */
+    #[Computed]
+    public function canListen(): bool
+    {
+        return app(\App\Services\Speech\Contracts\SpeechToText::class)->isConfigured();
+    }
+
     #[Computed]
     public function schoolClosures(): Collection
     {
@@ -622,6 +635,92 @@ new #[Layout('layouts::display')] class extends Component
 
         <div class="flex items-center gap-5">
             <x-weather-tile :forecast="$this->weather" class="hidden sm:flex" />
+
+            {{-- Ask out loud. Only where there is something to listen with:
+                 without a key this is a button that can only disappoint.
+
+                 The dialog lives in here with the button rather than beside
+                 the search one, so the two share a single Alpine scope. It is
+                 fixed-positioned, so where it sits in the document does not
+                 decide where it lands on the screen. --}}
+            @if ($this->canListen)
+                <div x-data="wallMic({
+                        listen: @js(route('display.listen')),
+                        speech: @js(Str::beforeLast(route('display.speech', ['id' => 'x']), '/x')),
+                     })">
+                    <button type="button" x-on:click="press()"
+                            class="grid touch-target shrink-0 place-items-center rounded-2xl transition-colors"
+                            :class="{
+                                'text-slate-400': state === 'idle',
+                                'text-rose-500': state === 'listening',
+                                'text-blue-500': state === 'thinking',
+                                'text-emerald-500': state === 'speaking',
+                                'text-amber-500': state === 'failed',
+                            }"
+                            :aria-label="state === 'listening' ? 'Stop listening' : 'Ask a question'">
+                        <span class="relative grid place-items-center">
+                            {{-- A ring while it listens, a slow pulse while it
+                                 thinks. Subtle on purpose: this sits in a
+                                 header somebody walks past all day. --}}
+                            <span x-show="state === 'listening'" x-cloak
+                                  class="absolute inline-flex size-11 animate-ping rounded-full bg-rose-500/30"></span>
+                            <span x-show="state === 'thinking' || state === 'speaking'" x-cloak
+                                  class="absolute inline-flex size-11 animate-pulse rounded-full bg-current opacity-10"></span>
+
+                            <svg class="relative size-7" fill="none" stroke="currentColor" stroke-width="2"
+                                 stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                                <rect x="9" y="3" width="6" height="11" rx="3" />
+                                <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+                            </svg>
+                        </span>
+                    </button>
+
+                    {{-- What was asked and what came back. Dismissed by a tap
+                         anywhere or by thirty seconds of nobody doing
+                         anything: nobody walks back to a wall to close a
+                         dialog. --}}
+                    <div x-show="open" x-cloak x-on:keydown.escape.window="dismiss()">
+                        <x-modal close-on="tapped()" label="Asking" width="max-w-2xl">
+                            <div class="p-6" x-on:click="tapped()">
+                                <p class="text-sm font-semibold tracking-wide text-slate-400 uppercase"
+                                   x-text="{
+                                       listening: 'Listening…',
+                                       thinking: 'Thinking…',
+                                       speaking: 'Answering',
+                                       failed: 'Sorry',
+                                       idle: 'Answered',
+                                   }[state]"></p>
+
+                                {{-- The question first, so it is obvious what
+                                     was heard. Half of what goes wrong here is
+                                     a misheard word, and showing it turns a
+                                     baffling answer into an obvious one. --}}
+                                <p x-show="transcript" x-cloak x-text="transcript"
+                                   class="mt-3 text-2xl font-semibold"></p>
+
+                                <p x-show="state === 'listening' && ! transcript" x-cloak
+                                   class="mt-3 text-2xl font-semibold text-slate-400">Go ahead…</p>
+
+                                {{-- The dialog covers the mic button the
+                                     moment it opens, so "tap again to stop"
+                                     has to mean anywhere. --}}
+                                <p x-show="state === 'listening'" x-cloak
+                                   class="mt-2 text-sm text-slate-400">Tap anywhere when you have finished.</p>
+
+                                <p x-show="answer" x-cloak x-text="answer"
+                                   class="mt-4 text-3xl leading-snug whitespace-pre-line"></p>
+
+                                <p x-show="error" x-cloak x-text="error"
+                                   class="mt-4 text-2xl text-amber-600 dark:text-amber-400"></p>
+
+                                <p class="mt-6 text-sm text-slate-400" x-show="state !== 'listening'" x-cloak>
+                                    Read-only — it looks things up, it never changes anything. Tap to close.
+                                </p>
+                            </div>
+                        </x-modal>
+                    </div>
+                </div>
+            @endif
 
             <button type="button" x-on:click="searching = true"
                 class="grid touch-target shrink-0 place-items-center rounded-2xl text-slate-400"

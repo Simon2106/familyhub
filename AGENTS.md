@@ -123,10 +123,17 @@ its own start URL.
 chromium-browser \
   --kiosk \
   --force-device-scale-factor=2 \
+  --use-fake-ui-for-media-stream \
   --noerrdialogs --disable-infobars --disable-session-crashed-bubble \
   --check-for-update-interval=31536000 \
   --app="https://hub.thewills.uk/display?token=<token>"
 ```
+
+`--use-fake-ui-for-media-stream` auto-grants the microphone. Despite the name
+it does not fake the audio — it answers the permission prompt, which is
+otherwise a modal dialog on a screen with no keyboard and no way to dismiss it,
+sitting in front of the calendar until somebody carries a keyboard to the wall.
+A **USB microphone is required**: neither the Pi nor the EVICIV panel has one.
 
 `--force-device-scale-factor=2` is the load-bearing one: it turns the 3840×2160
 panel into **1920×1080 CSS pixels**, which is the only size the display layout
@@ -137,6 +144,14 @@ is designed and tested against. Change it and the layout is untested.
 - **1920×1080 CSS px, landscape.** Every tab fits without scrolling at exactly
   that size; there is a Playwright check for it. Nothing is designed to scroll
   the page itself — panes scroll internally.
+- **A microphone, if one is plugged in.** The header mic button appears only
+  when `OPENAI_API_KEY` is set — a kiosk with no keyboard is the worst place to
+  discover a missing setting. Recording stops on ~1.5s of quiet or at 15s
+  (`resources/js/listen.js`, where the deciding is kept testable); the audio is
+  posted, transcribed by Whisper in a queued job, answered by the same
+  read-only assistant `/app` uses, and read back by OpenAI TTS unless muted in
+  /admin. Nothing is written to the database — a question lives in the cache
+  for ten minutes and the recording is deleted the moment it becomes words.
 - **Touch only, no cursor, no hover.** There are no hover-only affordances and
   there must not be: on this screen they are invisible. `[data-kiosk]` sets
   `cursor: none`, kills text selection outside inputs, and suppresses the

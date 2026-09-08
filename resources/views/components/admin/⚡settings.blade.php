@@ -43,6 +43,9 @@ new #[Layout('layouts::app')] class extends Component
 
     public string $binMoveTo = '';
 
+    /** Whether the wall reads its answers out loud. */
+    public bool $wallSpeaks = true;
+
     public bool $screenOffEnabled = false;
 
     public string $screenOffStart = '23:00';
@@ -89,6 +92,7 @@ new #[Layout('layouts::app')] class extends Component
         $this->binWeekA = $pattern?->weekA ?? [];
         $this->binWeekB = $pattern?->weekB ?? [];
 
+        $this->wallSpeaks = $household->wallSpeaks();
         $screenOff = $household->screenOff();
         $this->screenOffEnabled = $screenOff['enabled'];
         $this->screenOffStart = $screenOff['start'];
@@ -304,6 +308,7 @@ new #[Layout('layouts::app')] class extends Component
         );
         $household->setMealSlots($this->mealSlots);
         $household->setScreenOff($this->screenOffEnabled, $this->screenOffStart, $this->screenOffEnd);
+        $household->setWallSpeaks($this->wallSpeaks);
         $household->setBinCalendarUrl($this->binCalendarUrl);
 
         $this->dispatch('saved', message: 'Household saved.');
@@ -859,6 +864,20 @@ new #[Layout('layouts::app')] class extends Component
                     <dd>{{ config('familyhub.screensaver.idle_minutes') ?: 'never' }} @if (config('familyhub.screensaver.idle_minutes')) min @endif</dd>
                 </div>
             </dl>
+            {{-- The microphone answers out loud unless told not to. A
+                 kitchen at seven in the morning is a reasonable place to want
+                 that off without losing the answers themselves. --}}
+            <label class="mt-4 flex touch-target items-center justify-between gap-3">
+                <span class="min-w-0">
+                    <span class="block text-sm font-medium">Read answers out loud</span>
+                    <span class="block text-sm text-slate-500 dark:text-slate-400">
+                        When somebody asks the wall a question. Turn it off and the answer is
+                        shown on screen without a sound.
+                    </span>
+                </span>
+                <input wire:model.live="wallSpeaks" type="checkbox" class="size-6 shrink-0 rounded">
+            </label>
+
             {{-- The kiosk monitor cannot be power-cycled remotely, so "off"
                  has to be something the page does. --}}
             <label class="mt-4 flex touch-target items-center justify-between gap-3">

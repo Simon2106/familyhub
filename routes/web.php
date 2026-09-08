@@ -1,6 +1,10 @@
 <?php
 
 use App\Http\Controllers\Auth\LogoutController;
+use App\Http\Controllers\Display\ListenController;
+use App\Http\Controllers\ShareTargetController;
+use App\Http\Controllers\Webhooks\PostmarkInboundController;
+use App\Support\BuildVersion;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -18,7 +22,7 @@ use Illuminate\Support\Facades\Route;
 | CSRF is skipped for this route only (see bootstrap/app.php); it authenticates
 | with the shared secret instead.
 */
-Route::post('/webhooks/postmark/{token?}', \App\Http\Controllers\Webhooks\PostmarkInboundController::class)
+Route::post('/webhooks/postmark/{token?}', PostmarkInboundController::class)
     ->middleware('postmark')
     ->name('webhooks.postmark');
 
@@ -31,7 +35,7 @@ Route::post('/webhooks/postmark/{token?}', \App\Http\Controllers\Webhooks\Postma
 */
 Route::get('/version', function () {
     return response()
-        ->json(['version' => \App\Support\BuildVersion::current()])
+        ->json(['version' => BuildVersion::current()])
         ->header('Cache-Control', 'no-store, max-age=0');
 })->name('version');
 
@@ -109,6 +113,19 @@ Route::livewire('/display', 'display.wall')
     ->middleware('display.token')
     ->name('display');
 
+/*
+| The wall's microphone.
+|
+| Behind the same token as the display itself, and throttled: the kiosk asks a
+| few questions a day, so anything approaching a rate limit is a device that
+| has stopped behaving like a kiosk.
+*/
+Route::middleware(['display.token', 'throttle:30,1'])->group(function () {
+    Route::post('/display/listen', [ListenController::class, 'store'])->name('display.listen');
+    Route::get('/display/listen/{id}', [ListenController::class, 'show'])->name('display.listen.show');
+    Route::get('/display/speech/{id}', [ListenController::class, 'speech'])->name('display.speech');
+});
+
 Route::middleware('guest')->group(function () {
     Route::livewire('/login', 'auth.login')->name('login');
 });
@@ -129,7 +146,7 @@ Route::middleware('auth')->group(function () {
     | PWA share target. iOS posts the shared payload here; anything with
     | content becomes a capture and the user lands on the review inbox.
     */
-    Route::post('/app/share', \App\Http\Controllers\ShareTargetController::class)->name('share-target');
+    Route::post('/app/share', ShareTargetController::class)->name('share-target');
     Route::livewire('/admin', 'admin.settings')->name('admin');
     Route::livewire('/admin/calendars', 'admin.calendars')->name('admin.calendars');
     Route::livewire('/admin/places', 'admin.places')->name('admin.places');

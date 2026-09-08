@@ -9,6 +9,10 @@ use App\Services\Capture\ClaudeItemExtractor;
 use App\Services\Capture\Contracts\ItemExtractor;
 use App\Services\Recipes\ClaudeRecipeReader;
 use App\Services\Recipes\Contracts\RecipeReader;
+use App\Services\Speech\Contracts\SpeechToText;
+use App\Services\Speech\Contracts\TextToSpeech;
+use App\Services\Speech\OpenAiSpeechToText;
+use App\Services\Speech\OpenAiTextToSpeech;
 use Illuminate\Support\ServiceProvider;
 use RuntimeException;
 
@@ -33,6 +37,12 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(ItemExtractor::class, ClaudeItemExtractor::class);
         $this->app->bind(RecipeReader::class, ClaudeRecipeReader::class);
         $this->app->bind(Assistant::class, ClaudeAssistant::class);
+
+        // Both halves of the wall's microphone, behind interfaces: the
+        // provider is an implementation detail with a short shelf life, and
+        // tests swap in fakes rather than reaching the network.
+        $this->app->bind(SpeechToText::class, OpenAiSpeechToText::class);
+        $this->app->bind(TextToSpeech::class, OpenAiTextToSpeech::class);
     }
 
     public function boot(): void
