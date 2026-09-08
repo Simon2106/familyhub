@@ -208,6 +208,49 @@ new #[Layout('layouts::display')] class extends Component
     }
 
     /**
+     * Days one of the schools is shut, across the shown fortnight.
+     *
+     * Term time is the default state of a household with children in it, so
+     * the wall says nothing during it. What it shows is the exceptions — the
+     * holidays and the INSET days somebody has to have arranged something for.
+     *
+     * @return Collection<string, Collection<int, \App\Services\Schools\SchoolClosure>>
+     */
+    #[Computed]
+    public function schoolClosures(): Collection
+    {
+        $from = $this->weekStart;
+        $to = $from->addDays(self::HORIZON);
+
+        $closures = app(\App\Services\Schools\SchoolCalendar::class)
+            ->closures($this->household(), $from, $to);
+
+        $byDate = collect();
+
+        for ($date = $from; ! $date->greaterThan($to); $date = $date->addDay()) {
+            $onThisDay = $closures->filter(fn ($closure) => $closure->covers($date))->values();
+
+            if ($onThisDay->isNotEmpty()) {
+                $byDate->put($date->toDateString(), $onThisDay);
+            }
+        }
+
+        return $byDate;
+    }
+
+    /**
+     * The last day of term and the first day back, when they are close.
+     *
+     * @return Collection<int, array{code: string, label: string, on: CarbonImmutable}>
+     */
+    #[Computed]
+    public function schoolTurningPoints(): Collection
+    {
+        return app(\App\Services\Schools\SchoolCalendar::class)
+            ->turningPoints($this->household(), $this->today);
+    }
+
+    /**
      * The next bin collection worth mentioning.
      *
      * Only within the next few days: a wall that permanently says "recycling,
@@ -503,6 +546,18 @@ new #[Layout('layouts::display')] class extends Component
                    x-text="selected && new Date(selected + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })"></p>
             </div>
 
+            {{-- The last day of term and the first day back. Worth a line for
+                 three days either side and silence the rest of the year. --}}
+            @foreach ($this->schoolTurningPoints as $point)
+                <div class="hidden min-w-0 items-baseline gap-2 rounded-xl px-3 py-1 sm:flex" wire:key="turn-{{ $point['code'] }}-{{ $point['on']->toDateString() }}">
+                    <span class="rounded-md px-1.5 text-sm font-bold text-white" style="background-color: #0d9488;">{{ $point['code'] }}</span>
+                    <span class="truncate text-lg font-semibold">{{ $point['label'] }}</span>
+                    <span class="text-sm text-slate-500 dark:text-slate-400">
+                        {{ $point['on']->isSameDay($this->today) ? 'today' : ($point['on']->isSameDay($this->today->addDay()) ? 'tomorrow' : $point['on']->format('D')) }}
+                    </span>
+                </div>
+            @endforeach
+
             {{-- Bins, when they are close enough to matter. Beside the clock
                  because it is a thing you check on your way past. --}}
             @if ($this->nextBins->isNotEmpty())
@@ -673,6 +728,13 @@ new #[Layout('layouts::display')] class extends Component
                                         {{ $day['is_today'] ? 'Today' : $day['carbon']->format('l') }}
                                     </span>
                                     <span class="text-sm text-slate-400">{{ $day['carbon']->format('j M') }}</span>
+
+                                    @foreach ($this->schoolClosures[$day['date']] ?? [] as $closure)
+                                        <span class="shrink-0 rounded px-1.5 text-xs font-bold text-white"
+                                              style="background-color: {{ $closure->colour() }};">
+                                            {{ $closure->code }} {{ $closure->label }}
+                                        </span>
+                                    @endforeach
 
                                     @php $dinner = $this->dinners[$day['date']] ?? null; @endphp
                                     @if ($dinner)
@@ -947,6 +1009,17 @@ new #[Layout('layouts::display')] class extends Component
                                               style="background-color: {{ $members->firstWhere('id', $bucket)?->colour ?? '#94a3b8' }};"></span>
                                     @endforeach
                                 </span>
+
+                                {{-- Behind the day rather than in it: school
+                                     being shut is context for everything else
+                                     on that day, not another thing on it. --}}
+                                @foreach ($this->schoolClosures[$day['date']] ?? [] as $closure)
+                                    <span class="mt-0.5 rounded px-1 text-[0.6rem] font-bold text-white"
+                                          style="background-color: {{ $closure->colour() }};"
+                                          title="{{ $closure->code }} · {{ $closure->label }}">
+                                        {{ $closure->code }}{{ $closure->isInset() ? ' INSET' : '' }}
+                                    </span>
+                                @endforeach
                             </button>
                         @endforeach
                     </div>
