@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\Exceptions\IcalException;
 use App\Models\Household;
-use App\Services\Bins\BinCalendar;
+use App\Services\Bins\BinSchedule;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -20,7 +20,7 @@ class SyncBins extends Command
 
     protected $description = 'Refresh bin collection dates from the council calendar';
 
-    public function handle(BinCalendar $bins): int
+    public function handle(BinSchedule $bins): int
     {
         $household = Household::query()->orderBy('id')->first();
 
@@ -30,7 +30,7 @@ class SyncBins extends Command
             return self::SUCCESS;
         }
 
-        if (! $household->binCalendarUrl()) {
+        if ($household->binSource() === 'none') {
             $this->line('No bin calendar set in /admin. Nothing to do.');
 
             return self::SUCCESS;

@@ -26,6 +26,23 @@ new #[Layout('layouts::app')] class extends Component
 
     public string $binCalendarUrl = '';
 
+    public string $binSource = 'none';
+
+    public int $binWeekday = 2;
+
+    public string $binAnchor = '';
+
+    /** @var list<string> */
+    public array $binWeekly = [];
+
+    /** @var list<string> */
+    public array $binWeekA = [];
+
+    /** @var list<string> */
+    public array $binWeekB = [];
+
+    public string $binMoveTo = '';
+
     public bool $screenOffEnabled = false;
 
     public string $screenOffStart = '23:00';
@@ -63,6 +80,14 @@ new #[Layout('layouts::app')] class extends Component
         $this->mealSlots = $household->mealSlots();
 
         $this->binCalendarUrl = (string) $household->binCalendarUrl();
+        $this->binSource = $household->binSource();
+
+        $pattern = \App\Services\Bins\BinPattern::fromArray($household->binPatternSettings() ?? []);
+        $this->binWeekday = $pattern?->weekday ?? 2;
+        $this->binAnchor = $pattern?->anchor->toDateString() ?? '';
+        $this->binWeekly = $pattern?->weekly ?? [];
+        $this->binWeekA = $pattern?->weekA ?? [];
+        $this->binWeekB = $pattern?->weekB ?? [];
 
         $screenOff = $household->screenOff();
         $this->screenOffEnabled = $screenOff['enabled'];
@@ -104,6 +129,82 @@ new #[Layout('layouts::app')] class extends Component
 
     public ?string $binError = null;
 
+    /** Write the pattern down and generate from it immediately. */
+    public function saveBinPattern(): void
+    {
+        $this->binError = null;
+
+        $this->validate([
+            'binWeekday' => 'required|integer|min:1|max:7',
+            'binAnchor' => 'required|date_format:Y-m-d',
+        ]);
+
+        $household = Household::current();
+        $household->setBinSource('pattern');
+        $household->setBinPattern([
+            'weekday' => $this->binWeekday,
+            'anchor' => $this->binAnchor,
+            'weekly' => $this->binWeekly,
+            'week_a' => $this->binWeekA,
+            'week_b' => $this->binWeekB,
+        ]);
+
+        $count = app(\App\Services\Bins\BinSchedule::class)->sync($household->fresh());
+
+        $this->dispatch('saved', message: "Worked out {$count} collections.");
+    }
+
+    /**
+     * The next collection, so the bank-holiday move has something to move.
+     *
+     * @return \App\Models\BinCollection|null
+     */
+    #[Computed]
+    public function nextCollection()
+    {
+        return \App\Models\BinCollection::where('household_id', Household::current()->id)
+            ->upcoming(Household::current()->todayLocal()->toDateString())
+            ->first();
+    }
+
+    /** Push the next collection to another day, once. */
+    public function moveNextCollection(): void
+    {
+        $this->binError = null;
+
+        $this->validate(['binMoveTo' => 'required|date_format:Y-m-d']);
+
+        $next = $this->nextCollection;
+
+        if (! $next) {
+            $this->binError = 'There is no collection to move.';
+
+            return;
+        }
+
+        $household = Household::current();
+        $household->setBinOverride($next->on->toDateString(), $this->binMoveTo);
+
+        app(\App\Services\Bins\BinSchedule::class)->sync($household->fresh());
+
+        $this->reset(['binMoveTo']);
+        unset($this->nextCollection);
+
+        $this->dispatch('saved', message: 'Moved. It goes back to normal afterwards.');
+    }
+
+    public function clearBinOverride(): void
+    {
+        $household = Household::current();
+        $household->setBinOverride(null, null);
+
+        app(\App\Services\Bins\BinSchedule::class)->sync($household->fresh());
+
+        unset($this->nextCollection);
+
+        $this->dispatch('saved', message: 'Back to the usual round.');
+    }
+
     /** Fetch it there and then, so a wrong address is found now and not at 4am. */
     public function checkBins(): void
     {
@@ -111,6 +212,7 @@ new #[Layout('layouts::app')] class extends Component
 
         $household = Household::current();
         $household->setBinCalendarUrl($this->binCalendarUrl);
+        $household->setBinSource('ical');
 
         if (! $household->binCalendarUrl()) {
             $this->binError = 'Add the calendar address first.';
@@ -119,7 +221,7 @@ new #[Layout('layouts::app')] class extends Component
         }
 
         try {
-            $count = app(\App\Services\Bins\BinCalendar::class)->sync($household->fresh());
+            $count = app(\App\Services\Bins\BinSchedule::class)->sync($household->fresh());
         } catch (\App\Exceptions\IcalException $e) {
             $this->binError = $e->getMessage();
 
@@ -605,25 +707,117 @@ new #[Layout('layouts::app')] class extends Component
         <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
             <h2 class="font-semibold">Bin collections</h2>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Subscribe to the council's calendar for this address and the next collection
-                shows on the wall. Paste the subscription link — the one ending
-                <code class="rounded bg-slate-100 px-1 dark:bg-slate-800">.ics</code>, or starting
-                <code class="rounded bg-slate-100 px-1 dark:bg-slate-800">webcal://</code> — not the web page.
+                The next collection shows on the wall. Some councils publish a calendar you
+                can subscribe to; Buckinghamshire does not, so write the round down instead
+                and it works out the dates.
             </p>
 
-            <input wire:model="binCalendarUrl" type="url" inputmode="url" placeholder="https://…/bins.ics"
-                   aria-label="Bin calendar address"
-                   class="touch-target mt-3 w-full rounded-xl border border-slate-300 px-4 dark:border-slate-700 dark:bg-slate-950">
-            @error('binCalendarUrl') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
-
-            <div class="mt-2 flex flex-wrap items-center gap-3">
-                <button type="button" wire:click="checkBins"
-                        class="touch-target rounded-xl bg-slate-100 px-4 text-sm font-semibold dark:bg-slate-800">
-                    <span wire:loading.remove wire:target="checkBins">Check it now</span>
-                    <span wire:loading wire:target="checkBins">Checking…</span>
-                </button>
-                <span class="text-sm text-slate-500 dark:text-slate-400">{{ $this->binSummary() }}</span>
+            <div class="mt-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+                @foreach (['pattern' => 'A fixed round', 'ical' => 'A calendar link'] as $key => $label)
+                    <button type="button" wire:click="$set('binSource', '{{ $key }}')"
+                            class="touch-target rounded-lg text-sm font-semibold {{ $binSource === $key ? 'bg-white shadow-sm dark:bg-slate-900' : 'text-slate-500' }}">
+                        {{ $label }}
+                    </button>
+                @endforeach
             </div>
+
+            @if ($binSource === 'ical')
+                <input wire:model="binCalendarUrl" type="url" inputmode="url" placeholder="https://…/bins.ics"
+                       aria-label="Bin calendar address"
+                       class="touch-target mt-3 w-full rounded-xl border border-slate-300 px-4 dark:border-slate-700 dark:bg-slate-950">
+                @error('binCalendarUrl') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+
+                <div class="mt-2 flex flex-wrap items-center gap-3">
+                    <button type="button" wire:click="checkBins"
+                            class="touch-target rounded-xl bg-slate-100 px-4 text-sm font-semibold dark:bg-slate-800">
+                        <span wire:loading.remove wire:target="checkBins">Check it now</span>
+                        <span wire:loading wire:target="checkBins">Checking…</span>
+                    </button>
+                    <span class="text-sm text-slate-500 dark:text-slate-400">{{ $this->binSummary() }}</span>
+                </div>
+            @else
+                {{-- Buckinghamshire publishes a PDF and nothing machine-readable,
+                     so the round is written down once instead. --}}
+                <div class="mt-3 flex flex-wrap gap-2">
+                    <label class="min-w-0 flex-1">
+                        <span class="block text-sm font-medium">Collection day</span>
+                        <select wire:model="binWeekday"
+                                class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                            @foreach ([1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday', 5 => 'Friday', 6 => 'Saturday', 7 => 'Sunday'] as $n => $day)
+                                <option value="{{ $n }}">{{ $day }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                    <label class="min-w-0 flex-1">
+                        <span class="block text-sm font-medium">A week-A collection</span>
+                        <input wire:model="binAnchor" type="date"
+                               class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                    </label>
+                </div>
+                @error('binAnchor') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Any date you know was a week-A collection. Everything alternates from there.
+                </p>
+
+                @foreach ([
+                    'binWeekly' => ['Every week', 'Bins that go out on every collection day.'],
+                    'binWeekA' => ['Week A', 'The week your chosen date falls in.'],
+                    'binWeekB' => ['Week B', 'The alternate week.'],
+                ] as $model => [$heading, $help])
+                    <div class="mt-3">
+                        <span class="block text-sm font-medium">{{ $heading }}</span>
+                        <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $help }}</span>
+                        <div class="mt-1 flex flex-wrap gap-1.5">
+                            @foreach (\App\Models\BinCollection::KINDS as $kind => $meta)
+                                @continue($kind === 'other')
+                                <label class="flex cursor-pointer touch-target items-center gap-1.5 rounded-xl border-2 px-3 text-sm font-medium
+                                              {{ in_array($kind, $$model, true) ? 'border-blue-600 bg-blue-50 dark:bg-blue-950' : 'border-slate-200 text-slate-500 dark:border-slate-700' }}">
+                                    <input type="checkbox" wire:model.live="{{ $model }}" value="{{ $kind }}" class="sr-only">
+                                    <span aria-hidden="true">{{ $meta['icon'] }}</span>
+                                    {{ $meta['label'] }}
+                                </label>
+                            @endforeach
+                        </div>
+                    </div>
+                @endforeach
+
+                <button type="button" wire:click="saveBinPattern"
+                        class="mt-3 w-full touch-target rounded-xl bg-blue-600 font-semibold text-white">
+                    Save the round
+                </button>
+
+                <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">{{ $this->binSummary() }}</p>
+
+                {{-- Bank holidays. A fixed round cannot know about them, so
+                     this moves one collection and then forgets it did. --}}
+                @if ($this->nextCollection)
+                    <div class="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+                        <span class="block text-sm font-medium">Bank holiday?</span>
+                        @php $override = Household::current()->binOverride(); @endphp
+
+                        @if ($override)
+                            <p class="mt-1 text-sm text-amber-700 dark:text-amber-400">
+                                {{ \Carbon\CarbonImmutable::parse($override['on'])->format('D j M') }}
+                                moved to {{ \Carbon\CarbonImmutable::parse($override['moved_to'])->format('D j M') }}.
+                                It goes back to the usual round afterwards.
+                            </p>
+                            <button type="button" wire:click="clearBinOverride"
+                                    class="mt-1 touch-target text-sm font-semibold text-slate-500">Undo the move</button>
+                        @else
+                            <div class="mt-1 flex flex-wrap items-center gap-2">
+                                <span class="text-sm text-slate-500 dark:text-slate-400">
+                                    Move {{ $this->nextCollection->on->format('D j M') }} to
+                                </span>
+                                <input wire:model="binMoveTo" type="date"
+                                       class="touch-target rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                                <button type="button" wire:click="moveNextCollection"
+                                        class="touch-target rounded-xl bg-slate-100 px-4 text-sm font-semibold dark:bg-slate-800">Move it</button>
+                            </div>
+                            @error('binMoveTo') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                        @endif
+                    </div>
+                @endif
+            @endif
 
             @if ($binError)
                 <p class="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">{{ $binError }}</p>

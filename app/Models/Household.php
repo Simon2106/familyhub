@@ -242,6 +242,70 @@ class Household extends Model
         return preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', trim($value)) ? trim($value) : $fallback;
     }
 
+    /** Where bin dates come from: 'pattern', 'ical', or nowhere. */
+    public function binSource(): string
+    {
+        $source = (string) ($this->settings['bin_source'] ?? '');
+
+        if (in_array($source, ['pattern', 'ical'], true)) {
+            return $source;
+        }
+
+        // Nothing chosen: infer it, so a household that only ever pasted a URL
+        // keeps working without visiting settings again.
+        return $this->binCalendarUrl() ? 'ical' : 'none';
+    }
+
+    public function setBinSource(string $source): void
+    {
+        $this->putSettings([
+            'bin_source' => in_array($source, ['pattern', 'ical'], true) ? $source : 'none',
+        ]);
+    }
+
+    /** @return array<string, mixed>|null */
+    public function binPatternSettings(): ?array
+    {
+        $pattern = $this->settings['bin_pattern'] ?? null;
+
+        return is_array($pattern) ? $pattern : null;
+    }
+
+    /** @param array<string, mixed> $pattern */
+    public function setBinPattern(array $pattern): void
+    {
+        $this->putSettings(['bin_pattern' => $pattern]);
+    }
+
+    /**
+     * A one-off move, for the bank holidays a fixed pattern cannot know about.
+     *
+     * @return array{on: string, moved_to: string}|null
+     */
+    public function binOverride(): ?array
+    {
+        $override = $this->settings['bin_override'] ?? null;
+
+        if (! is_array($override) || blank($override['on'] ?? null) || blank($override['moved_to'] ?? null)) {
+            return null;
+        }
+
+        // Spent once the day it moved to has passed. Left in place it would
+        // silently shift next Christmas as well.
+        if ($override['moved_to'] < $this->todayLocal()->toDateString()) {
+            return null;
+        }
+
+        return ['on' => (string) $override['on'], 'moved_to' => (string) $override['moved_to']];
+    }
+
+    public function setBinOverride(?string $on, ?string $movedTo): void
+    {
+        $this->putSettings([
+            'bin_override' => $on && $movedTo ? ['on' => $on, 'moved_to' => $movedTo] : null,
+        ]);
+    }
+
     /** The council's bin calendar for this address, if one has been set. */
     public function binCalendarUrl(): ?string
     {
@@ -261,10 +325,23 @@ class Household extends Model
         return $this->hasMany(BinCollection::class)->orderBy('on');
     }
 
-    /** @param array<string, mixed> $values */
+    /**
+     * Merge into the settings blob, reading it back first.
+     *
+     * Merging onto this instance's copy loses whatever anyone else wrote since
+     * it was loaded — and `Household::current()` is memoised per request, so
+     * "since it was loaded" can be a while. Two saves in one request, or a save
+     * beside a background write, would silently drop one of them.
+     *
+     * @param  array<string, mixed>  $values
+     */
     protected function putSettings(array $values): void
     {
-        $this->update(['settings' => array_merge($this->settings ?? [], $values)]);
+        $current = $this->newQueryWithoutScopes()->find($this->getKey())?->settings ?? [];
+
+        $settings = array_merge(is_array($current) ? $current : [], $values);
+
+        $this->update(['settings' => $settings]);
     }
 
     /**

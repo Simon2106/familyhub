@@ -6,7 +6,7 @@ use App\Exceptions\IcalException;
 use App\Models\BinCollection;
 use App\Models\Household;
 use App\Models\User;
-use App\Services\Bins\BinCalendar;
+use App\Services\Bins\BinSchedule;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -68,7 +68,7 @@ class BinCollectionTest extends TestCase
 
     protected function sync(): int
     {
-        return app(BinCalendar::class)->sync($this->household->fresh());
+        return app(BinSchedule::class)->sync($this->household->fresh());
     }
 
     #[Test]
@@ -94,9 +94,11 @@ class BinCollectionTest extends TestCase
             'Black bin' => 'refuse',
             'Mixed dry recycling' => 'recycling',
             'Blue lidded bin' => 'recycling',
-            'Paper and card' => 'recycling',
+            // Its own round here, not part of the mixed recycling.
+            'Paper and card' => 'paper',
             'Garden waste' => 'garden',
             'Food caddy' => 'food',
+            'Small electricals' => 'electricals',
             'Something else entirely' => 'other',
         ];
 
