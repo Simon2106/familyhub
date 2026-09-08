@@ -447,4 +447,107 @@ class ParentViewTest extends TestCase
 
         $this->assertSame(2, $row['done'], 'Sunday is part of the week.');
     }
+
+    #[Test]
+    public function the_waiting_list_puts_the_oldest_first(): void
+    {
+        // What has been waiting longest is what is most likely forgotten.
+        $chore = $this->chore(['needs_approval' => true, 'recurrence' => 'daily']);
+        $board = app(ChoreBoard::class);
+
+        $board->complete($chore, CarbonImmutable::parse('2026-09-09'), $this->joey);
+        $board->complete($chore, CarbonImmutable::parse('2026-09-07'), $this->joey);
+        $board->complete($chore, CarbonImmutable::parse('2026-09-08'), $this->joey);
+
+        $dates = Livewire::test('kids.parent')->instance()
+            ->awaiting->map(fn ($i) => $i->on->toDateString())->all();
+
+        $this->assertSame(['2026-09-07', '2026-09-08', '2026-09-09'], $dates);
+    }
+
+    #[Test]
+    public function approving_asks_for_a_grown_ups_pin(): void
+    {
+        // A signed-in phone left on a kitchen counter is exactly how a child
+        // approves their own chores.
+        $this->simon->update(['pin' => '9876']);
+
+        $chore = $this->chore(['needs_approval' => true]);
+        $instance = app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-09'), $this->joey);
+
+        Livewire::test('kids.parent')
+            ->call('approveInstance', $instance->id)
+            ->assertDispatched('need-adult-pin', action: 'approve-chore', subject: $instance->id);
+
+        $this->assertFalse($instance->fresh()->isApproved(), 'Asking is not approving.');
+        $this->assertSame(0, $this->balance());
+    }
+
+    #[Test]
+    public function the_pin_lets_the_approval_through(): void
+    {
+        $this->simon->update(['pin' => '9876']);
+
+        $chore = $this->chore(['needs_approval' => true]);
+        $instance = app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-09'), $this->joey);
+
+        Livewire::test('kids.parent')->call('pinAccepted', 'approve-chore', $instance->id);
+
+        $this->assertTrue($instance->fresh()->isApproved());
+        $this->assertSame(5, $this->balance());
+    }
+
+    #[Test]
+    public function granting_a_reward_asks_too(): void
+    {
+        $this->simon->update(['pin' => '9876']);
+        app(PointsLedger::class)->adjust($this->joey, 50, 'Starting balance');
+
+        $reward = Reward::factory()->create(['household_id' => $this->household->id, 'cost' => 20]);
+        $request = app(RewardShop::class)->request($this->joey, $reward);
+
+        Livewire::test('kids.parent')
+            ->call('grant', $request->id)
+            ->assertDispatched('need-adult-pin', action: 'grant-reward', subject: $request->id);
+
+        $this->assertTrue($request->fresh()->isPending());
+
+        Livewire::test('kids.parent')->call('pinAccepted', 'grant-reward', $request->id);
+
+        $this->assertTrue($request->fresh()->isGranted());
+    }
+
+    #[Test]
+    public function a_household_with_no_adult_pin_is_not_locked_out_of_its_own_approvals(): void
+    {
+        // Nothing to check against, so refusing would simply stop approvals
+        // working until somebody went and set a PIN.
+        $this->assertNull($this->simon->pin);
+
+        $chore = $this->chore(['needs_approval' => true]);
+        $instance = app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-09'), $this->joey);
+
+        Livewire::test('kids.parent')
+            ->call('approveInstance', $instance->id)
+            ->assertNotDispatched('need-adult-pin');
+
+        $this->assertTrue($instance->fresh()->isApproved());
+    }
+
+    #[Test]
+    public function a_childs_card_opens_their_points_history(): void
+    {
+        Livewire::test('kids.parent')->assertSeeHtml('show-ledger');
+    }
+
+    #[Test]
+    public function the_history_is_the_same_one_the_child_sees(): void
+    {
+        app(PointsLedger::class)->adjust($this->joey, 12, 'Birthday');
+
+        Livewire::test('kids.ledger')
+            ->call('show', $this->joey->id)
+            ->assertSee('Birthday')
+            ->assertSee('12');
+    }
 }

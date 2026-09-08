@@ -166,7 +166,9 @@ class ChoreBoard
                 ->where('household_id', $household->id)
                 ->where('needs_approval', true))
             ->with(['chore.member', 'member'])
-            ->orderByDesc('on')
+            // Oldest first: the thing that has been waiting longest is the one
+            // most likely to have been forgotten about.
+            ->orderBy('on')
             ->orderBy('id')
             ->get();
     }

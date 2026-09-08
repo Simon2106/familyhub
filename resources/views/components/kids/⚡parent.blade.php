@@ -11,6 +11,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 /**
@@ -173,8 +174,58 @@ new #[Layout('layouts::app')] class extends Component
 
     /* ------------------------------ actions ------------------------------ */
 
-    /** Approve from the waiting list, which reaches back beyond this week. */
+    /**
+     * Approve from the waiting list, which reaches back beyond this week.
+     *
+     * Guarded by a grown-up's PIN even here, where the parent is already
+     * signed in: a signed-in phone left on a kitchen counter is exactly how a
+     * child approves their own chores.
+     */
     public function approveInstance(int $instanceId): void
+    {
+        $this->askAdult('approve-chore', $instanceId);
+    }
+
+    public function grant(int $redemptionId): void
+    {
+        $this->askAdult('grant-reward', $redemptionId);
+    }
+
+    /** Called back once the keypad has checked a grown-up's PIN. */
+    #[On('pin-accepted')]
+    public function pinAccepted(string $action, int $subject): void
+    {
+        match ($action) {
+            'approve-chore' => $this->doApprove($subject),
+            'grant-reward' => $this->doGrant($subject),
+            default => null,
+        };
+    }
+
+    protected function askAdult(string $action, int $subject): void
+    {
+        $this->error = null;
+
+        if (! $this->anyAdultHasAPin()) {
+            // Nothing to check against. Refusing would lock the household out
+            // of its own approvals until somebody set a PIN.
+            $this->pinAccepted($action, $subject);
+
+            return;
+        }
+
+        $this->dispatch('need-adult-pin', action: $action, subject: $subject);
+    }
+
+    protected function anyAdultHasAPin(): bool
+    {
+        return Member::where('household_id', $this->household()->id)
+            ->where('is_child', false)
+            ->whereNotNull('pin')
+            ->exists();
+    }
+
+    protected function doApprove(int $instanceId): void
     {
         $instance = $this->instance($instanceId);
 
@@ -231,7 +282,7 @@ new #[Layout('layouts::app')] class extends Component
         $this->refresh();
     }
 
-    public function grant(int $redemptionId): void
+    protected function doGrant(int $redemptionId): void
     {
         $this->error = null;
 
@@ -306,6 +357,9 @@ new #[Layout('layouts::app')] class extends Component
         </a>
         <h1 class="flex-1 text-2xl font-bold">Kids</h1>
     </header>
+
+    <livewire:kids.pin />
+    <livewire:kids.ledger />
 
     <div class="pane-scroll min-h-0 flex-1 space-y-4 px-4 pb-8">
 
@@ -394,6 +448,15 @@ new #[Layout('layouts::app')] class extends Component
                          fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
                         <path d="m9 6 6 6-6 6" />
                     </svg>
+                </button>
+
+                {{-- The same ledger the child reaches from their own view, so a
+                     parent answering "where did my stars go" is looking at
+                     exactly what the child is looking at. --}}
+                <button type="button"
+                        wire:click="$dispatch('show-ledger', { member: {{ $child->id }} })"
+                        class="mt-1 touch-target text-sm font-semibold text-blue-600 dark:text-blue-400">
+                    Points history
                 </button>
 
                 @if ($pickingFor === $child->id)
