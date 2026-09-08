@@ -33,6 +33,10 @@ new #[Layout('layouts::app')] class extends Component
            class="touch-target rounded-xl px-3 font-semibold text-blue-600 dark:text-blue-400">Meals</a>
     </header>
 
+    <div class="shrink-0 px-4 pb-2">
+        <livewire:search.box />
+    </div>
+
     <div class="min-h-0 flex-1 px-4 pb-8">
         <livewire:display.lists only="shopping" />
     </div>

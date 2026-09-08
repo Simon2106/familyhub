@@ -120,6 +120,12 @@ new #[Layout('layouts::app')] class extends Component
         </div>
     </header>
 
+    {{-- One box that looks everywhere, pinned under the header rather than
+         scrolling away with the page. --}}
+    <div class="shrink-0 px-4 pb-2">
+        <livewire:search.box :can-open="true" />
+    </div>
+
     <div x-data="{ show: false, message: '' }"
          x-on:saved.window="message = $event.detail.message; show = true; setTimeout(() => show = false, 2500)"
          x-show="show" x-cloak x-transition
@@ -184,11 +190,6 @@ new #[Layout('layouts::app')] class extends Component
                 <span class="shrink-0 rounded-full bg-blue-600 px-2.5 py-1 text-xs font-bold text-white">{{ $waiting }}</span>
             @endif
         </a>
-
-        {{-- One box that looks everywhere, before anything else on the page. --}}
-        <div class="mb-4">
-            <livewire:search.box :can-open="true" />
-        </div>
 
         @php
             $waitingOnMe = \App\Models\Redemption::where('household_id', $this->household()->id)->pending()->count()

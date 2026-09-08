@@ -20,6 +20,7 @@ use App\Models\User;
 use App\Services\Meals\ShoppingListGenerator;
 use App\Services\Search\HouseholdSearch;
 use App\Services\Search\SearchQuery;
+use App\Services\Search\SearchResult;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -270,6 +271,27 @@ class SearchTest extends TestCase
     }
 
     #[Test]
+    public function the_like_escape_character_works_on_mysql_as_well_as_sqlite(): void
+    {
+        // The suite runs SQLite and production runs MySQL. MySQL treats a lone
+        // backslash in a string literal as an escape itself, so ESCAPE '\\' is
+        // an unterminated string and the whole statement is rejected — while
+        // SQLite accepts it, which is how a green suite hid a search that 500s
+        // in production. Anything but a backslash avoids the divergence.
+        $this->assertNotSame('\\', HouseholdSearch::ESCAPE);
+        $this->assertSame(1, mb_strlen(HouseholdSearch::ESCAPE));
+
+        $this->event('Dentist', '2026-09-15 09:00:00');
+        DB::enableQueryLog();
+        $this->search('dentist');
+        $sql = collect(DB::getQueryLog())->pluck('query')->join(' ');
+        DB::disableQueryLog();
+
+        $this->assertStringContainsString("escape '".HouseholdSearch::ESCAPE."'", $sql);
+        $this->assertStringNotContainsString("escape '\\'", $sql);
+    }
+
+    #[Test]
     public function a_wildcard_is_searched_for_rather_than_matching_everything(): void
     {
         $this->event('50% off day', '2026-09-15 09:00:00');
@@ -387,5 +409,69 @@ class SearchTest extends TestCase
         $this->get(route('recipes', ['recipe' => $recipe->id]))
             ->assertOk()
             ->assertSee('Traybake');
+    }
+
+    /* ------------------------------- the wall ------------------------------ */
+
+    #[Test]
+    public function a_result_on_the_wall_switches_tab_rather_than_following_a_link(): void
+    {
+        // The display is a kiosk with no address bar. Navigating away from it
+        // is a one-way trip until somebody restarts Chromium.
+        $this->event('Dentist', '2026-09-15 09:00:00');
+
+        Livewire::test('search.box', ['onWall' => true])
+            ->set('q', 'dentist')
+            ->assertDontSeeHtml('wire:navigate')
+            ->call('goToTab', 'home')
+            ->assertDispatched('wall-tab', tab: 'home')
+            ->assertSet('q', '');
+    }
+
+    #[Test]
+    public function every_type_knows_where_it_lives_on_the_wall(): void
+    {
+        $expected = [
+            'event' => 'home', 'chore' => 'home', 'routine' => 'home',
+            'todo' => 'lists', 'shopping' => 'lists',
+            'meal' => 'meals', 'recipe' => 'meals',
+            'capture' => 'review',
+            // These only exist in /admin, which the wall cannot reach.
+            'reward' => null, 'member' => null, 'place' => null,
+        ];
+
+        foreach ($expected as $type => $tab) {
+            $result = new SearchResult(type: $type, title: 'x');
+
+            $this->assertSame($tab, $result->wallTab(), $type);
+        }
+    }
+
+    #[Test]
+    public function a_recipe_found_on_the_wall_is_opened_as_well_as_shown(): void
+    {
+        $recipe = Recipe::factory()->create(['household_id' => $this->household->id, 'title' => 'Traybake']);
+
+        Livewire::test('search.box', ['onWall' => true])
+            ->set('q', 'traybake')
+            ->call('goToTab', 'meals', 'show-recipe', $recipe->id)
+            ->assertDispatched('show-recipe')
+            ->assertDispatched('wall-tab', tab: 'meals');
+    }
+
+    #[Test]
+    public function the_wall_carries_a_search_box(): void
+    {
+        $this->event('Dentist', '2026-09-15 09:00:00');
+
+        Livewire::test('display.wall')->assertSeeHtml('wire:name="search.box"');
+    }
+
+    #[Test]
+    public function every_app_page_carries_one_too(): void
+    {
+        foreach ([route('app'), route('review'), route('recipes'), route('meals'), route('shopping'), route('kids')] as $url) {
+            $this->get($url)->assertOk()->assertSeeHtml('wire:name="search.box"');
+        }
     }
 }

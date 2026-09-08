@@ -359,6 +359,10 @@ new #[Layout('layouts::app')] class extends Component
         <h1 class="flex-1 text-2xl font-bold">Kids</h1>
     </header>
 
+    <div class="shrink-0 px-4 pb-2">
+        <livewire:search.box />
+    </div>
+
     <livewire:kids.pin />
     <livewire:kids.ledger />
 

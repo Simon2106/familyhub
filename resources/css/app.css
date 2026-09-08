@@ -113,6 +113,17 @@
         display: none;
     }
 
+    /*
+     * The browser's own clear button on a search field, removed because there
+     * is already one drawn next to it — two crosses side by side is a puzzle,
+     * not an affordance.
+     */
+    input[type='search']::-webkit-search-cancel-button,
+    input[type='search']::-webkit-search-decoration {
+        -webkit-appearance: none;
+        appearance: none;
+    }
+
     .touch-target {
         min-height: var(--spacing-touch);
         min-width: var(--spacing-touch);

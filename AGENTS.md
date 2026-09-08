@@ -76,6 +76,13 @@ conventions. The points most easily got wrong:
   `isSurfaced()`), so any new to-do list must filter by it or it will show work
   that is weeks away. Pass the lead days in when filtering a loaded collection —
   `isSurfaced()` otherwise loads the checklist and household once per item.
+- **The suite runs SQLite; production runs MySQL.** Anything expressed as raw
+  SQL has to work in both, and a green suite is not proof that it does. The one
+  that bit: `LIKE … ESCAPE '\'` is fine in SQLite and a syntax error in MySQL,
+  which treats a lone backslash in a string literal as an escape itself — every
+  search would have 500'd in production. `HouseholdSearch::ESCAPE` is `!` for
+  that reason. When you write `whereRaw`, check it against the real database
+  with `php artisan tinker` before believing the tests.
 - **Date columns use `App\Casts\CalendarDate`, not Eloquent's `date` cast.**
   The built-in cast writes `Y-m-d H:i:s`; MySQL's DATE column truncates it and
   SQLite does not, so `due_on <= '2026-07-15'` is true in production and false

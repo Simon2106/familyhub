@@ -39,6 +39,24 @@ class SearchResult
         return self::GROUPS[$this->type] ?? 'Other';
     }
 
+    /**
+     * Which tab of the wall display holds this, if any.
+     *
+     * The wall must never follow a link: it is a kiosk with no address bar and
+     * no way back. So a result there switches tab instead, and anything that
+     * only lives in /admin is shown but not offered as somewhere to go.
+     */
+    public function wallTab(): ?string
+    {
+        return match ($this->type) {
+            'event', 'chore', 'routine' => 'home',
+            'todo', 'shopping' => 'lists',
+            'meal', 'recipe' => 'meals',
+            'capture' => 'review',
+            default => null,
+        };
+    }
+
     public function withScore(int $score): self
     {
         return new self(

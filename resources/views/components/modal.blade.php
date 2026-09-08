@@ -1,6 +1,8 @@
 @props([
     // A Livewire expression that closes it, used for the tap-outside.
     'dismiss' => null,
+    // For dialogs whose open state lives in Alpine rather than in Livewire.
+    'closeOn' => null,
     'label' => null,
     // 'base' sits over the page; 'over' sits above another dialog; 'top' is
     // for the PIN pad, which has to sit above everything.
@@ -29,7 +31,8 @@
     button behind the keyboard.
 --}}
 <div
-    @if ($dismiss) wire:click.self="{{ $dismiss }}" @endif
+    @if (filled($dismiss)) wire:click.self="{{ $dismiss }}" @endif
+    @if (filled($closeOn)) x-on:click.self="{{ $closeOn }}" @endif
     class="modal-backdrop modal-viewport {{ $z }}"
     role="dialog"
     aria-modal="true"

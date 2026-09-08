@@ -451,6 +451,7 @@ new #[Layout('layouts::display')] class extends Component
         today: @js($this->todayDate),
         selected: @js($this->todayDate),
         tab: 'home',
+        searching: false,
         now: new Date(),
         idle: false,
         photoIndex: 0,
@@ -622,7 +623,16 @@ new #[Layout('layouts::display')] class extends Component
         <div class="flex items-center gap-5">
             <x-weather-tile :forecast="$this->weather" class="hidden sm:flex" />
 
-            <div class="text-right">
+            <button type="button" x-on:click="searching = true"
+                class="grid touch-target shrink-0 place-items-center rounded-2xl text-slate-400"
+                aria-label="Search">
+            <svg class="size-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+            </svg>
+        </button>
+
+        <div class="text-right">
             <p class="text-sm font-medium text-slate-500 dark:text-slate-400"
                title="Build {{ \App\Support\BuildVersion::current() }}"
                data-build-version="{{ \App\Support\BuildVersion::current() }}">{{ $this->household()->name }}</p>
@@ -1173,6 +1183,18 @@ new #[Layout('layouts::display')] class extends Component
                 </div>
             </div>
         @endforeach
+    </div>
+
+    {{-- Search, as an overlay rather than a permanent field: the header has
+         no room for one, and on a wall it is asked for rarely and deliberately. --}}
+    <div x-show="searching" x-cloak
+         x-on:wall-tab.window="tab = $event.detail.tab; searching = false"
+         x-on:keydown.escape.window="searching = false">
+        <x-modal close-on="searching = false" label="Search" width="max-w-2xl">
+            <div class="p-4">
+                <livewire:search.box :on-wall="true" />
+            </div>
+        </x-modal>
     </div>
 
     {{-- A child's day, and the keypad that guards the two things it should. --}}

@@ -19,6 +19,10 @@ new #[Layout('layouts::app')] class extends Component {}; ?>
            class="touch-target rounded-xl px-3 font-semibold text-blue-600 dark:text-blue-400">Recipes</a>
     </header>
 
+    <div class="shrink-0 px-4 pb-2">
+        <livewire:search.box />
+    </div>
+
     <div x-data="{ show: false, message: '' }"
          x-on:saved.window="message = $event.detail.message; show = true; setTimeout(() => show = false, 2500)"
          x-show="show" x-cloak x-transition

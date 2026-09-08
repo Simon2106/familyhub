@@ -32,6 +32,16 @@ class HouseholdSearch
     /** Per source. The screen cannot show more than a handful anyway. */
     public const PER_TYPE = 8;
 
+    /**
+     * The LIKE escape character.
+     *
+     * Not a backslash. MySQL treats a lone backslash inside a string literal
+     * as an escape itself, so ESCAPE '\' is an unterminated string and the
+     * whole statement is rejected — while SQLite accepts it happily, which is
+     * how a green test suite hid a search that 500s in production.
+     */
+    public const ESCAPE = '!';
+
     /** @return Collection<int, SearchResult> */
     public function search(string $raw, ?Household $household = null): Collection
     {
@@ -341,7 +351,7 @@ class HouseholdSearch
                     // ESCAPE clause — and escaping without one turns "50%"
                     // into a search for a literal backslash.
                     $q->orWhereRaw(
-                        $q->getGrammar()->wrap($column)." like ? escape '\\'",
+                        $q->getGrammar()->wrap($column)." like ? escape '".self::ESCAPE."'",
                         ['%'.$this->escape($term).'%'],
                     );
                 }
@@ -352,7 +362,11 @@ class HouseholdSearch
     /** A search for "50%" should not match everything. */
     protected function escape(string $term): string
     {
-        return str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $term);
+        return str_replace(
+            [self::ESCAPE, '%', '_'],
+            [self::ESCAPE.self::ESCAPE, self::ESCAPE.'%', self::ESCAPE.'_'],
+            $term,
+        );
     }
 
     /** @param list<?string> $parts */

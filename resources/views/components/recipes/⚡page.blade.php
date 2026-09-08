@@ -26,6 +26,10 @@ new #[Layout('layouts::app')] class extends Component
         <h1 class="text-2xl font-bold">Recipes</h1>
     </header>
 
+    <div class="shrink-0 px-4 pb-2">
+        <livewire:search.box :can-open="true" />
+    </div>
+
     {{-- Saved toast, matching the rest of /app. --}}
     <div x-data="{ show: false, message: '' }"
          x-on:saved.window="message = $event.detail.message; show = true; setTimeout(() => show = false, 2500)"
