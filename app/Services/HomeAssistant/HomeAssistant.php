@@ -20,6 +20,19 @@ class HomeAssistant
 
     protected const STATES_KEY = 'ha:states';
 
+    /**
+     * This instance's copy of what Home Assistant said.
+     *
+     * The shared cache is short and may be switched off entirely, so without
+     * this a page wanting both the tiles and whatever is playing asks the Pi
+     * twice for the same rows. Per instance rather than per process on
+     * purpose: one instance is one render, and a longer-lived memo would be a
+     * screen showing a light that went off a minute ago.
+     *
+     * @var list<array<string, mixed>>|null
+     */
+    protected ?array $rows = null;
+
     public function __construct(protected Client $client) {}
 
     public function isConfigured(): bool
@@ -39,16 +52,10 @@ class HomeAssistant
     public function states(bool $fresh = false): Collection
     {
         if ($fresh) {
-            Cache::forget(self::STATES_KEY);
+            $this->forget();
         }
 
-        $rows = Cache::remember(
-            self::STATES_KEY,
-            config('familyhub.homeassistant.cache_seconds'),
-            fn () => $this->client->get('/api/states'),
-        );
-
-        return collect($rows)
+        return collect($this->cachedRows())
             ->map(fn (array $row) => EntityState::fromArray($row))
             ->filter(fn (EntityState $state) => in_array($state->domain(), self::DOMAINS, true))
             ->keyBy(fn (EntityState $state) => $state->entityId);
@@ -57,6 +64,66 @@ class HomeAssistant
     public function state(string $entityId): ?EntityState
     {
         return $this->states()->get($entityId);
+    }
+
+    /**
+     * Every row HA gave us, cached and unfiltered.
+     *
+     * One cache for the whole app: the tiles want six domains and now-playing
+     * wants a seventh, and reading /api/states twice per render to serve two
+     * different filters is a request per second at a Raspberry Pi.
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function cachedRows(): array
+    {
+        return $this->rows ??= Cache::remember(
+            self::STATES_KEY,
+            config('familyhub.homeassistant.cache_seconds'),
+            fn () => $this->client->get('/api/states'),
+        );
+    }
+
+    /**
+     * Whatever is playing in the house.
+     *
+     * Deliberately not part of DOMAINS: media players are found rather than
+     * chosen. Nobody should have to add the kitchen speaker to the wall before
+     * the wall will admit music is coming out of it.
+     *
+     * @return Collection<string, MediaPlayer>
+     */
+    public function mediaPlayers(): Collection
+    {
+        return collect($this->cachedRows())
+            ->map(fn (array $row) => MediaPlayer::fromArray($row))
+            ->filter(fn (MediaPlayer $player) => str_starts_with($player->entityId, 'media_player.'))
+            ->keyBy(fn (MediaPlayer $player) => $player->entityId);
+    }
+
+    /**
+     * Play, pause, skip or change the volume of something already playing.
+     *
+     * An allow-list rather than a service name passed through: this is reached
+     * from a wall anyone can walk up to, and "call any service on any entity"
+     * is not a thing a kitchen screen needs to be able to do.
+     */
+    public function media(string $entityId, string $action): void
+    {
+        $service = match ($action) {
+            'play-pause' => 'media_play_pause',
+            'next' => 'media_next_track',
+            'previous' => 'media_previous_track',
+            'louder' => 'volume_up',
+            'quieter' => 'volume_down',
+            default => throw new HomeAssistantException("Unknown media action {$action}."),
+        };
+
+        if (! $this->mediaPlayers()->has($entityId)) {
+            throw new HomeAssistantException("{$entityId} is not a media player.");
+        }
+
+        $this->call('media_player', $service, $entityId);
     }
 
     /**
@@ -131,7 +198,7 @@ class HomeAssistant
         $this->client->post("/api/services/{$domain}/{$service}", $data + ['entity_id' => $entityId]);
 
         // The next read must not serve the state from before the tap.
-        Cache::forget(self::STATES_KEY);
+        $this->forget();
     }
 
     /**
@@ -150,11 +217,15 @@ class HomeAssistant
     /** Replace the shared state cache — used by the websocket listener. */
     public function remember(array $rows): void
     {
+        $this->rows = $rows;
+
         Cache::put(self::STATES_KEY, $rows, now()->addMinutes(5));
     }
 
     public function forget(): void
     {
+        $this->rows = null;
+
         Cache::forget(self::STATES_KEY);
     }
 

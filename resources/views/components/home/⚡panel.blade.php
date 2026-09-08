@@ -5,6 +5,7 @@ use App\Models\Household;
 use App\Models\HomeTile;
 use App\Services\HomeAssistant\EntityState;
 use App\Services\HomeAssistant\HomeAssistant;
+use App\Services\HomeAssistant\MediaPlayer;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
@@ -65,7 +66,7 @@ new class extends Component
     #[On('echo:'.\App\Events\HomeStateChanged::CHANNEL.',.state-changed')]
     public function refreshFromHome(): void
     {
-        unset($this->reading, $this->states, $this->problem, $this->sections);
+        unset($this->reading, $this->states, $this->problem, $this->sections, $this->nowPlaying);
     }
 
     /**
@@ -79,6 +80,36 @@ new class extends Component
     public function pollInterval(): string
     {
         return config('broadcasting.default') === 'reverb' ? '10s' : '3s';
+    }
+
+    /**
+     * Whatever is playing in the house right now.
+     *
+     * Found rather than configured: nobody should have to add the kitchen
+     * speaker to the wall before the wall will admit music is coming out of
+     * it. Silence costs nothing — an idle or off player is not shown at all,
+     * so the card only exists on the days it has something to say.
+     *
+     * @return Collection<int, MediaPlayer>
+     */
+    #[Computed]
+    public function nowPlaying(): Collection
+    {
+        return $this->reading['media'];
+    }
+
+    /** Play, pause, skip or change the volume of something already playing. */
+    public function control(string $entityId, string $action): void
+    {
+        $this->error = null;
+
+        try {
+            app(HomeAssistant::class)->media($entityId, $action);
+        } catch (HomeAssistantException $e) {
+            $this->error = $e->getMessage();
+        }
+
+        unset($this->reading, $this->states, $this->problem, $this->sections, $this->nowPlaying);
     }
 
     /** @return Collection<int, HomeTile> */
@@ -99,19 +130,33 @@ new class extends Component
      * which it did not, so an unreachable Pi showed a wall of blank tiles and
      * no explanation.
      *
-     * @return array{states: Collection<string, EntityState>, error: ?string}
+     * One instance, not two calls to app(): the tiles and whatever is playing
+     * come out of the same reading, so a render is one request to the Pi
+     * however short the shared cache is set.
+     *
+     * @return array{states: Collection<string, EntityState>, media: Collection<int, MediaPlayer>, error: ?string}
      */
     #[Computed]
     public function reading(): array
     {
-        if (! $this->configured || $this->tiles->isEmpty()) {
-            return ['states' => collect(), 'error' => null];
+        $nothing = ['states' => collect(), 'media' => collect(), 'error' => null];
+
+        if (! $this->configured) {
+            return $nothing;
         }
 
         try {
-            return ['states' => app(HomeAssistant::class)->states(), 'error' => null];
+            $home = app(HomeAssistant::class);
+
+            return [
+                'states' => $this->tiles->isEmpty() ? collect() : $home->states(),
+                'media' => $home->mediaPlayers()
+                    ->filter(fn (MediaPlayer $player) => $player->isActive())
+                    ->values(),
+                'error' => null,
+            ];
         } catch (HomeAssistantException $e) {
-            return ['states' => collect(), 'error' => $e->getMessage()];
+            return ['states' => collect(), 'media' => collect(), 'error' => $e->getMessage()];
         }
     }
 
@@ -303,7 +348,7 @@ new class extends Component
             $this->error = $e->getMessage();
         }
 
-        unset($this->reading, $this->states, $this->problem, $this->sections);
+        unset($this->reading, $this->states, $this->problem, $this->sections, $this->nowPlaying);
     }
 
     /**
@@ -334,7 +379,7 @@ new class extends Component
             unset($this->expecting[$tile->id]);
         }
 
-        unset($this->reading, $this->states, $this->problem, $this->sections);
+        unset($this->reading, $this->states, $this->problem, $this->sections, $this->nowPlaying);
     }
 }; ?>
 
@@ -342,13 +387,91 @@ new class extends Component
      slowly, so a dropped socket costs a few seconds rather than the tab. Either
      way this reads the local cache the listener keeps warm, not the Pi. --}}
 <div class="pane-scroll h-full min-h-0"
-     @if ($this->tiles->isNotEmpty()) wire:poll.{{ $this->pollInterval }}="$refresh" @endif>
+     @if ($this->configured) wire:poll.{{ $this->pollInterval }}="$refresh" @endif>
 
     @if ($this->problem)
         <p class="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
             {{ $this->problem }}
         </p>
     @endif
+
+    {{-- Whatever is playing, above the switches: it is the thing on this tab
+         most likely to be wanted in a hurry, and it is the only thing on it
+         that changes by itself. --}}
+    @foreach ($this->nowPlaying as $player)
+        @php $art = $player->artwork(); @endphp
+
+        <div wire:key="playing-{{ $player->entityId }}"
+             class="mb-3 flex items-center gap-3 rounded-2xl bg-slate-900 p-3 text-white dark:bg-slate-800">
+            @if ($art)
+                {{-- Decoration: everything it shows is in the text as well, so
+                     a phone that cannot reach Home Assistant loses nothing. --}}
+                <img src="{{ $art }}" alt=""
+                     class="size-14 shrink-0 rounded-xl object-cover"
+                     onerror="this.remove()">
+            @else
+                <span class="grid size-14 shrink-0 place-items-center rounded-xl bg-white/10 text-2xl" aria-hidden="true">🎵</span>
+            @endif
+
+            <span class="min-w-0 flex-1">
+                {{-- Larger than a tile's label: this is read from across a
+                     kitchen, not tapped from in front of it. --}}
+                <span class="block truncate text-lg font-semibold">{{ $player->title() ?? $player->name() }}</span>
+                @if ($player->subtitle())
+                    <span class="block truncate text-white/70">{{ $player->subtitle() }}</span>
+                @endif
+                {{-- Which speaker, unless the speaker is all we could name it
+                     by — "Playing on Bathroom radio" under the heading
+                     "Bathroom radio" says nothing twice. --}}
+                <span class="block truncate text-xs text-white/50">
+                    {{ $player->title() === null
+                        ? ($player->isPlaying() ? 'Playing' : 'Paused')
+                        : ($player->isPlaying() ? 'Playing on ' : 'Paused on ').$player->name() }}
+                </span>
+            </span>
+
+            <span class="flex shrink-0 items-center gap-1">
+                @if ($player->can(\App\Services\HomeAssistant\MediaPlayer::PREVIOUS))
+                    <button type="button" wire:click="control('{{ $player->entityId }}', 'previous')"
+                            class="grid size-11 place-items-center rounded-xl bg-white/10" aria-label="Previous track">
+                        <svg class="size-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M7 6h2v12H7zM20 6v12l-9-6z" />
+                        </svg>
+                    </button>
+                @endif
+
+                @if ($player->canPlayPause())
+                    <button type="button" wire:click="control('{{ $player->entityId }}', 'play-pause')"
+                            class="grid size-12 place-items-center rounded-xl bg-white text-slate-900"
+                            aria-label="{{ $player->isPlaying() ? 'Pause' : 'Play' }}">
+                        <svg class="size-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            @if ($player->isPlaying())
+                                <path d="M8 5h3v14H8zM13 5h3v14h-3z" />
+                            @else
+                                <path d="M8 5v14l11-7z" />
+                            @endif
+                        </svg>
+                    </button>
+                @endif
+
+                @if ($player->can(\App\Services\HomeAssistant\MediaPlayer::NEXT))
+                    <button type="button" wire:click="control('{{ $player->entityId }}', 'next')"
+                            class="grid size-11 place-items-center rounded-xl bg-white/10" aria-label="Next track">
+                        <svg class="size-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M15 6h2v12h-2zM4 6v12l9-6z" />
+                        </svg>
+                    </button>
+                @endif
+
+                @if ($player->canChangeVolume())
+                    <button type="button" wire:click="control('{{ $player->entityId }}', 'quieter')"
+                            class="grid size-11 place-items-center rounded-xl bg-white/10 text-xl font-bold" aria-label="Quieter">&minus;</button>
+                    <button type="button" wire:click="control('{{ $player->entityId }}', 'louder')"
+                            class="grid size-11 place-items-center rounded-xl bg-white/10 text-xl font-bold" aria-label="Louder">+</button>
+                @endif
+            </span>
+        </div>
+    @endforeach
 
     @if (! $this->configured)
         <div class="grid h-full place-items-center">
