@@ -29,6 +29,55 @@ class BuildVersion
         Cache::forget(self::CACHE_KEY);
     }
 
+    /**
+     * The directory the *live* release is served from.
+     *
+     * Under zero-downtime deploys the app lives in `releases/<timestamp>` with
+     * a `current` symlink pointing at whichever one is live. PHP resolves
+     * symlinks in __DIR__, so `base_path()` inside a long-running process is
+     * pinned to the release it started in — it would read its own manifest for
+     * ever and never notice a deploy at all, which is precisely the thing this
+     * class exists to notice.
+     *
+     * So: an explicit path if one is configured, otherwise the `current`
+     * symlink beside our own release, otherwise wherever we are.
+     */
+    public static function livePath(): string
+    {
+        if ($configured = config('familyhub.live_path')) {
+            return rtrim((string) $configured, '/');
+        }
+
+        $base = rtrim(base_path(), '/');
+
+        if (preg_match('#^(.*)/releases/[^/]+$#', $base, $m) && is_dir($m[1].'/current')) {
+            return $m[1].'/current';
+        }
+
+        return $base;
+    }
+
+    /** A path inside the live release, however this process was started. */
+    protected static function liveFile(string $path): string
+    {
+        return self::livePath().'/'.ltrim($path, '/');
+    }
+
+    /**
+     * Where the built manifest is.
+     *
+     * A public path somebody has deliberately moved is respected as-is; the
+     * default one is resolved through the deploy symlink rather than through
+     * this process's own release.
+     */
+    protected static function manifestPath(): string
+    {
+        $public = rtrim(public_path(), '/');
+        $default = rtrim(base_path(), '/').'/public';
+
+        return ($public === $default ? self::liveFile('public') : $public).'/build/manifest.json';
+    }
+
     protected static function compute(): string
     {
         return self::fromViteManifest()
@@ -38,7 +87,7 @@ class BuildVersion
 
     protected static function fromViteManifest(): ?string
     {
-        $manifest = public_path('build/manifest.json');
+        $manifest = self::manifestPath();
 
         if (! is_file($manifest)) {
             return null;
@@ -53,7 +102,7 @@ class BuildVersion
     {
         // Forge writes the deployed SHA here; a bare checkout has HEAD instead.
         foreach (['REVISION', '.git/HEAD'] as $path) {
-            $file = base_path($path);
+            $file = self::liveFile($path);
 
             if (! is_file($file)) {
                 continue;
@@ -62,7 +111,7 @@ class BuildVersion
             $contents = trim((string) file_get_contents($file));
 
             if (str_starts_with($contents, 'ref: ')) {
-                $ref = base_path('.git/'.trim(substr($contents, 5)));
+                $ref = self::liveFile('.git/'.trim(substr($contents, 5)));
                 $contents = is_file($ref) ? trim((string) file_get_contents($ref)) : '';
             }
 
@@ -77,9 +126,12 @@ class BuildVersion
     /** Last resort: something that at least changes when the app is redeployed. */
     protected static function fromApplicationFiles(): string
     {
+        $lock = self::liveFile('composer.lock');
+        $app = self::liveFile('app');
+
         $stamp = max(
-            is_file(base_path('composer.lock')) ? filemtime(base_path('composer.lock')) : 0,
-            is_dir(base_path('app')) ? filemtime(base_path('app')) : 0,
+            is_file($lock) ? filemtime($lock) : 0,
+            is_dir($app) ? filemtime($app) : 0,
         );
 
         return 't'.($stamp ?: 0);

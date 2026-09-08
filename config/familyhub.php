@@ -18,6 +18,15 @@ return [
     | this is the zone events are displayed in and, crucially, the zone whose
     | midnight decides which day an event belongs to.
     */
+    /*
+    | Where the live release is served from, under zero-downtime deploys.
+    |
+    | Normally worked out on its own from the `releases/…` + `current` layout
+    | Forge uses. Set it when the layout is unusual — it must be the path that
+    | follows the deploy, not the release a process happens to be running in.
+    */
+    'live_path' => env('FAMILYHUB_LIVE_PATH'),
+
     'timezone' => env('FAMILYHUB_TIMEZONE', 'Europe/London'),
 
     'seed' => [

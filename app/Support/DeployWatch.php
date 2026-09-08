@@ -44,8 +44,11 @@ class DeployWatch
     {
         try {
             // A long-running process accumulates stat results, so filemtime
-            // would keep reporting the state of the world at boot.
-            clearstatcache();
+            // would keep reporting the state of the world at boot. The `true`
+            // matters more: it clears the realpath cache, without which the
+            // `current` symlink keeps resolving to the release this process
+            // started in and a deploy is invisible.
+            clearstatcache(true);
 
             return BuildVersion::current();
         } catch (Throwable) {

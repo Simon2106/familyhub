@@ -883,11 +883,20 @@ Reverb is a *second* daemon alongside the listener. Both want
 
 ```sh
 # Daemon 1 — the websocket server
-php /home/forge/hub.thewills.uk/artisan reverb:start --host=127.0.0.1 --port=8080
+php8.4 /home/forge/hub.thewills.uk/current/artisan reverb:start
 
 # Daemon 2 — the Home Assistant listener
-php /home/forge/hub.thewills.uk/artisan familyhub:ha-listen
+php8.4 /home/forge/hub.thewills.uk/current/artisan familyhub:ha-listen
 ```
+
+Both with **Directory** `/home/forge/hub.thewills.uk/current`, user `forge`,
+one process each.
+
+> **`current/`, not the site root.** Zero-downtime deploys serve from
+> `releases/<timestamp>` behind a `current` symlink. A daemon pointed at the
+> site root runs whatever `artisan` happens to sit there, which is not the
+> deployed code. Copy the PHP binary and path style from the Horizon daemon
+> already configured on this server.
 
 Reverb binds to localhost and nginx puts it behind the site's existing TLS, so
 nothing new is exposed and no second certificate is needed. Note the two pairs

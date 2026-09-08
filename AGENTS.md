@@ -104,14 +104,19 @@ conventions. The points most easily got wrong:
 
   | Field | Value |
   | --- | --- |
-  | Command | `php /home/forge/hub.thewills.uk/artisan familyhub:ha-listen` |
-  | Directory | `/home/forge/hub.thewills.uk` |
+  | Command | `php8.4 /home/forge/hub.thewills.uk/current/artisan familyhub:ha-listen` |
+  | Directory | `/home/forge/hub.thewills.uk/current` |
   | User | `forge` |
   | Processes | `1` |
   | Start seconds | `1` |
   | Stop seconds | `10` |
   | Stop signal | `SIGTERM` |
   | Restart | `autorestart=true` (Forge's default) |
+
+  **`current/`, not the site root.** Zero-downtime deploys serve from
+  `releases/<timestamp>` with a `current` symlink; a daemon pointed at the site
+  root would run whatever `artisan` happens to sit there, which is not the
+  deployed code. Match the PHP binary and path to the existing Horizon daemon.
 
   One process, always: two listeners would both write the state cache and
   double every broadcast. `autorestart=true` matters because the command exits
@@ -120,6 +125,14 @@ conventions. The points most easily got wrong:
   hook is needed; it notices the build id change within a minute and restarts
   itself onto the new code. It also stops cleanly on SIGTERM, so `forge daemon:restart`
   and a server reboot are both graceful.
+- **The build id must be read through the deploy symlink, not `base_path()`.**
+  PHP resolves symlinks in `__DIR__`, so inside a daemon started via
+  `current/artisan` the base path is pinned to the release it started in. Read
+  the manifest from there and a long-running process reads its own copy for
+  ever and never notices a deploy — the exact thing `DeployWatch` exists to
+  notice. `BuildVersion::livePath()` finds the `current` symlink beside the
+  release, overridable with `FAMILYHUB_LIVE_PATH`, and `DeployWatch` calls
+  `clearstatcache(true)` so the realpath cache cannot pin it either.
 - **Long-running commands must watch for deploys.** `App\Support\DeployWatch`
   compares the build id the process started on against the current one; a daemon
   that does not do this keeps running the code it booted with forever. Exit 0
