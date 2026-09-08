@@ -208,6 +208,36 @@ new #[Layout('layouts::display')] class extends Component
     }
 
     /**
+     * The next bin collection worth mentioning.
+     *
+     * Only within the next few days: a wall that permanently says "recycling,
+     * a week on Tuesday" is a wall nobody reads. Two bins on the same day are
+     * one line, because that is how it feels from the kitchen.
+     *
+     * @return Collection<int, \App\Models\BinCollection>
+     */
+    #[Computed]
+    public function nextBins(): Collection
+    {
+        $today = $this->today->toDateString();
+
+        $next = \App\Models\BinCollection::query()
+            ->where('household_id', $this->household()->id)
+            ->upcoming($today)
+            ->first();
+
+        if (! $next || $next->on->toDateString() > $this->today->addDays(3)->toDateString()) {
+            return collect();
+        }
+
+        return \App\Models\BinCollection::query()
+            ->where('household_id', $this->household()->id)
+            ->where('on', $next->on->toDateString())
+            ->orderBy('kind')
+            ->get();
+    }
+
+    /**
      * The week's dinners, keyed by date, for the home view.
      *
      * Dinner only: it is the meal a household actually plans, and the one
@@ -472,6 +502,27 @@ new #[Layout('layouts::display')] class extends Component
                 <p class="text-sm text-slate-500 dark:text-slate-400"
                    x-text="selected && new Date(selected + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })"></p>
             </div>
+
+            {{-- Bins, when they are close enough to matter. Beside the clock
+                 because it is a thing you check on your way past. --}}
+            @if ($this->nextBins->isNotEmpty())
+                @php $binDay = $this->nextBins->first()->on; @endphp
+                <div class="hidden min-w-0 items-baseline gap-2 rounded-xl px-3 py-1 sm:flex">
+                    <span class="text-sm font-semibold tracking-wide text-slate-400 uppercase">Bins</span>
+                    <span class="flex items-baseline gap-1.5">
+                        @foreach ($this->nextBins as $bin)
+                            <span class="text-lg font-semibold" style="color: {{ $bin->colour() }};">
+                                {{ $bin->icon() }} {{ $bin->label() }}
+                            </span>
+                        @endforeach
+                    </span>
+                    <span class="text-sm text-slate-500 dark:text-slate-400">
+                        {{ $binDay->isSameDay($this->today)
+                            ? 'today'
+                            : ($binDay->isSameDay($this->today->addDay()) ? 'tonight' : $binDay->format('D')) }}
+                    </span>
+                </div>
+            @endif
 
             {{-- The question actually asked in a kitchen, answered without
                  anyone having to change tab. --}}

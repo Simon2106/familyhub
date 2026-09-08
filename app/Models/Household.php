@@ -242,6 +242,25 @@ class Household extends Model
         return preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', trim($value)) ? trim($value) : $fallback;
     }
 
+    /** The council's bin calendar for this address, if one has been set. */
+    public function binCalendarUrl(): ?string
+    {
+        $url = trim((string) ($this->settings['bin_ical_url'] ?? ''));
+
+        return $url !== '' ? $url : null;
+    }
+
+    public function setBinCalendarUrl(?string $url): void
+    {
+        $this->putSettings(['bin_ical_url' => trim((string) $url) ?: null]);
+    }
+
+    /** @return HasMany<BinCollection, $this> */
+    public function binCollections(): HasMany
+    {
+        return $this->hasMany(BinCollection::class)->orderBy('on');
+    }
+
     /** @param array<string, mixed> $values */
     protected function putSettings(array $values): void
     {

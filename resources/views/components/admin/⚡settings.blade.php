@@ -24,6 +24,8 @@ new #[Layout('layouts::app')] class extends Component
     /** @var list<string> */
     public array $mealSlots = ['dinner'];
 
+    public string $binCalendarUrl = '';
+
     public bool $screenOffEnabled = false;
 
     public string $screenOffStart = '23:00';
@@ -59,6 +61,8 @@ new #[Layout('layouts::app')] class extends Component
         $this->mirrorDeadlines = (bool) ($household->settings['mirror_deadline_tasks'] ?? false);
         $this->mirrorCalendarId = (string) ($household->settings['mirror_calendar_id'] ?? '');
         $this->mealSlots = $household->mealSlots();
+
+        $this->binCalendarUrl = (string) $household->binCalendarUrl();
 
         $screenOff = $household->screenOff();
         $this->screenOffEnabled = $screenOff['enabled'];
@@ -96,6 +100,46 @@ new #[Layout('layouts::app')] class extends Component
         return $places === 0
             ? 'Name the places that turn up in event titles, so events find the right person.'
             : trans_choice('{1}:count place|[2,*]:count places', $places, ['count' => $places]).' recognised in event titles.';
+    }
+
+    public ?string $binError = null;
+
+    /** Fetch it there and then, so a wrong address is found now and not at 4am. */
+    public function checkBins(): void
+    {
+        $this->binError = null;
+
+        $household = Household::current();
+        $household->setBinCalendarUrl($this->binCalendarUrl);
+
+        if (! $household->binCalendarUrl()) {
+            $this->binError = 'Add the calendar address first.';
+
+            return;
+        }
+
+        try {
+            $count = app(\App\Services\Bins\BinCalendar::class)->sync($household->fresh());
+        } catch (\App\Exceptions\IcalException $e) {
+            $this->binError = $e->getMessage();
+
+            return;
+        }
+
+        $this->dispatch('saved', message: "Read {$count} collections.");
+    }
+
+    public function binSummary(): string
+    {
+        $next = \App\Models\BinCollection::where('household_id', Household::current()->id)
+            ->upcoming(Household::current()->todayLocal()->toDateString())
+            ->first();
+
+        if (! $next) {
+            return 'Nothing loaded yet.';
+        }
+
+        return 'Next: '.$next->label().' on '.$next->on->format('D j M').'.';
     }
 
     public function homeSummary(): string
@@ -141,6 +185,7 @@ new #[Layout('layouts::app')] class extends Component
             'householdName' => 'required|string|max:120',
             'doneRetentionDays' => 'required|integer|min:1|max:3650',
             'todoLeadDays' => 'required|integer|min:0|max:365',
+            'binCalendarUrl' => 'nullable|string|max:2000',
             'screenOffStart' => 'required|date_format:H:i',
             'screenOffEnd' => 'required|date_format:H:i',
             'mirrorCalendarId' => 'nullable|integer',
@@ -157,6 +202,7 @@ new #[Layout('layouts::app')] class extends Component
         );
         $household->setMealSlots($this->mealSlots);
         $household->setScreenOff($this->screenOffEnabled, $this->screenOffStart, $this->screenOffEnd);
+        $household->setBinCalendarUrl($this->binCalendarUrl);
 
         $this->dispatch('saved', message: 'Household saved.');
     }
@@ -553,6 +599,35 @@ new #[Layout('layouts::app')] class extends Component
                     Manage
                 </a>
             </div>
+        </section>
+
+        {{-- Bins --}}
+        <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
+            <h2 class="font-semibold">Bin collections</h2>
+            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Subscribe to the council's calendar for this address and the next collection
+                shows on the wall. Paste the subscription link — the one ending
+                <code class="rounded bg-slate-100 px-1 dark:bg-slate-800">.ics</code>, or starting
+                <code class="rounded bg-slate-100 px-1 dark:bg-slate-800">webcal://</code> — not the web page.
+            </p>
+
+            <input wire:model="binCalendarUrl" type="url" inputmode="url" placeholder="https://…/bins.ics"
+                   aria-label="Bin calendar address"
+                   class="touch-target mt-3 w-full rounded-xl border border-slate-300 px-4 dark:border-slate-700 dark:bg-slate-950">
+            @error('binCalendarUrl') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+
+            <div class="mt-2 flex flex-wrap items-center gap-3">
+                <button type="button" wire:click="checkBins"
+                        class="touch-target rounded-xl bg-slate-100 px-4 text-sm font-semibold dark:bg-slate-800">
+                    <span wire:loading.remove wire:target="checkBins">Check it now</span>
+                    <span wire:loading wire:target="checkBins">Checking…</span>
+                </button>
+                <span class="text-sm text-slate-500 dark:text-slate-400">{{ $this->binSummary() }}</span>
+            </div>
+
+            @if ($binError)
+                <p class="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">{{ $binError }}</p>
+            @endif
         </section>
 
         {{-- Smart home --}}

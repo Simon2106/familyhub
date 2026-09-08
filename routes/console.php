@@ -23,3 +23,9 @@ Schedule::command('sync:calendars --force')
 Schedule::command('familyhub:prune-done')
     ->dailyAt('04:00')
     ->withoutOverlapping();
+
+// The council's bin calendar. Early enough that a changed collection day is on
+// the wall before anyone is awake to put the bins out.
+Schedule::command('familyhub:sync-bins')
+    ->dailyAt('04:20')
+    ->withoutOverlapping();
