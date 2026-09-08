@@ -58,6 +58,9 @@ class ListenToHomeAssistant extends Command
     /** Whether a connection was ever established, which is what --once reports on. */
     protected bool $connected = false;
 
+    /** Set by SIGTERM, so the loop finishes what it is doing and stops. */
+    protected bool $stopping = false;
+
     /**
      * The least time between nudges to the wall.
      *
@@ -79,6 +82,7 @@ class ListenToHomeAssistant extends Command
         }
 
         $this->deploy = DeployWatch::start();
+        $this->listenForSignals();
 
         $this->info('Listening to '.$client->websocketUrl().' on build '.$this->deploy->startedOn());
 
@@ -94,10 +98,14 @@ class ListenToHomeAssistant extends Command
                 // last known state rather than emptying while the Pi reboots.
                 $this->pause();
             }
-        } while (! $this->option('once') && ! $this->superseded);
+        } while (! $this->option('once') && ! $this->superseded && ! $this->stopping);
 
         if ($this->superseded) {
             $this->info('New code deployed. Stopping so it can be restarted on it.');
+        }
+
+        if ($this->stopping) {
+            $this->info('Asked to stop. Closing the connection and exiting.');
         }
 
         // A --once run exists to prove the credentials work, so it has to fail
@@ -185,10 +193,32 @@ class ListenToHomeAssistant extends Command
         }
     }
 
+    /**
+     * Stop at the next safe moment rather than mid-frame.
+     *
+     * Supervisor sends SIGTERM and waits before resorting to SIGKILL. Taking
+     * the hint means the websocket is closed politely and the cache is left
+     * whole, rather than the process being shot while half-way through
+     * writing it.
+     */
+    protected function listenForSignals(): void
+    {
+        if (! function_exists('pcntl_signal')) {
+            return;
+        }
+
+        foreach ([SIGTERM, SIGINT] as $signal) {
+            $this->trap($signal, function () {
+                $this->stopping = true;
+            });
+        }
+    }
+
     /** Cached against the deploy watch so this is a cheap thing to ask often. */
     protected function superseded(): bool
     {
-        return $this->superseded = $this->superseded || $this->deploy->hasChanged();
+        return $this->superseded
+            = $this->superseded || $this->stopping || $this->deploy->hasChanged();
     }
 
     /** HA asks before it says anything else. */

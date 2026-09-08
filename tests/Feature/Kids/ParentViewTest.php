@@ -466,11 +466,27 @@ class ParentViewTest extends TestCase
     }
 
     #[Test]
-    public function approving_asks_for_a_grown_ups_pin(): void
+    public function a_signed_in_parent_is_never_asked_to_prove_it_again(): void
     {
-        // A signed-in phone left on a kitchen counter is exactly how a child
-        // approves their own chores.
+        // They proved it by signing in. Asking twice is theatre.
         $this->simon->update(['pin' => '9876']);
+
+        $chore = $this->chore(['needs_approval' => true]);
+        $instance = app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-09'), $this->joey);
+
+        Livewire::test('kids.parent')
+            ->call('approveInstance', $instance->id)
+            ->assertNotDispatched('need-adult-pin');
+
+        $this->assertTrue($instance->fresh()->isApproved());
+        $this->assertSame(5, $this->balance());
+    }
+
+    #[Test]
+    public function the_wall_is_asked_because_it_has_no_session(): void
+    {
+        $this->simon->update(['pin' => '9876']);
+        auth()->logout();
 
         $chore = $this->chore(['needs_approval' => true]);
         $instance = app(ChoreBoard::class)->complete($chore, CarbonImmutable::parse('2026-09-09'), $this->joey);
@@ -480,7 +496,6 @@ class ParentViewTest extends TestCase
             ->assertDispatched('need-adult-pin', action: 'approve-chore', subject: $instance->id);
 
         $this->assertFalse($instance->fresh()->isApproved(), 'Asking is not approving.');
-        $this->assertSame(0, $this->balance());
     }
 
     #[Test]
@@ -498,7 +513,7 @@ class ParentViewTest extends TestCase
     }
 
     #[Test]
-    public function granting_a_reward_asks_too(): void
+    public function granting_a_reward_follows_the_same_rule(): void
     {
         $this->simon->update(['pin' => '9876']);
         app(PointsLedger::class)->adjust($this->joey, 50, 'Starting balance');
@@ -506,13 +521,10 @@ class ParentViewTest extends TestCase
         $reward = Reward::factory()->create(['household_id' => $this->household->id, 'cost' => 20]);
         $request = app(RewardShop::class)->request($this->joey, $reward);
 
+        // Signed in: straight through.
         Livewire::test('kids.parent')
             ->call('grant', $request->id)
-            ->assertDispatched('need-adult-pin', action: 'grant-reward', subject: $request->id);
-
-        $this->assertTrue($request->fresh()->isPending());
-
-        Livewire::test('kids.parent')->call('pinAccepted', 'grant-reward', $request->id);
+            ->assertNotDispatched('need-adult-pin');
 
         $this->assertTrue($request->fresh()->isGranted());
     }

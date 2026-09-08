@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\Home;
 
+use App\Console\Commands\ListenToHomeAssistant;
 use App\Services\HomeAssistant\HomeAssistant;
 use App\Services\HomeAssistant\StateStore;
 use App\Support\BuildVersion;
+use App\Support\DeployWatch;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
@@ -170,5 +172,41 @@ class StateStoreTest extends TestCase
 
         $this->artisan('familyhub:ha-listen', ['--once' => true])
             ->expectsOutputToContain('on build '.BuildVersion::current());
+    }
+
+    #[Test]
+    public function the_listener_stops_when_it_is_asked_to(): void
+    {
+        // Supervisor sends SIGTERM and waits before resorting to SIGKILL.
+        // Taking the hint closes the socket politely and leaves the cache
+        // whole, rather than being shot half-way through writing it.
+        $command = new ListenToHomeAssistant;
+        $reflection = new \ReflectionClass($command);
+
+        $stopping = $reflection->getProperty('stopping');
+        $stopping->setAccessible(true);
+        $this->assertFalse($stopping->getValue($command));
+
+        $deploy = $reflection->getProperty('deploy');
+        $deploy->setAccessible(true);
+        $deploy->setValue($command, DeployWatch::start());
+
+        $stopping->setValue($command, true);
+
+        $superseded = $reflection->getMethod('superseded');
+        $superseded->setAccessible(true);
+
+        $this->assertTrue($superseded->invoke($command), 'A stop request must unwind every loop.');
+    }
+
+    #[Test]
+    public function it_traps_the_signals_supervisor_actually_sends(): void
+    {
+        $source = file_get_contents(app_path('Console/Commands/ListenToHomeAssistant.php'));
+
+        $this->assertStringContainsString('SIGTERM', $source);
+        $this->assertStringContainsString('SIGINT', $source);
+        $this->assertStringContainsString('function_exists(\'pcntl_signal\')', $source,
+            'Guarded, because pcntl is not built into every PHP.');
     }
 }

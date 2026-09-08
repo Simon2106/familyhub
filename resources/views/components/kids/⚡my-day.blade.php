@@ -8,6 +8,7 @@ use App\Models\RoutineStep;
 use App\Services\Chores\ChoreBoard;
 use App\Services\Points\RewardShop;
 use App\Services\Routines\RoutineBoard;
+use App\Support\AdultGate;
 use App\Services\Points\PointsLedger;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -235,10 +236,21 @@ new class extends Component
         $this->refresh();
     }
 
-    /** A grown-up standing in the kitchen says yes. */
+    /**
+     * A grown-up standing in the kitchen says yes.
+     *
+     * Asked for on the wall, which has no session; skipped for a parent who
+     * reached this by signing in, who has already proved it.
+     */
     public function grant(int $redemptionId): void
     {
         $this->redeemError = null;
+
+        if (AdultGate::isTrusted()) {
+            $this->grantRedemption($redemptionId);
+
+            return;
+        }
 
         $this->dispatch('need-adult-pin', action: 'grant-redemption', subject: $redemptionId);
     }

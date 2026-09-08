@@ -226,9 +226,11 @@ class ClaudeItemExtractor implements ItemExtractor
 
             // The domain alone often identifies the school or club when the
             // letter itself never names it in full.
-            if ($domain = $this->senderDomain($capture->sender)) {
-                $lines[] = 'Sender domain: '.$domain.
-                    ' — a hint about which school, club or workplace this concerns.';
+            // Resolved against the household's own domain list where there is
+            // one, so "sent from holytrinity.bucks.sch.uk" becomes "this is
+            // about Joey" rather than a string for the model to puzzle over.
+            if ($hint = app(SenderHint::class)->sentence($capture->sender, $capture->household)) {
+                $lines[] = $hint;
             }
         }
 
@@ -315,15 +317,6 @@ class ClaudeItemExtractor implements ItemExtractor
             .'school is the one writing.';
 
         return $lines;
-    }
-
-    protected function senderDomain(string $sender): ?string
-    {
-        if (! preg_match('/@([^\s>]+)/', $sender, $m)) {
-            return null;
-        }
-
-        return strtolower(rtrim($m[1], '>')) ?: null;
     }
 
     protected function firstText(mixed $message): string

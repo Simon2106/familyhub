@@ -32,6 +32,13 @@ class Place extends Model
         return $this->morphMany(Alias::class, 'aliasable');
     }
 
+    /** Email domains that belong to this place. */
+    /** @return MorphMany<Alias, $this> */
+    public function senderDomains(): MorphMany
+    {
+        return $this->aliases()->domains();
+    }
+
     /** @return BelongsToMany<Member, $this> */
     public function members(): BelongsToMany
     {
@@ -58,7 +65,9 @@ class Place extends Model
     public function matchTerms(): array
     {
         return collect([$this->name])
-            ->merge($this->aliases->pluck('alias'))
+            // Names only. A domain belongs to the place but is never written
+            // in an event title.
+            ->merge($this->aliases->where('kind', 'name')->pluck('alias'))
             ->filter()
             ->unique()
             ->values()

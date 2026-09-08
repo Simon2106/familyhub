@@ -244,6 +244,9 @@ class RewardTest extends TestCase
     #[Test]
     public function granting_at_the_wall_takes_any_grown_ups_pin(): void
     {
+        // The wall has no session, which is the whole reason it asks.
+        auth()->logout();
+
         $this->give(50);
         $redemption = $this->shop()->request($this->joey, $this->reward());
 
@@ -325,5 +328,20 @@ class RewardTest extends TestCase
         Livewire::test('kids.my-day')
             ->call('show', $this->joey->id, '2026-09-09')
             ->assertSee('worth £5.00');
+    }
+
+    #[Test]
+    public function a_parent_previewing_the_wall_from_their_phone_is_not_asked(): void
+    {
+        // Still signed in, so still a parent — whatever screen they are looking at.
+        $this->give(50);
+        $redemption = $this->shop()->request($this->joey, $this->reward());
+
+        Livewire::test('kids.my-day')
+            ->call('show', $this->joey->id, '2026-09-09')
+            ->call('grant', $redemption->id)
+            ->assertNotDispatched('need-adult-pin');
+
+        $this->assertTrue($redemption->fresh()->isGranted());
     }
 }

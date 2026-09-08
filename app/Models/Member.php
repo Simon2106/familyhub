@@ -64,6 +64,13 @@ class Member extends Model
         return $this->morphMany(Alias::class, 'aliasable');
     }
 
+    /** Email domains that belong to this person — their school's, their club's. */
+    /** @return MorphMany<Alias, $this> */
+    public function senderDomains(): MorphMany
+    {
+        return $this->aliases()->domains();
+    }
+
     /** @return BelongsToMany<Place, $this> */
     public function places(): BelongsToMany
     {
@@ -81,7 +88,9 @@ class Member extends Model
     public function matchTerms(): array
     {
         return collect([$this->name])
-            ->merge($this->aliases->pluck('alias'))
+            // Names only: an email domain is not something anyone writes in an
+            // event title, and matching one there would be nonsense.
+            ->merge($this->aliases->where('kind', 'name')->pluck('alias'))
             ->filter()
             ->unique()
             ->values()

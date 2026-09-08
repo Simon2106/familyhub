@@ -7,6 +7,7 @@ use App\Models\Redemption;
 use App\Services\Chores\ChoreBoard;
 use App\Services\Points\PointsLedger;
 use App\Services\Points\RewardShop;
+use App\Support\AdultGate;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -174,13 +175,7 @@ new #[Layout('layouts::app')] class extends Component
 
     /* ------------------------------ actions ------------------------------ */
 
-    /**
-     * Approve from the waiting list, which reaches back beyond this week.
-     *
-     * Guarded by a grown-up's PIN even here, where the parent is already
-     * signed in: a signed-in phone left on a kitchen counter is exactly how a
-     * child approves their own chores.
-     */
+    /** Approve from the waiting list, which reaches back beyond this week. */
     public function approveInstance(int $instanceId): void
     {
         $this->askAdult('approve-chore', $instanceId);
@@ -202,13 +197,19 @@ new #[Layout('layouts::app')] class extends Component
         };
     }
 
+    /**
+     * Ask for a grown-up, unless we already know we have one.
+     *
+     * On a signed-in phone this never asks — proving it twice is theatre. On
+     * the wall, which has no session and is used by children all day, it does.
+     */
     protected function askAdult(string $action, int $subject): void
     {
         $this->error = null;
 
-        if (! $this->anyAdultHasAPin()) {
-            // Nothing to check against. Refusing would lock the household out
-            // of its own approvals until somebody set a PIN.
+        // Nothing to check against would lock the household out of its own
+        // approvals until somebody went and set a PIN.
+        if (AdultGate::isTrusted() || ! $this->anyAdultHasAPin()) {
             $this->pinAccepted($action, $subject);
 
             return;

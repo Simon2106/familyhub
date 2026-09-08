@@ -40,6 +40,9 @@ new #[Layout('layouts::app')] class extends Component
     /** Comma-separated, because chips are fiddly on a phone keyboard. */
     public string $aliases = '';
 
+    /** Email domains that belong to this person — their school's, their club's. */
+    public string $domains = '';
+
     public function mount(): void
     {
         $household = Household::current();
@@ -153,12 +156,13 @@ new #[Layout('layouts::app')] class extends Component
         $this->colour = $member->colour;
         $this->isChild = $member->is_child;
         $this->pin = '';
-        $this->aliases = $member->aliases->pluck('alias')->join(', ');
+        $this->aliases = $member->aliases->where('kind', 'name')->pluck('alias')->join(', ');
+        $this->domains = $member->aliases->where('kind', 'domain')->pluck('alias')->join(', ');
     }
 
     public function addMember(): void
     {
-        $this->reset(['editingId', 'name', 'colour', 'isChild', 'pin', 'aliases']);
+        $this->reset(['editingId', 'name', 'colour', 'isChild', 'pin', 'aliases', 'domains']);
         $this->editingId = 0; // 0 means "new"
     }
 
@@ -168,6 +172,8 @@ new #[Layout('layouts::app')] class extends Component
             'name' => 'required|string|max:60',
             'colour' => 'required|regex:/^#[0-9a-fA-F]{6}$/',
             'pin' => 'nullable|digits_between:4,6',
+            'aliases' => 'nullable|string|max:500',
+            'domains' => 'nullable|string|max:500',
         ]);
 
         $member = $this->editingId
@@ -190,8 +196,9 @@ new #[Layout('layouts::app')] class extends Component
         $member->ensureFirstNameAlias();
 
         $this->syncAliases($member);
+        $this->syncDomains($member);
 
-        $this->reset(['editingId', 'name', 'colour', 'isChild', 'pin', 'aliases']);
+        $this->reset(['editingId', 'name', 'colour', 'isChild', 'pin', 'aliases', 'domains']);
         unset($this->members);
 
         // Titles that mention this member may now match differently.
@@ -209,10 +216,34 @@ new #[Layout('layouts::app')] class extends Component
             ->unique(fn (string $a) => mb_strtolower($a))
             ->values();
 
-        $member->aliases()->whereNotIn('alias', $wanted->all())->delete();
+        $member->aliases()->names()->whereNotIn('alias', $wanted->all())->delete();
 
         foreach ($wanted as $alias) {
-            $member->aliases()->firstOrCreate(['alias' => $alias]);
+            $member->aliases()->firstOrCreate(['alias' => $alias, 'kind' => 'name']);
+        }
+    }
+
+    /**
+     * Domains an email from this person's school or club arrives from.
+     *
+     * Stored beside the name aliases but never matched against event titles —
+     * nobody writes "holytrinity.bucks.sch.uk" on a wall calendar.
+     */
+    protected function syncDomains(Member $member): void
+    {
+        $wanted = collect(explode(',', $this->domains))
+            ->map(fn (string $d) => mb_strtolower(trim($d)))
+            // Paste a whole address and we will take the domain off it.
+            ->map(fn (string $d) => str_contains($d, '@') ? mb_substr($d, mb_strpos($d, '@') + 1) : $d)
+            ->map(fn (string $d) => trim($d, "@ \t\n\r"))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $member->aliases()->domains()->whereNotIn('alias', $wanted->all())->delete();
+
+        foreach ($wanted as $domain) {
+            $member->aliases()->firstOrCreate(['alias' => $domain, 'kind' => 'domain']);
         }
     }
 
@@ -406,6 +437,19 @@ new #[Layout('layouts::app')] class extends Component
                             @endif
                         </p>
                         @error('aliases') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium" for="member-domains">Email domains</label>
+                        <input wire:model="domains" id="member-domains" type="text" inputmode="url" autocapitalize="off"
+                               placeholder="holytrinity.bucks.sch.uk"
+                               class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-4 dark:border-slate-700 dark:bg-slate-900">
+                        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                            Where their school or club emails from, separated by commas. A letter
+                            forwarded from one of these is taken to be about them, which is how a
+                            school newsletter that never names a child still reaches the right one.
+                            Subdomains count.
+                        </p>
                     </div>
 
                     {{-- Adults need one too: granting a reward at the wall

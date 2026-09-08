@@ -10,6 +10,7 @@ use App\Models\Household;
 use App\Models\User;
 use App\Services\Capture\CaptureIntake;
 use App\Services\Capture\Contracts\ItemExtractor;
+use App\Services\Capture\ExtractionParser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -207,5 +208,70 @@ class ItemSourceTest extends TestCase
 
         $this->assertSame(12345, $source->fresh()->input_tokens);
         $this->assertSame(678, $source->fresh()->output_tokens);
+    }
+
+    #[Test]
+    public function an_item_shows_the_words_it_was_read_from(): void
+    {
+        // A review card asks somebody to trust a date pulled out of six pages
+        // of newsletter. The sentence turns that into a two-second check.
+        $capture = Capture::factory()->reviewing()->create(['household_id' => $this->household->id]);
+
+        CaptureItem::factory()->create([
+            'capture_id' => $capture->id,
+            'title' => 'Flu vaccination',
+            'excerpt' => 'Holy Trinity School - 25th September 2026',
+            'source_page' => 2,
+        ]);
+
+        Livewire::test('capture.review')
+            ->assertSee('show source')
+            ->assertSee('page 2')
+            ->assertSee('Holy Trinity School - 25th September 2026');
+    }
+
+    #[Test]
+    public function an_item_with_no_excerpt_offers_nothing_to_show(): void
+    {
+        $capture = Capture::factory()->reviewing()->create(['household_id' => $this->household->id]);
+
+        CaptureItem::factory()->create(['capture_id' => $capture->id, 'title' => 'Parents evening']);
+
+        Livewire::test('capture.review')
+            ->assertSee('Parents evening')
+            ->assertDontSee('show source');
+    }
+
+    #[Test]
+    public function the_excerpt_survives_the_round_trip_from_the_model(): void
+    {
+        $result = ExtractionParser::fromArray([
+            'items' => [[
+                'type' => 'event',
+                'title' => 'Flu vaccination',
+                'start' => '2026-09-25',
+                'excerpt' => "Holy Trinity School\n   -   25th September 2026",
+                'page' => 2,
+            ]],
+            'summary' => 'A letter.',
+        ]);
+
+        $item = $result->items[0];
+
+        // Whitespace normalised so it reads as one line on a card.
+        $this->assertSame('Holy Trinity School - 25th September 2026', $item->excerpt);
+        $this->assertSame(2, $item->page);
+        $this->assertSame(2, $item->toAttributes()['source_page']);
+    }
+
+    #[Test]
+    public function a_nonsense_page_number_is_dropped(): void
+    {
+        $result = ExtractionParser::fromArray([
+            'items' => [['type' => 'note', 'title' => 'Something', 'page' => 0]],
+            'summary' => '',
+        ]);
+
+        $this->assertNull($result->items[0]->page);
     }
 }

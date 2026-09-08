@@ -99,6 +99,27 @@ conventions. The points most easily got wrong:
   is absent from the instance, which is the state of a row created without that
   column, so it hides from the obvious tests. `ModelNamingTest` checks every
   model by reflection.
+- **`familyhub:ha-listen` runs as a Forge daemon.** Exact settings, for
+  copying into Forge → Server → Daemons:
+
+  | Field | Value |
+  | --- | --- |
+  | Command | `php /home/forge/hub.thewills.uk/artisan familyhub:ha-listen` |
+  | Directory | `/home/forge/hub.thewills.uk` |
+  | User | `forge` |
+  | Processes | `1` |
+  | Start seconds | `1` |
+  | Stop seconds | `10` |
+  | Stop signal | `SIGTERM` |
+  | Restart | `autorestart=true` (Forge's default) |
+
+  One process, always: two listeners would both write the state cache and
+  double every broadcast. `autorestart=true` matters because the command exits
+  **0** when it sees new code — a manager set to restart only on unexpected
+  codes would read that as the work being finished and leave it down. No deploy
+  hook is needed; it notices the build id change within a minute and restarts
+  itself onto the new code. It also stops cleanly on SIGTERM, so `forge daemon:restart`
+  and a server reboot are both graceful.
 - **Long-running commands must watch for deploys.** `App\Support\DeployWatch`
   compares the build id the process started on against the current one; a daemon
   that does not do this keeps running the code it booted with forever. Exit 0

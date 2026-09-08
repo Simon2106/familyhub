@@ -61,12 +61,20 @@ class ExtractionSchema
                                 'For a task that is a deadline for something else in this material, '
                                 .'the exact title of that event as you gave it. Null otherwise.'
                             ),
+                            'excerpt' => self::nullableString(
+                                'The sentence or two you read this out of, quoted exactly as it appears. '
+                                .'Not a paraphrase — somebody is going to check it against the letter.'
+                            ),
+                            'page' => [
+                                'anyOf' => [['type' => 'integer'], ['type' => 'null']],
+                                'description' => 'For a PDF, the page the excerpt is on, counting from 1. Null otherwise.',
+                            ],
                             'confidence' => [
                                 'type' => 'integer',
                                 'description' => 'A whole number from 0 to 100. How sure you are of BOTH the date and that this is a real commitment. Below 80 if the year was inferred, the date was relative, or the text was unclear.',
                             ],
                         ],
-                        'required' => ['type', 'title', 'start', 'end', 'all_day', 'location', 'notes', 'member_hint', 'for_event', 'confidence'],
+                        'required' => ['type', 'title', 'start', 'end', 'all_day', 'location', 'notes', 'member_hint', 'for_event', 'excerpt', 'page', 'confidence'],
                         'additionalProperties' => false,
                     ],
                 ],
@@ -179,6 +187,13 @@ class ExtractionSchema
         the child's name appears in the letter. The vaccination is the child's; the
         consent form is the parent's. The related event and its deadline task will often
         have different member hints for that reason.
+
+        ## Showing your working
+
+        Every item needs an `excerpt`: the sentence or two you read it out of, quoted
+        exactly. Somebody is going to hold it up against the letter. A paraphrase, or a
+        sentence you assembled from two places, is worse than none — if you cannot point
+        at one passage, leave it null and lower your confidence.
 
         ## Links
 

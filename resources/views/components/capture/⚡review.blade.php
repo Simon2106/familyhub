@@ -463,13 +463,33 @@ new class extends Component
                                     </p>
                                 @endif
 
-                                @if ($item->source)
-                                    {{-- Which document this came from: an item
-                                         read out of the PDF carries different
-                                         weight from one guessed off a cover note. --}}
-                                    <p class="mt-0.5 truncate text-xs text-slate-400">
-                                        from {{ $item->source->shortLabel() }}
-                                    </p>
+                                {{-- Where this came from, and the words it came
+                                     from. An item read out of the PDF carries
+                                     different weight from one guessed off a
+                                     cover note, and a date pulled from six
+                                     pages of newsletter is worth checking. --}}
+                                @if ($item->source || $item->excerpt)
+                                    <div x-data="{ open: false }" class="mt-1">
+                                        <button type="button" x-on:click="open = ! open"
+                                                class="flex touch-target items-center gap-1 rounded-lg text-xs font-semibold text-slate-400">
+                                            <svg class="size-3.5 transition-transform" :class="open && 'rotate-90'" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                                                <path d="m9 6 6 6-6 6" />
+                                            </svg>
+                                            <span>
+                                                from {{ $item->source?->shortLabel() ?? 'the message' }}@if ($item->source_page), page {{ $item->source_page }}@endif
+                                            </span>
+                                            @if ($item->excerpt)
+                                                <span x-text="open ? '· hide source' : '· show source'"></span>
+                                            @endif
+                                        </button>
+
+                                        @if ($item->excerpt)
+                                            <blockquote x-show="open" x-cloak x-collapse
+                                                        class="mt-1 border-l-2 border-slate-200 pl-3 text-sm text-slate-500 italic dark:border-slate-700 dark:text-slate-400">
+                                                “{{ $item->excerpt }}”
+                                            </blockquote>
+                                        @endif
+                                    </div>
                                 @endif
 
                                 @if ($item->notes)

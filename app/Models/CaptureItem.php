@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 #[Fillable([
     'capture_id', 'capture_source_id', 'type', 'title', 'start_at', 'end_at', 'all_day', 'location', 'notes',
-    'member_hint', 'for_event_title', 'confidence', 'status', 'member_id', 'calendar_id', 'event_id',
+    'member_hint', 'for_event_title', 'excerpt', 'source_page', 'confidence', 'status', 'member_id', 'calendar_id', 'event_id',
     'checklist_item_id', 'reviewed_at',
 ])]
 class CaptureItem extends Model

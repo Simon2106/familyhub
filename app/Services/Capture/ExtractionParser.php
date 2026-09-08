@@ -73,6 +73,8 @@ class ExtractionParser
             notes: self::text($raw['notes'] ?? null),
             memberHint: self::text($raw['member_hint'] ?? null),
             forEventTitle: self::text($raw['for_event'] ?? null),
+            excerpt: self::excerpt($raw['excerpt'] ?? null),
+            page: is_numeric($raw['page'] ?? null) && (int) $raw['page'] > 0 ? (int) $raw['page'] : null,
             confidence: max(0, min(100, (int) ($raw['confidence'] ?? 0))),
         );
     }
@@ -101,6 +103,14 @@ class ExtractionParser
     protected static function isDateOnly(mixed $value): bool
     {
         return is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($value)) === 1;
+    }
+
+    /** Long enough to be checkable, short enough for a review card. */
+    protected static function excerpt(mixed $value): ?string
+    {
+        $text = self::text($value);
+
+        return $text === null ? null : mb_substr(preg_replace('/\s+/u', ' ', $text) ?? $text, 0, 600);
     }
 
     protected static function text(mixed $value): ?string
