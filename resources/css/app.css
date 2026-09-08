@@ -189,6 +189,20 @@
     }
 
     /*
+     * Dark on dark is not a dim.
+     *
+     * Slate at 60% over a near-black wall display changes almost nothing, so a
+     * dialog on the wall read as a panel wedged into the page rather than as
+     * something on top of it. A darker wash and a slight blur put it back on
+     * its own layer without touching the light theme, where 60% was always
+     * plenty.
+     */
+    :root.dark .modal-backdrop {
+        background-color: rgb(2 6 23 / 0.8);
+        backdrop-filter: blur(3px);
+    }
+
+    /*
      * A modal layer pinned to the *visual* viewport rather than the layout
      * viewport. On iOS the on-screen keyboard shrinks the visual viewport
      * without moving the layout viewport, so a plainly centred dialog ends up

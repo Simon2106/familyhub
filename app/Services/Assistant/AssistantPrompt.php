@@ -35,6 +35,12 @@ class AssistantPrompt
         is cheap. If the tools show nothing, say so; never fill a gap with something
         plausible.
 
+        Watch the dates. Anything marked "(in the past)" has already happened — say so
+        plainly ("that was on Friday 19 June") and never word it as something coming up.
+        If a question is about when something next happens and the only match has been
+        and gone, say there is nothing upcoming rather than offering the old one as an
+        answer.
+
         Say where the answer came from, in the family's own words — "from the Simon calendar",
         "from this week's meal plan", "from the chore board". Each tool result begins with
         that phrase; use it rather than inventing one.

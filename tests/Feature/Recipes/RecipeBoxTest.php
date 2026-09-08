@@ -41,6 +41,36 @@ class RecipeBoxTest extends TestCase
         Queue::fake([ImportRecipeJob::class, ProcessCaptureJob::class]);
     }
 
+    #[Test]
+    public function the_save_dialog_keeps_its_heading_and_its_buttons_in_view(): void
+    {
+        // Reported from a phone: the dialog's top — heading, mode tabs and the
+        // field itself — was scrolled out of sight with nothing to say so, and
+        // a recipe could not be added at all. Pinned bands are the fix, and
+        // this is what keeps them.
+        $html = Livewire::test('recipes.box')->set('saving', true)->html();
+
+        $this->assertStringContainsString('shrink-0', $html);
+        $this->assertStringContainsString('min-h-0 flex-1 overflow-y-auto', $html);
+
+        // Save sits outside the form now, so it needs to name it.
+        $this->assertStringContainsString('form="save-meal-idea"', $html);
+        $this->assertStringContainsString('id="save-meal-idea"', $html);
+    }
+
+    #[Test]
+    public function the_save_button_still_saves_from_outside_the_form(): void
+    {
+        Livewire::test('recipes.box')
+            ->set('saving', true)
+            ->set('mode', 'url')
+            ->set('url', 'https://example.com/curry')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('recipes', ['source_url' => 'https://example.com/curry']);
+    }
+
     protected function recipe(array $attributes = []): Recipe
     {
         return Recipe::factory()->create($attributes + ['household_id' => $this->household->id]);

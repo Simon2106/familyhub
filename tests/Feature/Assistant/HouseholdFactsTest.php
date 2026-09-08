@@ -331,6 +331,69 @@ class HouseholdFactsTest extends TestCase
         $this->assertStringContainsString('Fri 18 Jun 2027', $text);
     }
 
+    /* ------------------------------- dates ------------------------------ */
+
+    #[Test]
+    public function something_that_has_already_happened_is_marked_as_such(): void
+    {
+        // Asked when Joey next has kickboxing, the assistant answered with a
+        // trip three months gone and worded it as a plan — because a bare
+        // date in a line of text reads as an upcoming one.
+        Event::factory()->create([
+            'calendar_id' => $this->calendar->id, 'title' => 'Kickboxing in Belgium',
+            'start_at' => '2026-06-19 09:00:00', 'end_at' => '2026-06-19 17:00:00',
+        ]);
+
+        $text = $this->facts()->search($this->household, 'kickboxing');
+
+        $this->assertStringContainsString('Fri 19 Jun 2026 (in the past)', $text);
+    }
+
+    #[Test]
+    public function today_is_marked_too_so_it_is_never_read_as_tomorrow(): void
+    {
+        Event::factory()->create([
+            'calendar_id' => $this->calendar->id, 'title' => 'Swimming',
+            'start_at' => '2026-09-09 08:00:00', 'end_at' => '2026-09-09 09:00:00',
+        ]);
+
+        $this->assertStringContainsString(
+            'Wed 9 Sep 2026 (today)',
+            $this->facts()->calendar($this->household, $this->day('2026-09-09'), $this->day('2026-09-09')),
+        );
+    }
+
+    #[Test]
+    public function something_still_to_come_is_left_unmarked(): void
+    {
+        Event::factory()->create([
+            'calendar_id' => $this->calendar->id, 'title' => 'Sports day',
+            'start_at' => '2026-09-20 09:00:00', 'end_at' => '2026-09-20 15:00:00',
+        ]);
+
+        $text = $this->facts()->calendar($this->household, $this->day('2026-09-20'), $this->day('2026-09-20'));
+
+        $this->assertStringContainsString('Sun 20 Sep 2026', $text);
+        $this->assertStringNotContainsString('(in the past)', $text);
+        $this->assertStringNotContainsString('(today)', $text);
+    }
+
+    #[Test]
+    public function search_admits_it_has_no_floor(): void
+    {
+        // It reaches back over everything the household has ever had, so the
+        // model has to be told to check the dates rather than trust the order.
+        Event::factory()->create([
+            'calendar_id' => $this->calendar->id, 'title' => 'Sports day',
+            'start_at' => '2027-06-18 09:00:00', 'end_at' => '2027-06-18 15:00:00',
+        ]);
+
+        $this->assertStringContainsString(
+            'past and future alike',
+            $this->facts()->search($this->household, 'sports day'),
+        );
+    }
+
     /* ------------------------------ safety ------------------------------ */
 
     #[Test]

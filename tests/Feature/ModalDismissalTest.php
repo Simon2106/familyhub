@@ -49,6 +49,38 @@ class ModalDismissalTest extends TestCase
     }
 
     #[Test]
+    public function a_dialog_can_pin_its_heading_and_its_buttons(): void
+    {
+        // The third bug of the three. As one scrolling block, a dialog on a
+        // phone with the keyboard up put its title, its mode tabs and its
+        // field above the top of a panel nobody could tell was scrolled —
+        // which is how adding a recipe from a phone became impossible.
+        $markup = file_get_contents(self::COMPONENT);
+
+        $this->assertStringContainsString('$header', $markup);
+        $this->assertStringContainsString('$footer', $markup);
+        $this->assertStringContainsString('shrink-0', $markup, 'The bands must not be squeezed away.');
+        $this->assertMatchesRegularExpression(
+            '/min-h-0 flex-1 overflow-y-auto/',
+            $markup,
+            'The middle is what scrolls; min-h-0 is what lets it.',
+        );
+    }
+
+    #[Test]
+    public function the_dim_is_visible_on_a_dark_wall(): void
+    {
+        // Slate at 60% over a near-black display changes almost nothing, so a
+        // dialog read as a panel wedged into the page rather than one on top.
+        $css = file_get_contents(__DIR__.'/../../resources/css/app.css');
+
+        $this->assertMatchesRegularExpression(
+            '/:root\.dark \.modal-backdrop \{[^}]*background-color/',
+            $css,
+        );
+    }
+
+    #[Test]
     public function the_one_dialog_dims_and_centres_on_the_same_element(): void
     {
         $markup = file_get_contents(self::COMPONENT);

@@ -158,6 +158,9 @@ class AssistantRequestTest extends TestCase
         $this->assertStringContainsString('only read', $prompt);
         $this->assertStringContainsString('Say where the answer came from', $prompt);
         $this->assertStringContainsString('ask one short question instead of guessing', $prompt);
+        // The kickboxing answer: a trip three months gone, offered as a plan.
+        $this->assertStringContainsString('has already happened', $prompt);
+        $this->assertStringContainsString('nothing upcoming', $prompt);
     }
 
     #[Test]

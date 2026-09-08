@@ -369,19 +369,41 @@ new class extends Component
 
     {{-- ------------------------- SAVE A MEAL IDEA ------------------------ --}}
     @if ($saving)
+        {{-- Heading, mode tabs and buttons are pinned; only the field between
+             them scrolls. On a phone with the keyboard up the dialog is a few
+             hundred pixels tall, and as one scrolling block that left the
+             title, the tabs and the field itself above the top of a panel
+             nobody could tell was scrolled — which is why adding a recipe from
+             a phone did not work. --}}
         <x-modal dismiss="$set('saving', false)" label="Save a meal idea">
-            <form wire:submit="save" class="space-y-3 p-4">
-                <h3 class="text-lg font-semibold">Save a meal idea</h3>
+            <x-slot:header>
+                <div class="space-y-3 p-4 pb-3">
+                    <h3 class="text-lg font-semibold">Save a meal idea</h3>
 
-                <div class="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
-                    @foreach (['url' => 'Link', 'text' => 'Text', 'photo' => 'Photo'] as $key => $label)
-                        <button type="button" wire:click="$set('mode', '{{ $key }}')"
-                                class="touch-target rounded-lg text-sm font-semibold {{ $mode === $key ? 'bg-white shadow-sm dark:bg-slate-900' : 'text-slate-500' }}">
-                            {{ $label }}
-                        </button>
-                    @endforeach
+                    <div class="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+                        @foreach (['url' => 'Link', 'text' => 'Text', 'photo' => 'Photo'] as $key => $label)
+                            <button type="button" wire:click="$set('mode', '{{ $key }}')"
+                                    class="touch-target rounded-lg text-sm font-semibold {{ $mode === $key ? 'bg-white shadow-sm dark:bg-slate-900' : 'text-slate-500' }}">
+                                {{ $label }}
+                            </button>
+                        @endforeach
+                    </div>
                 </div>
+            </x-slot:header>
 
+            <x-slot:footer>
+                <div class="flex gap-2 border-t border-slate-100 p-4 pt-3 dark:border-slate-800">
+                    <button type="submit" form="save-meal-idea"
+                            class="touch-target flex-1 rounded-xl bg-blue-600 text-lg font-semibold text-white">
+                        <span wire:loading.remove wire:target="save">Save</span>
+                        <span wire:loading wire:target="save">Saving…</span>
+                    </button>
+                    <button type="button" wire:click="$set('saving', false)"
+                            class="touch-target rounded-xl px-4 font-semibold text-slate-500">Cancel</button>
+                </div>
+            </x-slot:footer>
+
+            <form id="save-meal-idea" wire:submit="save" class="space-y-3 px-4 pb-4">
                 @if ($mode === 'url')
                     <input wire:model="url" type="url" inputmode="url" autofocus
                            placeholder="https://…"
@@ -408,15 +430,6 @@ new class extends Component
                 @if ($error)
                     <p class="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{{ $error }}</p>
                 @endif
-
-                <div class="flex gap-2 pt-1">
-                    <button type="submit" class="touch-target flex-1 rounded-xl bg-blue-600 text-lg font-semibold text-white">
-                        <span wire:loading.remove wire:target="save">Save</span>
-                        <span wire:loading wire:target="save">Saving…</span>
-                    </button>
-                    <button type="button" wire:click="$set('saving', false)"
-                            class="touch-target rounded-xl px-4 font-semibold text-slate-500">Cancel</button>
-                </div>
             </form>
         </x-modal>
     @endif

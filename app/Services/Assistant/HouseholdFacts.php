@@ -64,10 +64,17 @@ class HouseholdFacts
 
             foreach ($found as $result) {
                 $lines[] = '- '.$result->title
-                    .($result->date ? ' — '.$this->day($result->date) : '')
+                    .($result->date ? ' — '.$this->day($household, $result->date) : '')
                     .($result->snippet ? ' ('.$result->snippet.')' : '');
             }
         }
+
+        // Search has no floor: it reaches back over everything the household
+        // has ever had. Worth saying, because a match from last June looks
+        // exactly like a match from next June once it is a line of text.
+        $lines[] = '';
+        $lines[] = 'These come from the whole household, past and future alike. '
+            .'Check each date before treating one as a plan.';
 
         return implode("\n", $lines);
     }
@@ -93,11 +100,11 @@ class HouseholdFacts
         }
 
         if ($events->isEmpty()) {
-            return 'Nothing in the calendar '.$this->between($from, $to)
+            return 'Nothing in the calendar '.$this->between($household, $from, $to)
                 .($member ? ' for '.$member : '').'.';
         }
 
-        $lines = ['Calendar, '.$this->between($from, $to).($member ? ', for '.$member : '').':'];
+        $lines = ['Calendar, '.$this->between($household, $from, $to).($member ? ', for '.$member : '').':'];
 
         foreach ($events->take(self::LIMIT) as $event) {
             $start = $event->start_at->timezone($tz);
@@ -107,7 +114,7 @@ class HouseholdFacts
             $whose = $event->calendar?->member?->name ?? $event->calendar?->name;
             $people = $event->members->pluck('name')->all();
 
-            $lines[] = '- '.$this->day(CarbonImmutable::parse($start))
+            $lines[] = '- '.$this->day($household, CarbonImmutable::parse($start))
                 .' '.($event->all_day ? 'all day' : $start->format('H:i'))
                 .': '.$event->title
                 .($event->location ? ' at '.$event->location : '')
@@ -132,15 +139,15 @@ class HouseholdFacts
             ->get();
 
         if ($meals->isEmpty()) {
-            return 'Nothing is planned in the meal plan '.$this->between($from, $to).'.';
+            return 'Nothing is planned in the meal plan '.$this->between($household, $from, $to).'.';
         }
 
         $slots = array_flip($household->mealSlots());
 
-        $lines = ['From the meal plan, '.$this->between($from, $to).':'];
+        $lines = ['From the meal plan, '.$this->between($household, $from, $to).':'];
 
         foreach ($meals->sortBy([['on', 'asc'], fn ($a, $b) => ($slots[$a->slot] ?? 9) <=> ($slots[$b->slot] ?? 9)]) as $meal) {
-            $lines[] = '- '.$this->day(CarbonImmutable::parse($meal->on))
+            $lines[] = '- '.$this->day($household, CarbonImmutable::parse($meal->on))
                 .' '.$meal->slot.': '.$meal->title;
         }
 
@@ -162,7 +169,7 @@ class HouseholdFacts
             }
 
             $lines[] = '';
-            $lines[] = $this->day(CarbonImmutable::parse($date)).':';
+            $lines[] = $this->day($household, CarbonImmutable::parse($date)).':';
 
             foreach ($slots as $slot) {
                 $lines[] = '- '.$slot->chore->title
@@ -172,10 +179,10 @@ class HouseholdFacts
         }
 
         if ($lines === []) {
-            return 'No chores are due '.$this->between($from, $to).($member ? ' for '.$member : '').'.';
+            return 'No chores are due '.$this->between($household, $from, $to).($member ? ' for '.$member : '').'.';
         }
 
-        return 'From the chore board, '.$this->between($from, $to).":\n".implode("\n", $lines);
+        return 'From the chore board, '.$this->between($household, $from, $to).":\n".implode("\n", $lines);
     }
 
     protected function choreState(ChoreSlot $slot): string
@@ -226,7 +233,7 @@ class HouseholdFacts
             foreach ($items as $item) {
                 $lines[] = '- '.$item->title
                     .($item->quantity ? ' ('.$item->quantity.')' : '')
-                    .($item->due_on ? ' — due '.$this->day(CarbonImmutable::parse($item->due_on)) : '')
+                    .($item->due_on ? ' — due '.$this->day($household, CarbonImmutable::parse($item->due_on)) : '')
                     .($item->member?->name ? ' — '.$item->member->name : '')
                     .($item->is_done ? ' [done]' : $this->overdue($item, $today));
             }
@@ -259,7 +266,7 @@ class HouseholdFacts
         $lines = ['From the bin schedule:'];
 
         foreach ($collections->groupBy(fn (BinCollection $c) => $c->on->toDateString()) as $date => $onDay) {
-            $lines[] = '- '.$this->day(CarbonImmutable::parse($date)).': '
+            $lines[] = '- '.$this->day($household, CarbonImmutable::parse($date)).': '
                 .$onDay->map(fn (BinCollection $c) => $c->label())->implode(', ');
         }
 
@@ -273,21 +280,21 @@ class HouseholdFacts
         $turning = $this->schools->turningPoints($household, $household->todayLocal(), withinDays: 14);
 
         if ($closures->isEmpty() && $turning->isEmpty()) {
-            return 'No school closures or term boundaries '.$this->between($from, $to).'.';
+            return 'No school closures or term boundaries '.$this->between($household, $from, $to).'.';
         }
 
-        $lines = ['From the school term dates, '.$this->between($from, $to).':'];
+        $lines = ['From the school term dates, '.$this->between($household, $from, $to).':'];
 
         foreach ($closures->take(self::LIMIT) as $closure) {
             /** @var SchoolClosure $closure */
             $lines[] = '- '.$closure->label.' ('.$closure->code.'): '
                 .($closure->startsOn->isSameDay($closure->endsOn)
-                    ? $this->day($closure->startsOn)
-                    : $this->day($closure->startsOn).' to '.$this->day($closure->endsOn));
+                    ? $this->day($household, $closure->startsOn)
+                    : $this->day($household, $closure->startsOn).' to '.$this->day($household, $closure->endsOn));
         }
 
         foreach ($turning as $point) {
-            $lines[] = '- '.$point['label'].' ('.$point['code'].'): '.$this->day($point['on'])
+            $lines[] = '- '.$point['label'].' ('.$point['code'].'): '.$this->day($household, $point['on'])
                 .($point['finishes'] ? ', finishes '.$point['finishes'] : '');
         }
 
@@ -387,16 +394,31 @@ class HouseholdFacts
         return $to->lessThan($from) ? $from : $to->min($from->addDays(self::MAX_DAYS));
     }
 
-    protected function between(CarbonImmutable $from, CarbonImmutable $to): string
+    protected function between(Household $household, CarbonImmutable $from, CarbonImmutable $to): string
     {
         return $from->isSameDay($to)
-            ? 'on '.$this->day($from)
-            : 'from '.$this->day($from).' to '.$this->day($to);
+            ? 'on '.$this->day($household, $from)
+            : 'from '.$this->day($household, $from).' to '.$this->day($household, $to);
     }
 
-    protected function day(CarbonImmutable $date): string
+    /**
+     * A date, and whether it has already happened.
+     *
+     * The marker is the whole point. Asked when Joey has kickboxing, the model
+     * was handed "Fri 19 Jun 2026" for a trip three months gone and answered
+     * as though it were a plan — because nothing in the line said otherwise
+     * and a bare date reads as an upcoming one.
+     */
+    protected function day(Household $household, CarbonImmutable $date): string
     {
-        return $date->format('D j M Y');
+        $written = $date->format('D j M Y');
+        $today = $household->todayLocal();
+
+        return match (true) {
+            $date->lessThan($today) => $written.' (in the past)',
+            $date->isSameDay($today) => $written.' (today)',
+            default => $written,
+        };
     }
 
     /** Loose enough for "joey", "Joey W" and an alias to all land. */
