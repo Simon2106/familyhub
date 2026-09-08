@@ -133,7 +133,52 @@ class RecipeImportTest extends TestCase
         $recipe = $this->importNow(app(RecipeIntake::class)->fromUrl('https://www.instagram.com/p/abc123/'));
 
         $this->assertSame('failed', $recipe->status);
-        $this->assertStringContainsString('no text saved with it', $recipe->error);
+
+        // Not "there was nothing readable in that" — that told the family only
+        // that it had failed, above a Try again button that could only ever
+        // fail the same way. Naming the site and what to do is the difference
+        // between a dead end and a next step.
+        $this->assertStringContainsString('Instagram', $recipe->error);
+        $this->assertStringContainsString('copy the caption', $recipe->error);
+        $this->assertStringContainsString('under Text', $recipe->error);
+    }
+
+    #[Test]
+    public function a_caption_left_in_the_page_meta_is_read_rather_than_thrown_away(): void
+    {
+        // Instagram serves the caption in og:description even to a logged-out
+        // fetch. The text extractor strips <head> before stripping tags, so
+        // the one readable thing on the page was going in the bin on the way
+        // past — and a perfectly good post failed as unreadable.
+        $caption = 'Miso salmon: 2 fillets, 1 tbsp miso, 1 tbsp honey, 1 tbsp soy. '
+            .'Mix, spread on the salmon, grill for eight minutes. Serve with rice and greens.';
+
+        Http::fake(['*' => Http::response(
+            '<html><head><meta property="og:description" content="'.$caption.'">'
+            .'<title>Someone on Instagram</title></head><body>Log in to see this post.</body></html>'
+        )]);
+        Queue::fake([ImportRecipeJob::class]);
+
+        $recipe = $this->importNow(app(RecipeIntake::class)->fromUrl('https://www.instagram.com/p/abc123/'));
+
+        $this->assertSame('ready', $recipe->status);
+        $this->assertStringContainsString('Miso salmon', $this->reader->sentText());
+    }
+
+    #[Test]
+    public function a_one_line_seo_blurb_is_not_mistaken_for_a_recipe(): void
+    {
+        // Every page has a description; only some of them are worth reading.
+        Http::fake(['*' => Http::response(
+            '<html><head><meta property="og:description" content="Sign up to see photos.">'
+            .'</head><body>Log in.</body></html>'
+        )]);
+        Queue::fake([ImportRecipeJob::class]);
+
+        $recipe = $this->importNow(app(RecipeIntake::class)->fromUrl('https://www.instagram.com/p/abc123/'));
+
+        $this->assertSame('failed', $recipe->status);
+        $this->assertStringContainsString('copy the caption', $recipe->error);
     }
 
     #[Test]

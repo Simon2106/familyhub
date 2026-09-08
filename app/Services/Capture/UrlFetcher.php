@@ -15,7 +15,7 @@ class UrlFetcher
 {
     public const MAX_CHARS = 60_000;
 
-    /** @return array{title: ?string, text: string, image: ?string, recipe: ?array<string, mixed>} */
+    /** @return array{title: ?string, text: string, image: ?string, description: ?string, recipe: ?array<string, mixed>} */
     public function fetch(string $url): array
     {
         if (! preg_match('#^https?://#i', $url)) {
@@ -36,6 +36,11 @@ class UrlFetcher
             'title' => $this->title($html),
             'text' => $this->text($html),
             'image' => $this->image($html, $url),
+            // The one thing a login wall still tells us. Read separately
+            // because text() throws the whole <head> away before stripping
+            // tags — which is where a caption lives, so the only readable
+            // thing on an Instagram page was being discarded on the way past.
+            'description' => $this->description($html),
             // Most recipe sites publish the whole thing as schema.org data for
             // search engines. Reading that beats guessing at the prose.
             'recipe' => $this->structuredRecipe($html),
@@ -64,6 +69,36 @@ class UrlFetcher
                 }
 
                 return preg_match('#^https?://#i', $url) ? mb_substr($url, 0, 2000) : null;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The summary a page publishes for social cards.
+     *
+     * On a recipe site this is a sentence about the dish; on Instagram or
+     * TikTok it is the caption, which is the entire post as far as a
+     * logged-out reader is concerned. Either way it is the difference between
+     * "there was nothing readable in that" and a card.
+     */
+    protected function description(string $html): ?string
+    {
+        $patterns = [
+            '#<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']*)["\']#i',
+            '#<meta[^>]+content=["\']([^"\']*)["\'][^>]+property=["\']og:description["\']#i',
+            '#<meta[^>]+name=["\']twitter:description["\'][^>]+content=["\']([^"\']*)["\']#i',
+            '#<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']*)["\']#i',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $html, $m)) {
+                $text = trim(html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+
+                if ($text !== '') {
+                    return mb_substr($text, 0, 4000);
+                }
             }
         }
 

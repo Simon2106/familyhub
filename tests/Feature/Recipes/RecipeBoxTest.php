@@ -71,6 +71,43 @@ class RecipeBoxTest extends TestCase
         $this->assertDatabaseHas('recipes', ['source_url' => 'https://example.com/curry']);
     }
 
+    #[Test]
+    public function a_failed_card_can_be_discarded_from_the_wall(): void
+    {
+        // Two dead Instagram links were living on the kitchen wall with no way
+        // to clear them: Discard was gated behind editable, which the wall is
+        // not.
+        $dud = $this->recipe(['status' => 'failed', 'error' => 'Instagram only shows this to somebody logged in.']);
+
+        Livewire::test('recipes.box')
+            ->assertSee('Discard')
+            ->call('forget', $dud->id);
+
+        $this->assertDatabaseMissing('recipes', ['id' => $dud->id]);
+    }
+
+    #[Test]
+    public function a_real_recipe_still_cannot_be_removed_from_the_wall(): void
+    {
+        // The wall is a screen the children use; removing a recipe belongs on
+        // a phone.
+        $keeper = $this->recipe(['status' => 'ready', 'title' => 'Fish pie']);
+
+        Livewire::test('recipes.box')->call('forget', $keeper->id);
+
+        $this->assertDatabaseHas('recipes', ['id' => $keeper->id]);
+    }
+
+    #[Test]
+    public function a_real_recipe_can_be_removed_from_a_phone(): void
+    {
+        $keeper = $this->recipe(['status' => 'ready', 'title' => 'Fish pie']);
+
+        Livewire::test('recipes.box', ['editable' => true])->call('forget', $keeper->id);
+
+        $this->assertDatabaseMissing('recipes', ['id' => $keeper->id]);
+    }
+
     protected function recipe(array $attributes = []): Recipe
     {
         return Recipe::factory()->create($attributes + ['household_id' => $this->household->id]);

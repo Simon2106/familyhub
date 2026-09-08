@@ -34,7 +34,13 @@ class RecipeImporter
         [$content, $note, $heroImage] = $this->gather($recipe);
 
         if ($content === []) {
-            throw new RuntimeException('There was nothing readable in that.');
+            // The dead end the family actually hits: a link shared straight
+            // out of Instagram with nothing else. "There was nothing readable
+            // in that" told them only that it had failed, above a Try again
+            // button that could only ever fail the same way.
+            throw new RuntimeException($recipe->source_url
+                ? $this->whatToDoInstead(parse_url($recipe->source_url, PHP_URL_HOST) ?: 'That link')
+                : 'There was nothing readable in that.');
         }
 
         $result = $this->reader->read($content);
@@ -79,6 +85,9 @@ class RecipeImporter
                 $text = trim(implode("\n\n", array_filter([
                     $text,
                     $this->structured($page['recipe'] ?? null),
+                    // On a login-walled page this is the whole post, and it is
+                    // the only thing a logged-out fetch comes back with.
+                    $this->caption($page),
                     $page['text'],
                 ])));
             }
@@ -108,18 +117,43 @@ class RecipeImporter
 
         // Instagram and TikTok answer a logged-out request with a shell of a
         // page. It fetches fine and contains nothing, which is worse than a
-        // failure because it looks like success. A page carrying a schema.org
-        // recipe is never thin, however little prose survived stripping it.
-        if (blank($page['recipe'] ?? null)
-            && mb_strlen(trim($page['text'])) < self::THIN_PAGE_CHARS
-            && $sharedText !== '') {
+        // failure because it looks like success.
+        //
+        // Length alone cannot tell that apart from a short but perfectly good
+        // recipe page — plenty of those come in under four hundred characters
+        // — so the walled sites are named. A page carrying a schema.org recipe
+        // is never empty however little prose survived stripping it, and
+        // neither is one whose caption survived in its meta tags.
+        $walled = $this->loginWalled($recipe->source_url);
+
+        $nothingToRead = blank($page['recipe'] ?? null)
+            && blank($this->caption($page))
+            && ($walled !== null || mb_strlen(trim($page['text'])) < self::THIN_PAGE_CHARS);
+
+        if ($nothingToRead && ($sharedText !== '' || $walled !== null)) {
             return [
-                ['title' => $page['title'], 'text' => '', 'image' => $page['image'], 'recipe' => null],
+                ['title' => $page['title'], 'text' => '', 'image' => $page['image'],
+                    'description' => null, 'recipe' => null],
                 $this->fellBack($recipe, $sharedText, 'needed a login'),
             ];
         }
 
         return [$page, null];
+    }
+
+    /**
+     * A page's own summary, where it is long enough to be worth reading.
+     *
+     * A one-line SEO blurb is not a recipe and would only mislead the model;
+     * an Instagram caption with the method in it very much is.
+     *
+     * @param  array<string, mixed>  $page
+     */
+    protected function caption(array $page): ?string
+    {
+        $description = trim((string) ($page['description'] ?? ''));
+
+        return mb_strlen($description) >= 80 ? $description : null;
     }
 
     /** Says on the card what we were reduced to working from. */
@@ -128,12 +162,60 @@ class RecipeImporter
         $host = parse_url($recipe->source_url, PHP_URL_HOST) ?: 'That link';
 
         if ($sharedText === '') {
-            throw new RuntimeException(
-                "The link to {$host} {$why}, and there was no text saved with it to fall back on."
-            );
+            throw new RuntimeException($this->whatToDoInstead($host, $why));
         }
 
         return ucfirst($host)." {$why}, so this is from the text you shared.";
+    }
+
+    /**
+     * The sites that will never answer a logged-out fetch.
+     *
+     * Named individually because "needs a login" is guessable advice, and
+     * "open the post and copy the caption" is a thing somebody can go and do.
+     */
+    protected function whatToDoInstead(string $host, string $why = 'gave us nothing readable'): string
+    {
+        if ($name = $this->loginWalled($host)) {
+            return "{$name} only shows this to somebody logged in, so the link on its own "
+                .'gives us nothing. Open the post, copy the caption, and add it under Text.';
+        }
+
+        return ucfirst($host)." {$why} and there was no text saved with it. "
+            .'Paste the recipe under Text instead.';
+    }
+
+    /**
+     * The sites that will never answer a logged-out fetch, by name.
+     *
+     * Named individually because "needs a login" is guessable advice and
+     * "open the post and copy the caption" is a thing somebody can go and do —
+     * and because it is the only reliable way to tell a login wall from a
+     * short recipe page.
+     */
+    protected function loginWalled(string $hostOrUrl): ?string
+    {
+        $host = str_contains($hostOrUrl, '://')
+            ? (parse_url($hostOrUrl, PHP_URL_HOST) ?: '')
+            : $hostOrUrl;
+
+        $bare = preg_replace('/^www\./', '', mb_strtolower($host)) ?? $host;
+
+        foreach ([
+            'instagram.com' => 'Instagram',
+            'tiktok.com' => 'TikTok',
+            'facebook.com' => 'Facebook',
+            'fb.watch' => 'Facebook',
+            'x.com' => 'X',
+            'twitter.com' => 'X',
+            'threads.net' => 'Threads',
+        ] as $domain => $name) {
+            if ($bare === $domain || str_ends_with($bare, '.'.$domain)) {
+                return $name;
+            }
+        }
+
+        return null;
     }
 
     /**

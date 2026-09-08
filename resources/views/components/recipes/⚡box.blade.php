@@ -222,11 +222,18 @@ new class extends Component
 
     public function forget(int $id): void
     {
-        if (! $this->editable) {
+        $recipe = $this->find($id);
+
+        // A card that never became a recipe is junk, and junk on a wall wants
+        // clearing from the wall — the family should not have to fetch a phone
+        // to get rid of "there was nothing readable in that". Removing a real
+        // recipe still belongs on the phone: the wall is a screen the children
+        // use.
+        if (! $this->editable && $recipe->isReady()) {
             return;
         }
 
-        $this->find($id)->delete();
+        $recipe->delete();
 
         $this->openRecipeId = null;
         unset($this->recipes, $this->tags);
@@ -336,10 +343,13 @@ new class extends Component
                                         class="touch-target rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white dark:bg-white dark:text-slate-900">
                                     Try again
                                 </button>
-                                @if ($editable)
-                                    <button type="button" wire:click="forget({{ $recipe->id }})"
-                                            class="touch-target rounded-xl px-3 text-sm font-semibold text-slate-500">Discard</button>
-                                @endif
+                                {{-- On the wall too: a card that failed is not
+                                     a recipe, and leaving it there with no way
+                                     to clear it is how two dead Instagram
+                                     links end up living on the kitchen wall. --}}
+                                <button type="button" wire:click="forget({{ $recipe->id }})"
+                                        wire:confirm="Discard this one?"
+                                        class="touch-target rounded-xl px-3 text-sm font-semibold text-slate-500">Discard</button>
                             </div>
                         @else
                             @if ($recipe->summary())

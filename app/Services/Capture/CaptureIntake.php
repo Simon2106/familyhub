@@ -60,7 +60,14 @@ class CaptureIntake
             'household' => $household ?? Household::current(),
             'subject' => $page['title'] ?? $url,
             'sender' => parse_url($url, PHP_URL_HOST) ?: null,
-            'body_text' => trim(($page['text'] ?? '')."\n\nSource: ".$url),
+            // The description as well as the prose: on a login-walled page it
+            // is the only readable thing there is, and without it a shared
+            // Instagram link reaches the review inbox as "Log in to see this
+            // post".
+            'body_text' => trim(implode("\n\n", array_filter([
+                $page['description'] ?? null,
+                $page['text'] ?? null,
+            ]))."\n\nSource: ".$url),
             'raw_payload' => $url,
         ], dispatch: $dispatch);
     }
