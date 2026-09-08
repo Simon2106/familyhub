@@ -10,7 +10,7 @@ class SchoolClosure
     public function __construct(
         public readonly string $code,
         public readonly string $label,
-        /** holiday | inset */
+        /** holiday | inset | bank */
         public readonly string $kind,
         public readonly CarbonImmutable $startsOn,
         public readonly CarbonImmutable $endsOn,
@@ -28,9 +28,27 @@ class SchoolClosure
         return $this->kind === 'inset';
     }
 
-    /** An INSET day earns more attention than the third week of August. */
+    public function isBankHoliday(): bool
+    {
+        return $this->kind === 'bank';
+    }
+
+    /**
+     * An INSET day earns more attention than the third week of August, and a
+     * bank holiday in the middle of term is its own kind of surprise.
+     */
     public function colour(): string
     {
-        return $this->isInset() ? '#c026d3' : '#0d9488';
+        return match ($this->kind) {
+            'inset' => '#c026d3',
+            'bank' => '#dc2626',
+            default => '#0d9488',
+        };
+    }
+
+    /** Bank holidays close every school, so naming one would be misleading. */
+    public function badge(): string
+    {
+        return $this->isBankHoliday() ? $this->label : trim($this->code.' '.$this->label);
     }
 }

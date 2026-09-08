@@ -3,6 +3,7 @@
 namespace App\Services\Schools;
 
 use App\Exceptions\IcalException;
+use App\Models\BankHoliday;
 use App\Models\Household;
 use App\Models\Place;
 use App\Models\SchoolDate;
@@ -32,15 +33,52 @@ class SchoolCalendar
     {
         $closures = collect();
 
-        foreach ($this->schools($household) as $place) {
+        $schools = $this->schools($household);
+
+        foreach ($schools as $place) {
             $closures = $closures->merge($this->forPlace($place, $from, $to));
         }
 
         return $closures
+            ->merge($this->bankHolidays($schools, $from, $to))
             ->sortBy([
                 fn (SchoolClosure $c) => $c->startsOn->toDateString(),
                 fn (SchoolClosure $c) => $c->code,
             ])
+            ->values();
+    }
+
+    /**
+     * Bank holidays that fall inside somebody's term.
+     *
+     * One band, not one per school: they close all of them, and stamping four
+     * school codes on Easter Monday says nothing anybody needed to know. A
+     * bank holiday already inside a holiday is not news either.
+     *
+     * @param  Collection<int, Place>  $schools
+     * @return Collection<int, SchoolClosure>
+     */
+    protected function bankHolidays(Collection $schools, CarbonImmutable $from, CarbonImmutable $to): Collection
+    {
+        if ($schools->isEmpty()) {
+            return collect();
+        }
+
+        $terms = $schools->flatMap(fn (Place $place) => $place->schoolDates->where('kind', 'term'));
+
+        return BankHoliday::between($from->toDateString(), $to->toDateString())
+            ->get()
+            ->filter(fn (BankHoliday $holiday) => $terms->contains(
+                fn (SchoolDate $term) => $holiday->on->toDateString() >= $term->starts_on->toDateString()
+                    && $holiday->on->toDateString() <= $term->ends_on->toDateString()
+            ))
+            ->map(fn (BankHoliday $holiday) => new SchoolClosure(
+                code: '',
+                label: $holiday->title,
+                kind: 'bank',
+                startsOn: $holiday->on,
+                endsOn: $holiday->on,
+            ))
             ->values();
     }
 
@@ -97,7 +135,7 @@ class SchoolCalendar
     /**
      * What is happening at each school in the next few days.
      *
-     * @return Collection<int, array{code: string, label: string, on: CarbonImmutable}>
+     * @return Collection<int, array{code: string, label: string, on: CarbonImmutable, finishes: ?string}>
      */
     public function turningPoints(Household $household, CarbonImmutable $today, int $withinDays = 3): Collection
     {
@@ -105,13 +143,38 @@ class SchoolCalendar
         $points = collect();
 
         foreach ($this->schools($household) as $place) {
-            foreach ($place->schoolDates()->terms()->get() as $term) {
-                if ($this->between($term->ends_on, $today, $horizon)) {
-                    $points->push(['code' => $place->code(), 'label' => 'Last day of term', 'on' => $term->ends_on]);
+            foreach ($place->schoolDates as $date) {
+                if ($date->kind === 'term') {
+                    if ($this->between($date->ends_on, $today, $horizon)) {
+                        $points->push([
+                            'code' => $place->code(),
+                            'label' => 'Last day of term',
+                            'on' => $date->ends_on,
+                            // The half day nobody remembers until they are
+                            // still at work at one o'clock.
+                            'finishes' => $date->finishTime(),
+                        ]);
+                    }
+
+                    if ($this->between($date->starts_on, $today, $horizon)) {
+                        $points->push([
+                            'code' => $place->code(),
+                            'label' => 'Back to school',
+                            'on' => $date->starts_on,
+                            'finishes' => null,
+                        ]);
+                    }
+
+                    continue;
                 }
 
-                if ($this->between($term->starts_on, $today, $horizon)) {
-                    $points->push(['code' => $place->code(), 'label' => 'Back to school', 'on' => $term->starts_on]);
+                if ($date->kind === 'early' && $this->between($date->starts_on, $today, $horizon)) {
+                    $points->push([
+                        'code' => $place->code(),
+                        'label' => $date->name ?: 'Early finish',
+                        'on' => $date->starts_on,
+                        'finishes' => $date->finishTime(),
+                    ]);
                 }
             }
         }

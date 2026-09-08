@@ -29,3 +29,9 @@ Schedule::command('familyhub:prune-done')
 Schedule::command('familyhub:sync-bins')
     ->dailyAt('04:20')
     ->withoutOverlapping();
+
+// Bank holidays change when a jubilee is announced, so monthly is plenty.
+// Falls back to the rules when GOV.UK cannot be reached.
+Schedule::command('familyhub:sync-bank-holidays')
+    ->monthlyOn(1, '04:40')
+    ->withoutOverlapping();

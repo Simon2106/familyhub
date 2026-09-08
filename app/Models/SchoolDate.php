@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Casts\CalendarDate;
+use Carbon\CarbonImmutable;
 use Database\Factories\SchoolDateFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /** One term, one INSET day, or one named closure. */
-#[Fillable(['place_id', 'kind', 'name', 'starts_on', 'ends_on', 'source'])]
+#[Fillable(['place_id', 'kind', 'name', 'starts_on', 'ends_on', 'finishes_at', 'source'])]
 class SchoolDate extends Model
 {
     /** @use HasFactory<SchoolDateFactory> */
@@ -34,6 +35,18 @@ class SchoolDate extends Model
     public function isTerm(): bool
     {
         return $this->kind === 'term';
+    }
+
+    /** "1:30pm", the way it would be said rather than written. */
+    public function finishTime(): ?string
+    {
+        if (blank($this->finishes_at)) {
+            return null;
+        }
+
+        $time = CarbonImmutable::parse((string) $this->finishes_at);
+
+        return mb_strtolower($time->format($time->minute === 0 ? 'ga' : 'g:ia'));
     }
 
     public function days(): int

@@ -37,6 +37,19 @@ new #[Layout('layouts::app')] class extends Component
     /** INSET days, typed as a list because that is how a PDF lists them. */
     public string $insetDates = '';
 
+    /** The half day at the end of term, if there is one. */
+    public string $termFinishesAt = '';
+
+    /** A one-off early finish: sports day, a strike, the last Friday. */
+    public string $earlyDate = '';
+
+    public string $earlyTime = '';
+
+    public string $earlyName = '';
+
+    /** The school to copy dates from. */
+    public string $copyFrom = '';
+
     public string $name = '';
 
     public string $type = 'school';
@@ -96,7 +109,8 @@ new #[Layout('layouts::app')] class extends Component
     {
         $this->termsFor = $this->termsFor === $placeId ? null : $placeId;
         $this->termError = null;
-        $this->reset(['termName', 'termStart', 'termEnd', 'insetDates']);
+        $this->reset(['termName', 'termStart', 'termEnd', 'insetDates', 'termFinishesAt',
+            'earlyDate', 'earlyTime', 'earlyName', 'copyFrom']);
 
         // The next term nobody has entered yet, guessed from what is there.
         $this->termName = $this->suggestedTermName();
@@ -144,6 +158,7 @@ new #[Layout('layouts::app')] class extends Component
             'termName' => 'required|string|max:60',
             'termStart' => 'required|date_format:Y-m-d',
             'termEnd' => 'required|date_format:Y-m-d|after_or_equal:termStart',
+            'termFinishesAt' => 'nullable|date_format:H:i',
         ], ['termEnd.after_or_equal' => 'A term cannot end before it starts.']);
 
         $this->findPlace((int) $this->termsFor)->schoolDates()->create([
@@ -151,11 +166,12 @@ new #[Layout('layouts::app')] class extends Component
             'name' => trim($this->termName),
             'starts_on' => $this->termStart,
             'ends_on' => $this->termEnd,
+            'finishes_at' => $this->termFinishesAt ?: null,
             'source' => 'manual',
         ]);
 
         // Carry the year forward: a PDF is read top to bottom.
-        $this->reset(['termStart', 'termEnd']);
+        $this->reset(['termStart', 'termEnd', 'termFinishesAt']);
         unset($this->terms, $this->derivedClosures);
 
         $this->termName = $this->suggestedTermName();
@@ -204,6 +220,80 @@ new #[Layout('layouts::app')] class extends Component
         if ($bad !== []) {
             $this->termError = 'Could not read: '.implode(', ', $bad);
         }
+    }
+
+    /** A one-off early finish inside a term — sports day, the last Friday. */
+    public function addEarlyFinish(): void
+    {
+        $this->termError = null;
+
+        $this->validate([
+            'earlyDate' => 'required|date_format:Y-m-d',
+            'earlyTime' => 'required|date_format:H:i',
+            'earlyName' => 'nullable|string|max:60',
+        ]);
+
+        $this->findPlace((int) $this->termsFor)->schoolDates()->create([
+            'kind' => 'early',
+            'name' => trim($this->earlyName) ?: 'Early finish',
+            'starts_on' => $this->earlyDate,
+            'ends_on' => $this->earlyDate,
+            'finishes_at' => $this->earlyTime,
+            'source' => 'manual',
+        ]);
+
+        $this->reset(['earlyDate', 'earlyTime', 'earlyName']);
+        unset($this->terms, $this->derivedClosures);
+    }
+
+    /** @return \Illuminate\Support\Collection<int, Place> */
+    #[Computed]
+    public function otherSchools(): \Illuminate\Support\Collection
+    {
+        return Household::current()->places()
+            ->where('type', 'school')
+            ->when($this->termsFor, fn ($q) => $q->whereKeyNot($this->termsFor))
+            ->whereHas('schoolDates')
+            ->get();
+    }
+
+    /**
+     * Take another school's dates wholesale.
+     *
+     * Two children at two schools on the same county timetable should not mean
+     * typing the same eight dates twice. Replaces what was typed in here, and
+     * says so before doing it.
+     */
+    public function copyTermDates(): void
+    {
+        $this->termError = null;
+
+        $source = $this->otherSchools->firstWhere('id', (int) $this->copyFrom);
+
+        if (! $source) {
+            $this->termError = 'Choose a school to copy from.';
+
+            return;
+        }
+
+        $target = $this->findPlace((int) $this->termsFor);
+        $target->schoolDates()->where('source', 'manual')->delete();
+
+        foreach ($source->schoolDates()->get() as $date) {
+            $target->schoolDates()->create([
+                'kind' => $date->kind,
+                'name' => $date->name,
+                'starts_on' => $date->starts_on->toDateString(),
+                'ends_on' => $date->ends_on->toDateString(),
+                'finishes_at' => $date->finishes_at,
+                'source' => 'manual',
+            ]);
+        }
+
+        $this->reset(['copyFrom']);
+        unset($this->terms, $this->derivedClosures);
+
+        $this->dispatch('saved', message: "Copied {$source->name}'s dates.");
     }
 
     public function deleteSchoolDate(int $id): void
@@ -395,7 +485,7 @@ new #[Layout('layouts::app')] class extends Component
                                         <span class="min-w-0 flex-1 truncate text-sm">
                                             <span class="font-medium">{{ $term->name }}</span>
                                             <span class="text-slate-500 dark:text-slate-400">
-                                                {{ $term->starts_on->format('j M Y') }} – {{ $term->ends_on->format('j M Y') }}
+                                                {{ $term->starts_on->format('j M Y') }} – {{ $term->ends_on->format('j M Y') }}@if ($term->finishTime()) · finishes {{ $term->finishTime() }}@endif
                                             </span>
                                         </span>
                                         <button type="button" wire:click="deleteSchoolDate({{ $term->id }})"
@@ -419,6 +509,11 @@ new #[Layout('layouts::app')] class extends Component
                             <label>
                                 <span class="block text-xs font-medium text-slate-500 dark:text-slate-400">Last day</span>
                                 <input wire:model="termEnd" type="date"
+                                       class="touch-target mt-1 rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                            </label>
+                            <label>
+                                <span class="block text-xs font-medium text-slate-500 dark:text-slate-400">Finishes at</span>
+                                <input wire:model="termFinishesAt" type="time"
                                        class="touch-target mt-1 rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
                             </label>
                             <button type="submit" class="touch-target shrink-0 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white">Add</button>
@@ -450,6 +545,63 @@ new #[Layout('layouts::app')] class extends Component
                                     </li>
                                 @endforeach
                             </ul>
+                        @endif
+
+                        {{-- One-off early finishes: sports day, the last
+                             Friday, the afternoon nobody remembers. --}}
+                        <form wire:submit="addEarlyFinish" class="mt-3 flex flex-wrap items-end gap-2">
+                            <label class="min-w-0 flex-1">
+                                <span class="block text-xs font-medium text-slate-500 dark:text-slate-400">Early finish</span>
+                                <input wire:model="earlyName" type="text" placeholder="Sports day"
+                                       class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                            </label>
+                            <label>
+                                <span class="block text-xs font-medium text-slate-500 dark:text-slate-400">On</span>
+                                <input wire:model="earlyDate" type="date"
+                                       class="touch-target mt-1 rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                            </label>
+                            <label>
+                                <span class="block text-xs font-medium text-slate-500 dark:text-slate-400">Finishes</span>
+                                <input wire:model="earlyTime" type="time"
+                                       class="touch-target mt-1 rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                            </label>
+                            <button type="submit" class="touch-target shrink-0 rounded-xl bg-slate-100 px-4 text-sm font-semibold dark:bg-slate-800">Add</button>
+                        </form>
+                        @error('earlyDate') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                        @error('earlyTime') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+
+                        @if ($this->terms->where('kind', 'early')->isNotEmpty())
+                            <ul class="mt-2 flex flex-wrap gap-1.5">
+                                @foreach ($this->terms->where('kind', 'early') as $early)
+                                    <li wire:key="early-{{ $early->id }}">
+                                        <button type="button" wire:click="deleteSchoolDate({{ $early->id }})"
+                                                class="flex items-center gap-1.5 rounded-full bg-amber-50 py-1 pr-2 pl-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                                            {{ $early->name }} · {{ $early->starts_on->format('j M') }} · {{ $early->finishTime() }}
+                                            <span class="opacity-50" aria-hidden="true">×</span>
+                                        </button>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        @endif
+
+                        {{-- Two children on the same county timetable should
+                             not mean typing the same eight dates twice. --}}
+                        @if ($this->otherSchools->isNotEmpty())
+                            <div class="mt-3 flex flex-wrap items-end gap-2">
+                                <label class="min-w-0 flex-1">
+                                    <span class="block text-xs font-medium text-slate-500 dark:text-slate-400">Copy term dates from</span>
+                                    <select wire:model="copyFrom"
+                                            class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                                        <option value="">Choose a school…</option>
+                                        @foreach ($this->otherSchools as $other)
+                                            <option value="{{ $other->id }}">{{ $other->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </label>
+                                <button type="button" wire:click="copyTermDates"
+                                        wire:confirm="Replace this school's dates with the other school's?"
+                                        class="touch-target shrink-0 rounded-xl bg-slate-100 px-4 text-sm font-semibold dark:bg-slate-800">Copy</button>
+                            </div>
                         @endif
 
                         {{-- What the wall will actually show, so a typo is

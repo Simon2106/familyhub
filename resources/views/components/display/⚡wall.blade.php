@@ -552,6 +552,13 @@ new #[Layout('layouts::display')] class extends Component
                 <div class="hidden min-w-0 items-baseline gap-2 rounded-xl px-3 py-1 sm:flex" wire:key="turn-{{ $point['code'] }}-{{ $point['on']->toDateString() }}">
                     <span class="rounded-md px-1.5 text-sm font-bold text-white" style="background-color: #0d9488;">{{ $point['code'] }}</span>
                     <span class="truncate text-lg font-semibold">{{ $point['label'] }}</span>
+                    @if ($point['finishes'])
+                        {{-- The half day nobody remembers until they are still
+                             at work at one o'clock. --}}
+                        <span class="shrink-0 text-lg font-bold text-amber-600 dark:text-amber-400">
+                            finishes {{ $point['finishes'] }}
+                        </span>
+                    @endif
                     <span class="text-sm text-slate-500 dark:text-slate-400">
                         {{ $point['on']->isSameDay($this->today) ? 'today' : ($point['on']->isSameDay($this->today->addDay()) ? 'tomorrow' : $point['on']->format('D')) }}
                     </span>
@@ -752,7 +759,7 @@ new #[Layout('layouts::display')] class extends Component
                                     @foreach ($this->schoolClosures[$day['date']] ?? [] as $closure)
                                         <span class="shrink-0 rounded px-1.5 text-xs font-bold text-white"
                                               style="background-color: {{ $closure->colour() }};">
-                                            {{ $closure->code }} {{ $closure->label }}
+                                            {{ $closure->badge() }}
                                         </span>
                                     @endforeach
 
@@ -1036,8 +1043,8 @@ new #[Layout('layouts::display')] class extends Component
                                 @foreach ($this->schoolClosures[$day['date']] ?? [] as $closure)
                                     <span class="mt-0.5 rounded px-1 text-[0.6rem] font-bold text-white"
                                           style="background-color: {{ $closure->colour() }};"
-                                          title="{{ $closure->code }} · {{ $closure->label }}">
-                                        {{ $closure->code }}{{ $closure->isInset() ? ' INSET' : '' }}
+                                          title="{{ $closure->badge() }}">
+                                        {{ $closure->isBankHoliday() ? 'BH' : $closure->code.($closure->isInset() ? ' INSET' : '') }}
                                     </span>
                                 @endforeach
                             </button>
