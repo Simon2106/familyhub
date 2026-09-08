@@ -24,6 +24,12 @@ new #[Layout('layouts::app')] class extends Component
     /** @var list<string> */
     public array $mealSlots = ['dinner'];
 
+    public bool $screenOffEnabled = false;
+
+    public string $screenOffStart = '23:00';
+
+    public string $screenOffEnd = '06:30';
+
     public string $mirrorCalendarId = '';
 
     /** Member being edited, or null when the form is closed. */
@@ -53,6 +59,11 @@ new #[Layout('layouts::app')] class extends Component
         $this->mirrorDeadlines = (bool) ($household->settings['mirror_deadline_tasks'] ?? false);
         $this->mirrorCalendarId = (string) ($household->settings['mirror_calendar_id'] ?? '');
         $this->mealSlots = $household->mealSlots();
+
+        $screenOff = $household->screenOff();
+        $this->screenOffEnabled = $screenOff['enabled'];
+        $this->screenOffStart = $screenOff['start'];
+        $this->screenOffEnd = $screenOff['end'];
     }
 
     #[Computed]
@@ -130,6 +141,8 @@ new #[Layout('layouts::app')] class extends Component
             'householdName' => 'required|string|max:120',
             'doneRetentionDays' => 'required|integer|min:1|max:3650',
             'todoLeadDays' => 'required|integer|min:0|max:365',
+            'screenOffStart' => 'required|date_format:H:i',
+            'screenOffEnd' => 'required|date_format:H:i',
             'mirrorCalendarId' => 'nullable|integer',
         ]);
 
@@ -143,6 +156,7 @@ new #[Layout('layouts::app')] class extends Component
             $this->mirrorCalendarId !== '' ? (int) $this->mirrorCalendarId : null,
         );
         $household->setMealSlots($this->mealSlots);
+        $household->setScreenOff($this->screenOffEnabled, $this->screenOffStart, $this->screenOffEnd);
 
         $this->dispatch('saved', message: 'Household saved.');
     }
@@ -574,6 +588,39 @@ new #[Layout('layouts::app')] class extends Component
                     <dd>{{ config('familyhub.screensaver.idle_minutes') ?: 'never' }} @if (config('familyhub.screensaver.idle_minutes')) min @endif</dd>
                 </div>
             </dl>
+            {{-- The kiosk monitor cannot be power-cycled remotely, so "off"
+                 has to be something the page does. --}}
+            <label class="mt-4 flex touch-target items-center justify-between gap-3">
+                <span class="min-w-0">
+                    <span class="block text-sm font-medium">Turn the screen off overnight</span>
+                    <span class="block text-sm text-slate-500 dark:text-slate-400">
+                        Goes fully black on a schedule and wakes on a touch, settling back down
+                        two minutes later. A touch that wakes it does nothing else.
+                    </span>
+                </span>
+                <input wire:model.live="screenOffEnabled" type="checkbox" class="size-6 shrink-0 rounded">
+            </label>
+
+            @if ($screenOffEnabled)
+                <div class="mt-2 flex gap-2">
+                    <label class="min-w-0 flex-1">
+                        <span class="block text-sm font-medium">Off from</span>
+                        <input wire:model="screenOffStart" type="time"
+                               class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                    </label>
+                    <label class="min-w-0 flex-1">
+                        <span class="block text-sm font-medium">until</span>
+                        <input wire:model="screenOffEnd" type="time"
+                               class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                    </label>
+                </div>
+                @error('screenOffStart') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                @error('screenOffEnd') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Read in {{ Household::current()->displayTimezone() }}, not the wall's own clock.
+                </p>
+            @endif
+
             <a href="{{ route('display') }}" wire:navigate class="mt-3 inline-flex touch-target items-center font-semibold text-blue-600 dark:text-blue-400">
                 Preview the wall display
             </a>

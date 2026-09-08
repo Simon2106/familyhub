@@ -99,6 +99,61 @@ conventions. The points most easily got wrong:
   is absent from the instance, which is the state of a row created without that
   column, so it hides from the obvious tests. `ModelNamingTest` checks every
   model by reflection.
+## Wall kiosk
+
+The wall display runs on a Raspberry Pi 5 (Bookworm, Wayland) driving a 15.6"
+4K touchscreen through Chromium in kiosk mode.
+
+**URL.** `https://hub.thewills.uk/display?token=<display token>` — get the token
+with `php artisan familyhub:display-token`. The token stays in the URL on
+purpose (see `EnsureDisplayToken`); the middleware sets a year-long cookie and
+renders in the same response, so the kiosk survives a cookie wipe by reloading
+its own start URL.
+
+**Chromium flags the app is built around:**
+
+```sh
+chromium-browser \
+  --kiosk \
+  --force-device-scale-factor=2 \
+  --noerrdialogs --disable-infobars --disable-session-crashed-bubble \
+  --check-for-update-interval=31536000 \
+  --app="https://hub.thewills.uk/display?token=<token>"
+```
+
+`--force-device-scale-factor=2` is the load-bearing one: it turns the 3840×2160
+panel into **1920×1080 CSS pixels**, which is the only size the display layout
+is designed and tested against. Change it and the layout is untested.
+
+**What the app assumes about the environment:**
+
+- **1920×1080 CSS px, landscape.** Every tab fits without scrolling at exactly
+  that size; there is a Playwright check for it. Nothing is designed to scroll
+  the page itself — panes scroll internally.
+- **Touch only, no cursor, no hover.** There are no hover-only affordances and
+  there must not be: on this screen they are invisible. `[data-kiosk]` sets
+  `cursor: none`, kills text selection outside inputs, and suppresses the
+  long-press context menu — a menu nobody can dismiss without a keyboard.
+- **No keyboard.** Anything that needs typing has to work with the on-screen
+  keyboard, which is why every dialog is `<x-modal>` (visual-viewport aware).
+- **The panel may only run at 4K30.** No behaviour may depend on a frame rate
+  or on an animation completing: every animation here is decorative, and state
+  changes land immediately regardless.
+- **The monitor cannot be power-cycled remotely.** "Screen off" is therefore a
+  full-black in-page layer (`.screen-off`), scheduled in /admin, evaluated in
+  the household's timezone rather than the Pi's clock, waking on touch and
+  settling back after two minutes. The tap that wakes it is swallowed. It is
+  deliberately plain DOM and runs even if Livewire never boots — a wall that
+  stays lit all night because a websocket failed is a wall somebody unplugs.
+- **Self-update is polling, not push.** `resources/js/updater.js` fetches
+  `/version` every minute and hard-reloads once the screen has been idle for
+  30 seconds; there is a daily reload at 03:45 as a backstop. It needs no
+  service worker and works the same in Chromium as in an iOS PWA. The service
+  worker is an optional extra trigger, never the mechanism.
+- **iPad PWA support is still live** and must stay: the same `/display` URL,
+  the same layout, a different manifest. Do not tie kiosk behaviour to user
+  agent — it keys on `data-kiosk`, which the display layout always sets.
+
 - **`familyhub:ha-listen` runs as a Forge daemon.** Exact settings, for
   copying into Forge → Server → Daemons:
 

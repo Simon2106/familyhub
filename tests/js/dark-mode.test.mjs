@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isDarkNow, minutesOfDay } from '../../resources/js/dark-mode.js';
+import { isWithinWindow, minutesInZone, isDarkNow, minutesOfDay } from '../../resources/js/dark-mode.js';
 
 const at = (h, m = 0) => new Date(2026, 8, 6, h, m);
 
@@ -44,4 +44,38 @@ test('minutesOfDay converts correctly', () => {
     assert.equal(minutesOfDay('00:00'), 0);
     assert.equal(minutesOfDay('06:30'), 390);
     assert.equal(minutesOfDay('21:00'), 1260);
+});
+
+test('the time of day is read from the named zone, not the machine', () => {
+    // 22:30 UTC is 23:30 in London during British Summer Time.
+    const summerEvening = new Date('2026-07-01T22:30:00Z');
+
+    assert.equal(minutesInZone('Europe/London', summerEvening), 23 * 60 + 30);
+    assert.equal(minutesInZone('UTC', summerEvening), 22 * 60 + 30);
+});
+
+test('a nonsense zone falls back to the machine rather than throwing', () => {
+    const at = new Date('2026-07-01T22:30:00Z');
+
+    assert.equal(minutesInZone('Not/AZone', at), at.getHours() * 60 + at.getMinutes());
+    assert.equal(minutesInZone(null, at), at.getHours() * 60 + at.getMinutes());
+});
+
+test('the overnight screen-off window is evaluated in the household zone', () => {
+    // 22:15 UTC on a summer night is 23:15 in London — inside 23:00-06:30.
+    const inside = new Date('2026-07-01T22:15:00Z');
+    assert.equal(isWithinWindow('23:00', '06:30', inside, 'Europe/London'), true);
+
+    // The same instant is 22:15 UTC, which is outside it.
+    assert.equal(isWithinWindow('23:00', '06:30', inside, 'UTC'), false);
+});
+
+test('a wall whose clock is wrong still wakes in the morning', () => {
+    const morning = new Date('2026-01-15T06:31:00Z');
+
+    assert.equal(isWithinWindow('23:00', '06:30', morning, 'Europe/London'), false);
+});
+
+test('a zero-length window never blacks the screen', () => {
+    assert.equal(isWithinWindow('23:00', '23:00', new Date(), 'Europe/London'), false);
 });

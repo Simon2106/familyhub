@@ -7,6 +7,13 @@
     lang="{{ str_replace('_', '-', app()->getLocale()) }}"
     data-dark-start="{{ config('familyhub.dark_mode.start') }}"
     data-dark-end="{{ config('familyhub.dark_mode.end') }}"
+    @php $screenOff = \App\Models\Household::current()->screenOff(); @endphp
+    @if ($screenOff['enabled'])
+        data-screen-off-start="{{ $screenOff['start'] }}"
+        data-screen-off-end="{{ $screenOff['end'] }}"
+    @endif
+    data-timezone="{{ \App\Models\Household::current()->displayTimezone() }}"
+    data-kiosk
 >
     <head>
         @include('partials.head', [

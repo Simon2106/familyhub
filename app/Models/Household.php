@@ -204,6 +204,44 @@ class Household extends Model
         ]);
     }
 
+    /**
+     * When the wall goes black overnight.
+     *
+     * The kiosk monitor cannot be power-cycled remotely, so "off" is a state
+     * of the page rather than of the screen. Off by default: a household that
+     * has not asked for it should not find its wall dark one evening.
+     *
+     * @return array{enabled: bool, start: string, end: string}
+     */
+    public function screenOff(): array
+    {
+        return [
+            'enabled' => (bool) ($this->settings['screen_off_enabled'] ?? false),
+            'start' => $this->timeSetting('screen_off_start', '23:00'),
+            'end' => $this->timeSetting('screen_off_end', '06:30'),
+        ];
+    }
+
+    public function setScreenOff(bool $enabled, string $start, string $end): void
+    {
+        $this->putSettings([
+            'screen_off_enabled' => $enabled,
+            'screen_off_start' => $this->cleanTime($start, '23:00'),
+            'screen_off_end' => $this->cleanTime($end, '06:30'),
+        ]);
+    }
+
+    protected function timeSetting(string $key, string $fallback): string
+    {
+        return $this->cleanTime((string) ($this->settings[$key] ?? ''), $fallback);
+    }
+
+    /** A malformed time must never black out the wall, so it falls back. */
+    protected function cleanTime(string $value, string $fallback): string
+    {
+        return preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', trim($value)) ? trim($value) : $fallback;
+    }
+
     /** @param array<string, mixed> $values */
     protected function putSettings(array $values): void
     {

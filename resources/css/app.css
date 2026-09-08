@@ -44,6 +44,53 @@
 @layer components {
     /* Full-viewport shell that does not rubber-band. Uses dvh so the iPad's
        collapsing Safari chrome cannot leave a gap at the bottom. */
+    /*
+     * The wall, on a Pi in kiosk mode.
+     *
+     * Touch only: no cursor to show, no text anybody wants to select, and a
+     * long press must not raise a context menu over a screen with no keyboard
+     * to dismiss it. Scoped to the display so the phone and the iPad keep
+     * behaving like normal web pages.
+     */
+    [data-kiosk] {
+        cursor: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Except where somebody is genuinely typing. */
+    [data-kiosk] input,
+    [data-kiosk] textarea,
+    [data-kiosk] [contenteditable] {
+        -webkit-user-select: text;
+        user-select: text;
+        cursor: auto;
+    }
+
+    /*
+     * Overnight. Opaque black over everything, including the modals, because
+     * the monitor cannot be switched off from here and a dialog left open at
+     * bedtime should not glow all night.
+     *
+     * The fade is short and cheap: this panel may be driven at 30Hz.
+     */
+    .screen-off {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483000;
+        background: #000;
+        opacity: 1;
+        transition: opacity 400ms linear;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .screen-off {
+            transition: none;
+        }
+    }
+
     .app-shell {
         height: 100dvh;
         overflow: hidden;

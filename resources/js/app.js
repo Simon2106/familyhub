@@ -9,6 +9,7 @@
 import { isDarkNow } from './dark-mode';
 import { createDragBoard } from './dragboard';
 import { startEcho, watchConnection } from './echo';
+import { createScreenOff } from './screen-off';
 import { createUpdater } from './updater';
 
 /* -------------------------------------------------------------------------
@@ -203,6 +204,91 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 });
+
+/* -------------------------------------------------------------------------
+ * Kiosk hardening
+ *
+ * The wall is a Pi running Chromium with no keyboard and no cursor. A long
+ * press raising a context menu, or a drag selecting a paragraph of blue text,
+ * leaves the screen in a state nobody standing in a kitchen can get out of.
+ * ---------------------------------------------------------------------- */
+
+if (document.documentElement.hasAttribute('data-kiosk')) {
+    document.addEventListener('contextmenu', (event) => event.preventDefault());
+
+    document.addEventListener('selectstart', (event) => {
+        if (!event.target.closest?.('input, textarea, [contenteditable]')) {
+            event.preventDefault();
+        }
+    });
+
+    // Chromium fires this for a two-finger pinch on a touchscreen; the layout
+    // is fixed at 1920x1080 and zooming only breaks it.
+    document.addEventListener('gesturestart', (event) => event.preventDefault());
+}
+
+/* -------------------------------------------------------------------------
+ * Overnight screen off
+ *
+ * The kiosk monitor cannot be power-cycled remotely, so "off" is a full-black
+ * layer over the page, woken by a touch and settling back down on its own.
+ *
+ * Plain and framework-free on purpose: this has to keep working when the
+ * network is down and Livewire never booted. A wall that stays lit all night
+ * because a websocket failed is a wall somebody unplugs.
+ * ---------------------------------------------------------------------- */
+
+const kioskRoot = document.documentElement;
+
+if (kioskRoot.dataset.screenOffStart && kioskRoot.dataset.screenOffEnd) {
+    const blackout = document.createElement('div');
+    blackout.className = 'screen-off';
+    blackout.setAttribute('aria-hidden', 'true');
+    blackout.hidden = true;
+
+    const screen = createScreenOff({
+        start: kioskRoot.dataset.screenOffStart,
+        end: kioskRoot.dataset.screenOffEnd,
+        timeZone: kioskRoot.dataset.timezone || undefined,
+        onChange: (asleep) => {
+            if (asleep) {
+                blackout.hidden = false;
+                // Painted before fading in, or the first frame is a flash.
+                requestAnimationFrame(() => (blackout.style.opacity = '1'));
+            } else {
+                blackout.style.opacity = '0';
+                setTimeout(() => (blackout.hidden = true), 400);
+            }
+        },
+    });
+
+    document.addEventListener('DOMContentLoaded', () => document.body.append(blackout));
+
+    // Capture, so the tap that wakes the wall is swallowed rather than also
+    // ticking off whatever chore happened to be underneath it.
+    for (const type of ['pointerdown', 'touchstart', 'keydown']) {
+        window.addEventListener(
+            type,
+            (event) => {
+                if (screen.touch()) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+            },
+            { capture: true, passive: false },
+        );
+    }
+
+    screen.evaluate();
+    setInterval(() => screen.evaluate(), 15000);
+
+    // Coming back from a backgrounded tab, or a clock that jumped.
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) screen.evaluate();
+    });
+
+    window.familyhubScreen = screen;
+}
 
 /* -------------------------------------------------------------------------
  * Realtime, if it is switched on
