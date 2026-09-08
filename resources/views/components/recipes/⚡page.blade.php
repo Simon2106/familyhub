@@ -4,7 +4,16 @@ use Livewire\Attributes\Layout;
 use Livewire\Component;
 
 /** The recipe box on a phone, where saving and editing actually happen. */
-new #[Layout('layouts::app')] class extends Component {}; ?>
+new #[Layout('layouts::app')] class extends Component
+{
+    /** Opened straight from a search result or a link. */
+    public function mount(): void
+    {
+        if ($id = request()->integer('recipe')) {
+            $this->dispatch('show-recipe', $id);
+        }
+    }
+}; ?>
 
 <div class="app-shell flex flex-col">
     <header class="flex shrink-0 items-center gap-3 px-4 pt-4 pb-2">

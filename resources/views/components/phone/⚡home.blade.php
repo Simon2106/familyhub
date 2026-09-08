@@ -21,6 +21,14 @@ new #[Layout('layouts::app')] class extends Component
     #[Url(as: 'member', except: '')]
     public string $memberFilter = '';
 
+    /** Opened straight from a search result or a link. */
+    public function mount(): void
+    {
+        if ($id = request()->integer('event')) {
+            $this->dispatch('edit-event', $id);
+        }
+    }
+
     public function household(): Household
     {
         return Household::current();
@@ -176,6 +184,11 @@ new #[Layout('layouts::app')] class extends Component
                 <span class="shrink-0 rounded-full bg-blue-600 px-2.5 py-1 text-xs font-bold text-white">{{ $waiting }}</span>
             @endif
         </a>
+
+        {{-- One box that looks everywhere, before anything else on the page. --}}
+        <div class="mb-4">
+            <livewire:search.box :can-open="true" />
+        </div>
 
         @php
             $waitingOnMe = \App\Models\Redemption::where('household_id', $this->household()->id)->pending()->count()

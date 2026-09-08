@@ -180,6 +180,15 @@ new class extends Component
         $this->openRecipeId = $id;
     }
 
+    /** Opened from a search result or a deep link. */
+    #[On('show-recipe')]
+    public function showRecipe(int $id): void
+    {
+        if (Recipe::where('household_id', Household::current()->id)->whereKey($id)->exists()) {
+            $this->openRecipeId = $id;
+        }
+    }
+
     public function close(): void
     {
         $this->openRecipeId = null;

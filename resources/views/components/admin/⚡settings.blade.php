@@ -431,6 +431,8 @@ new #[Layout('layouts::app')] class extends Component
 
     <div class="pane-scroll min-h-0 flex-1 space-y-6 px-4 pb-8">
 
+        <livewire:search.box />
+
         {{-- Saved toast --}}
         <div x-data="{ show: false, message: '' }"
              x-on:saved.window="message = $event.detail.message; show = true; setTimeout(() => show = false, 2500)"
