@@ -45,6 +45,7 @@ class ComponentNamingTest extends TestCase
             ['admin.home'],
             ['home.panel'],
             ['search.box'],
+            ['assistant.ask'],
         ];
     }
 

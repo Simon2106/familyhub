@@ -6,6 +6,7 @@ use Anthropic\Client;
 use App\Models\Capture;
 use App\Models\Household;
 use App\Services\Capture\Contracts\ItemExtractor;
+use App\Services\Prompt\HouseholdBrief;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -262,53 +263,18 @@ class ClaudeItemExtractor implements ItemExtractor
     /**
      * Who lives here, and what the places in their lives are called.
      *
-     * Without this the model can only quote "Holy Trinity School" back; with it
-     * the quote is one the household's own matching already understands.
+     * The description itself is shared with the assistant — one family
+     * described one way — and only the instruction about what to do with it
+     * belongs to extraction.
      *
      * @return list<string>
      */
     protected function householdContext(Household $household): array
     {
-        $lines = [];
+        $lines = app(HouseholdBrief::class)->lines($household);
 
-        $members = $household->members;
-
-        if ($members->isEmpty()) {
+        if ($lines === []) {
             return $lines;
-        }
-
-        $lines[] = '';
-        $lines[] = 'The household:';
-
-        foreach ($members as $member) {
-            $aliases = $member->aliases->pluck('alias')->all();
-
-            $lines[] = sprintf(
-                '- %s (%s)%s',
-                $member->name,
-                $member->is_child ? 'child' : 'adult',
-                $aliases === [] ? '' : ', also written as '.implode(', ', $aliases),
-            );
-        }
-
-        $places = $household->places;
-
-        if ($places->isNotEmpty()) {
-            $lines[] = '';
-            $lines[] = 'Places in their lives:';
-
-            foreach ($places as $place) {
-                $names = collect([$place->name])->merge($place->aliases->pluck('alias'))->unique();
-                $people = $place->members->pluck('name');
-
-                $lines[] = sprintf(
-                    '- %s (%s)%s%s',
-                    $names->implode(' / '),
-                    $place->type,
-                    $people->isEmpty() ? '' : ' — '.$people->implode(' and '),
-                    $people->isEmpty() ? '' : ($place->type === 'school' ? ' goes there' : ''),
-                );
-            }
         }
 
         $lines[] = '';

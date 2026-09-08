@@ -132,6 +132,23 @@ return [
         // JSON needs. Raise it if a school's newsletters prove genuinely hard.
         // budget_tokens is rejected by current models; effort is the lever.
         'effort' => env('ANTHROPIC_EFFORT', 'low'),
+
+        /*
+        | The household assistant — the text box on /app that answers
+        | questions. Separate settings because it is a different job from
+        | extraction: it chooses between tools and writes a sentence, rather
+        | than transcribing dates, so it needs more thinking and far fewer
+        | output tokens. Model defaults to the household's, so there is one
+        | thing to change when the family changes model.
+        */
+        'assistant' => [
+            'model' => env('ANTHROPIC_ASSISTANT_MODEL', env('ANTHROPIC_MODEL', 'claude-sonnet-5')),
+            'effort' => env('ANTHROPIC_ASSISTANT_EFFORT', 'medium'),
+            'max_tokens' => (int) env('ANTHROPIC_ASSISTANT_MAX_TOKENS', 8000),
+
+            // How many rounds of looking things up one question may take.
+            'max_steps' => (int) env('ANTHROPIC_ASSISTANT_STEPS', 6),
+        ],
     ],
 
     'postmark' => [

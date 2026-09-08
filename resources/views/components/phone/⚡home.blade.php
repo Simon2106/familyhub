@@ -126,6 +126,13 @@ new #[Layout('layouts::app')] class extends Component
         <livewire:search.box :can-open="true" />
     </div>
 
+    {{-- Search finds a thing you can name; this answers a question you can
+         only ask. Under the box for that reason, and scrolling with the page
+         because an answer is read once, not kept in view. --}}
+    <div class="shrink-0 px-4 pb-2">
+        <livewire:assistant.ask />
+    </div>
+
     <div x-data="{ show: false, message: '' }"
          x-on:saved.window="message = $event.detail.message; show = true; setTimeout(() => show = false, 2500)"
          x-show="show" x-cloak x-transition

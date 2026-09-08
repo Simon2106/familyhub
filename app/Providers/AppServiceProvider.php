@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use Anthropic\Client;
+use App\Services\Assistant\ClaudeAssistant;
+use App\Services\Assistant\Contracts\Assistant;
 use App\Services\Capture\ClaudeItemExtractor;
 use App\Services\Capture\Contracts\ItemExtractor;
 use App\Services\Recipes\ClaudeRecipeReader;
@@ -30,6 +32,7 @@ class AppServiceProvider extends ServiceProvider
         // whole capture and recipe pipelines without calling the API.
         $this->app->bind(ItemExtractor::class, ClaudeItemExtractor::class);
         $this->app->bind(RecipeReader::class, ClaudeRecipeReader::class);
+        $this->app->bind(Assistant::class, ClaudeAssistant::class);
     }
 
     public function boot(): void
