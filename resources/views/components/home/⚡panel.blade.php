@@ -5,7 +5,9 @@ use App\Models\Household;
 use App\Models\HomeTile;
 use App\Services\HomeAssistant\EntityState;
 use App\Services\HomeAssistant\HomeAssistant;
+use App\Models\SwitchGroup;
 use App\Services\HomeAssistant\MediaPlayer;
+use App\Services\HomeAssistant\SwitchBoard;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
@@ -66,7 +68,7 @@ new class extends Component
     #[On('echo:'.\App\Events\HomeStateChanged::CHANNEL.',.state-changed')]
     public function refreshFromHome(): void
     {
-        unset($this->reading, $this->states, $this->problem, $this->sections, $this->nowPlaying);
+        $this->forgetHome();
     }
 
     /**
@@ -109,7 +111,118 @@ new class extends Component
             $this->error = $e->getMessage();
         }
 
-        unset($this->reading, $this->states, $this->problem, $this->sections, $this->nowPlaying);
+        $this->forgetHome();
+    }
+
+    /** Which group's members are open, from a long press on the wall. */
+    public ?int $openGroupId = null;
+
+    /** A group whose on/off delays are being edited in place. */
+    public ?int $timingGroupId = null;
+
+    public int $onDelay = 0;
+
+    public int $offDelay = 0;
+
+    /** @return Collection<int, SwitchGroup> */
+    #[Computed]
+    public function groups(): Collection
+    {
+        return $this->configured ? app(SwitchBoard::class)->groups($this->household()) : collect();
+    }
+
+    /** on | off | mixed | unknown, per group. */
+    #[Computed]
+    public function groupStates(): array
+    {
+        $states = $this->reading['states'];
+
+        return $this->groups
+            ->mapWithKeys(fn (SwitchGroup $group) => [
+                $group->id => app(SwitchBoard::class)->stateOf($group, $states),
+            ])
+            ->all();
+    }
+
+    public function pressGroup(int $id): void
+    {
+        $this->error = null;
+
+        try {
+            app(SwitchBoard::class)->press($this->findGroup($id), $this->reading['states']);
+        } catch (HomeAssistantException $e) {
+            $this->error = $e->getMessage();
+        }
+
+        $this->forgetHome();
+    }
+
+    public function cancelGroup(int $id): void
+    {
+        app(SwitchBoard::class)->cancel($this->findGroup($id));
+
+        $this->forgetHome();
+    }
+
+    /** The long press: show what is in the group so one can be tapped alone. */
+    public function openGroup(int $id): void
+    {
+        $this->openGroupId = $this->openGroupId === $id ? null : $id;
+        $this->timingGroupId = null;
+    }
+
+    public function toggleMember(int $id, string $entityId): void
+    {
+        $this->error = null;
+
+        try {
+            app(SwitchBoard::class)->toggleMember($this->findGroup($id), $entityId);
+        } catch (HomeAssistantException $e) {
+            $this->error = $e->getMessage();
+        }
+
+        $this->forgetHome();
+    }
+
+    /** Editing the two delays from the phone, without going to /admin. */
+    public function editTiming(int $id): void
+    {
+        $group = $this->findGroup($id);
+
+        $this->timingGroupId = $this->timingGroupId === $id ? null : $id;
+        $this->onDelay = $group->on_delay;
+        $this->offDelay = $group->off_delay;
+        $this->openGroupId = null;
+    }
+
+    public function saveTiming(): void
+    {
+        if (! $this->timingGroupId) {
+            return;
+        }
+
+        $this->findGroup($this->timingGroupId)->update([
+            'on_delay' => max(0, min(SwitchGroup::MAX_DELAY, $this->onDelay)),
+            'off_delay' => max(0, min(SwitchGroup::MAX_DELAY, $this->offDelay)),
+        ]);
+
+        $this->timingGroupId = null;
+        $this->forgetHome();
+
+        $this->dispatch('saved', message: 'Timings saved.');
+    }
+
+    protected function findGroup(int $id): SwitchGroup
+    {
+        return SwitchGroup::where('household_id', $this->household()->id)
+            ->with('entities')
+            ->findOrFail($id);
+    }
+
+    protected function forgetHome(): void
+    {
+        unset($this->reading, $this->states, $this->problem, $this->sections,
+            $this->nowPlaying, $this->groups, $this->groupStates);
     }
 
     /** @return Collection<int, HomeTile> */
@@ -149,7 +262,12 @@ new class extends Component
             $home = app(HomeAssistant::class);
 
             return [
-                'states' => $this->tiles->isEmpty() ? collect() : $home->states(),
+                // Groups count as a reason to read: a household with groups
+                // and no individual tiles was getting no reading at all, so
+                // every group tile said "Not responding".
+                'states' => $this->tiles->isEmpty() && $this->groups->isEmpty()
+                    ? collect()
+                    : $home->states(),
                 'media' => $home->mediaPlayers()
                     ->filter(fn (MediaPlayer $player) => $player->isActive())
                     ->values(),
@@ -348,7 +466,7 @@ new class extends Component
             $this->error = $e->getMessage();
         }
 
-        unset($this->reading, $this->states, $this->problem, $this->sections, $this->nowPlaying);
+        $this->forgetHome();
     }
 
     /**
@@ -379,7 +497,7 @@ new class extends Component
             unset($this->expecting[$tile->id]);
         }
 
-        unset($this->reading, $this->states, $this->problem, $this->sections, $this->nowPlaying);
+        $this->forgetHome();
     }
 }; ?>
 
@@ -474,6 +592,130 @@ new class extends Component
             </span>
         </div>
     @endforeach
+
+    {{-- Groups first: a household reaches for "the lamps" far more often than
+         for any one of them, and the tile that turns a room off should be the
+         one nearest the top. --}}
+    @if ($this->groups->isNotEmpty())
+        <section class="mb-5">
+            <h2 class="px-1 pb-2 text-sm font-semibold tracking-wide text-slate-400 uppercase">Groups</h2>
+
+            <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                @foreach ($this->groups as $group)
+                    @php
+                        $state = $this->groupStates[$group->id] ?? 'unknown';
+                        $left = $group->secondsLeft();
+                        $waiting = $group->hasPending();
+                    @endphp
+
+                    <div wire:key="group-{{ $group->id }}"
+                         class="flex flex-col gap-2 rounded-2xl border-2 p-3 transition-colors
+                                {{ $waiting
+                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40'
+                                    : ($state === 'on'
+                                        ? 'border-transparent bg-amber-100 dark:bg-amber-500/20'
+                                        : ($state === 'unknown'
+                                            ? 'border-transparent bg-slate-100 dark:bg-slate-800/60'
+                                            : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900')) }}">
+
+                        {{-- Press and hold to see inside, the same gesture as
+                             lifting a meal off the planner. --}}
+                        {{-- One gesture, one action. There is deliberately no
+                             wire:click here: with both, a long press fired the
+                             tap as well — Livewire's handler is not something
+                             stopImmediatePropagation can reach — so the group
+                             opened *and* started a countdown. Alpine decides
+                             which it was and calls the one. --}}
+                        <button type="button"
+                                x-data="{ held: false, spent: false, timer: null }"
+                                x-on:pointerdown="held = false; spent = false;
+                                    timer = setTimeout(() => { held = true; $wire.openGroup({{ $group->id }}) }, 550)"
+                                x-on:pointerup="clearTimeout(timer);
+                                    if (! held && ! spent) { spent = true; $wire.pressGroup({{ $group->id }}) }"
+                                x-on:pointercancel="clearTimeout(timer); spent = true"
+                                x-on:pointerleave="clearTimeout(timer); spent = true"
+                                class="flex min-h-16 w-full items-center gap-3 text-left"
+                                @disabled($state === 'unknown' && ! $waiting)>
+                            <x-icon name="switch" class="size-6 shrink-0 {{ $state === 'on' ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400' }}" />
+
+                            <span class="min-w-0 flex-1">
+                                <span class="block truncate font-semibold">{{ $group->name }}</span>
+                                <span class="block truncate text-sm {{ $waiting ? 'font-semibold text-blue-700 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400' }}">
+                                    @if ($waiting)
+                                        {{ ucfirst($group->pending_direction) }} in
+                                        <span x-data="{ left: {{ $left }} }"
+                                              x-init="setInterval(() => left > 0 && left--, 1000)"
+                                              x-text="`${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`"
+                                              class="tabular-nums">{{ sprintf('%d:%02d', intdiv($left, 60), $left % 60) }}</span>
+                                    @elseif ($state === 'unknown')
+                                        Not responding
+                                    @elseif ($state === 'mixed')
+                                        {{ $group->entities->count() }} switches · some on
+                                    @else
+                                        {{ ucfirst($state) }} · {{ $group->entities->count() }} {{ Str::plural('switch', $group->entities->count()) }}
+                                    @endif
+                                </span>
+                            </span>
+                        </button>
+
+                        @if ($waiting)
+                            <button type="button" wire:click="cancelGroup({{ $group->id }})"
+                                    class="touch-target rounded-xl bg-white text-sm font-semibold text-blue-700 dark:bg-slate-900 dark:text-blue-300">
+                                Cancel
+                            </button>
+                        @elseif (! $group->isInstant('on') || ! $group->isInstant('off'))
+                            <p class="px-1 text-xs text-slate-400">
+                                @if (! $group->isInstant('on')) On after {{ $group->on_delay }} min @endif
+                                @if (! $group->isInstant('on') && ! $group->isInstant('off')) · @endif
+                                @if (! $group->isInstant('off')) Off after {{ $group->off_delay }} min @endif
+                            </p>
+                        @endif
+
+                        {{-- What is in it, from a long press. --}}
+                        @if ($openGroupId === $group->id)
+                            <ul class="space-y-1 border-t border-slate-200/70 pt-2 dark:border-slate-700">
+                                @foreach ($group->entities as $member)
+                                    @php $memberState = $this->states->get($member->entity_id); @endphp
+
+                                    <li wire:key="member-{{ $member->id }}">
+                                        <button type="button"
+                                                wire:click="toggleMember({{ $group->id }}, '{{ $member->entity_id }}')"
+                                                class="flex w-full touch-target items-center gap-2 rounded-xl px-2 text-left">
+                                            <span class="size-2.5 shrink-0 rounded-full {{ $memberState?->isOn() ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600' }}"></span>
+                                            <span class="min-w-0 flex-1 truncate text-sm">{{ $member->title() }}</span>
+                                            <span class="shrink-0 text-xs text-slate-400">{{ $memberState?->summary() ?? 'Not responding' }}</span>
+                                        </button>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        @endif
+
+                        {{-- Editable here as well as in /admin: the timing is
+                             the thing most often got wrong by a minute or two,
+                             and a phone is where somebody notices. --}}
+                        @if ($timingGroupId === $group->id)
+                            <div class="space-y-2 border-t border-slate-200/70 pt-2 dark:border-slate-700">
+                                @foreach (['onDelay' => 'On after', 'offDelay' => 'Off after'] as $field => $label)
+                                    <label class="flex items-center gap-2">
+                                        <span class="w-20 shrink-0 text-sm">{{ $label }}</span>
+                                        <input wire:model="{{ $field }}" type="number" min="0" max="{{ \App\Models\SwitchGroup::MAX_DELAY }}"
+                                               class="w-20 rounded-xl border border-slate-300 px-2 py-1 text-base dark:border-slate-600 dark:bg-slate-950">
+                                        <span class="text-sm text-slate-400">min · 0 is instant</span>
+                                    </label>
+                                @endforeach
+
+                                <button type="button" wire:click="saveTiming"
+                                        class="touch-target w-full rounded-xl bg-blue-600 text-sm font-semibold text-white">Save</button>
+                            </div>
+                        @else
+                            <button type="button" wire:click="editTiming({{ $group->id }})"
+                                    class="px-1 text-left text-xs font-semibold text-slate-400">Timings</button>
+                        @endif
+                    </div>
+                @endforeach
+            </div>
+        </section>
+    @endif
 
     @if (! $this->configured)
         <div class="grid h-full place-items-center">

@@ -141,6 +141,7 @@ Route::middleware('auth')->group(function () {
     Route::livewire('/app/meals', 'meals.page')->name('meals');
     Route::livewire('/app/shopping', 'meals.shopping')->name('shopping');
     Route::livewire('/app/kids', 'kids.parent')->name('kids');
+    Route::livewire('/app/switches', 'home.switches')->name('switches');
 
     /*
     | PWA share target. iOS posts the shared payload here; anything with

@@ -249,6 +249,17 @@ is designed and tested against. Change it and the layout is untested.
   the same `/api/states` reading the tiles use — resolve `HomeAssistant` once
   per render, because the shared cache may be off entirely. Controls are an
   allow-list of actions; never pass a service name through from the browser.
+- **A delayed switch needs a real queue.** Switch groups can be set to go off
+  a few minutes after they are asked to; the deadline lives on the group row
+  and a queued job does the switching, so a wall that has gone dark — or been
+  unplugged — still turns the lamps off. On the `sync` driver a delayed job
+  runs the instant it is dispatched, which would turn "off in five minutes"
+  into "off", so `SwitchGroupJob` refuses to act before its deadline. Horizon
+  is already required; this is one more reason.
+- **Groups are ours, not Home Assistant's.** No HA groups and no HA scenes:
+  every member is switched with its own `turn_on`/`turn_off`, so the grouping
+  stays something the household can change from the kitchen rather than
+  something only HA's own UI can.
 - **Nothing is written by rendering.** Chores, routines and meal plans all
   project from a rule onto a date and only create a row when something is
   ticked. Adding a nightly sweep would undo that: a missed run then means

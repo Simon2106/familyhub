@@ -3,8 +3,10 @@
 namespace App\Services\HomeAssistant;
 
 use App\Exceptions\HomeAssistantException;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Throwable;
 
 /**
  * What the app asks Home Assistant to do.
@@ -99,6 +101,41 @@ class HomeAssistant
             ->map(fn (array $row) => MediaPlayer::fromArray($row))
             ->filter(fn (MediaPlayer $player) => str_starts_with($player->entityId, 'media_player.'))
             ->keyBy(fn (MediaPlayer $player) => $player->entityId);
+    }
+
+    /**
+     * When the sun next rises and sets, if Home Assistant is tracking it.
+     *
+     * Read straight off sun.sun rather than worked out here: HA already knows
+     * the house's latitude, and two implementations of dusk would disagree
+     * twice a year.
+     *
+     * @return array{rising: ?CarbonImmutable, setting: ?CarbonImmutable}
+     */
+    public function sun(): array
+    {
+        $sun = collect($this->cachedRows())->firstWhere('entity_id', 'sun.sun');
+        $attributes = is_array($sun['attributes'] ?? null) ? $sun['attributes'] : [];
+
+        $at = function (?string $value): ?CarbonImmutable {
+            try {
+                return filled($value) ? CarbonImmutable::parse($value) : null;
+            } catch (Throwable) {
+                return null;
+            }
+        };
+
+        return [
+            'rising' => $at($attributes['next_rising'] ?? null),
+            'setting' => $at($attributes['next_setting'] ?? null),
+        ];
+    }
+
+    public function tracksTheSun(): bool
+    {
+        $sun = $this->sun();
+
+        return $sun['rising'] !== null || $sun['setting'] !== null;
     }
 
     /**

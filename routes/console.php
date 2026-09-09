@@ -20,6 +20,17 @@ Schedule::command('sync:calendars --force')
 
 // Completed to-dos stay findable under "Done" for the household's retention
 // window, then go. Runs in the small hours so nobody watches items vanish.
+/*
+| Switch groups that turn themselves on and off.
+|
+| Every minute, because a schedule somebody edits at teatime has to take effect
+| this evening — and because a missed minute is caught by the next one rather
+| than lost.
+*/
+Schedule::command('familyhub:switch-schedules')
+    ->everyMinute()
+    ->withoutOverlapping();
+
 Schedule::command('familyhub:prune-done')
     ->dailyAt('04:00')
     ->withoutOverlapping();
