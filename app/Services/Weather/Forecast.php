@@ -36,19 +36,26 @@ class Forecast
         };
     }
 
+    /**
+     * Which drawing to use, by name.
+     *
+     * A name rather than a glyph: the kiosk has no emoji font, so a forecast
+     * that returned one was a forecast the wall could not show. `<x-icon>`
+     * turns this into inline SVG that looks the same on every device.
+     */
     public function icon(): string
     {
         return match (true) {
-            $this->code === 0 => $this->isDay ? '☀️' : '🌙',
-            $this->code <= 2 => $this->isDay ? '🌤️' : '🌙',
-            $this->code === 3 => '☁️',
-            $this->code <= 48 => '🌫️',
-            $this->code <= 57 => '🌦️',
-            $this->code <= 67 => '🌧️',
-            $this->code <= 77 => '❄️',
-            $this->code <= 82 => '🌦️',
-            $this->code <= 86 => '🌨️',
-            default => '⛈️',
+            $this->code === 0 => $this->isDay ? 'sun' : 'moon',
+            $this->code <= 2 => $this->isDay ? 'sun-cloud' : 'moon',
+            $this->code === 3 => 'cloud',
+            $this->code <= 48 => 'fog',
+            $this->code <= 57 => 'drizzle',
+            $this->code <= 67 => 'rain',
+            $this->code <= 77 => 'snow',
+            $this->code <= 82 => 'rain',
+            $this->code <= 86 => 'snow-showers',
+            default => 'storm',
         };
     }
 

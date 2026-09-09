@@ -25,13 +25,13 @@ class BinCollection extends Model
      * side without colliding.
      */
     public const KINDS = [
-        'refuse' => ['label' => 'Rubbish', 'colour' => '#475569', 'icon' => '🗑️'],
-        'recycling' => ['label' => 'Recycling', 'colour' => '#2563eb', 'icon' => '♻️'],
-        'paper' => ['label' => 'Paper & card', 'colour' => '#0891b2', 'icon' => '📦'],
-        'garden' => ['label' => 'Garden', 'colour' => '#16a34a', 'icon' => '🌿'],
-        'food' => ['label' => 'Food', 'colour' => '#ca8a04', 'icon' => '🍎'],
-        'electricals' => ['label' => 'Electricals', 'colour' => '#7c3aed', 'icon' => '🔌'],
-        'other' => ['label' => 'Bins', 'colour' => '#94a3b8', 'icon' => '🗑️'],
+        'refuse' => ['label' => 'Rubbish', 'colour' => '#475569', 'icon' => 'bin'],
+        'recycling' => ['label' => 'Recycling', 'colour' => '#2563eb', 'icon' => 'recycle'],
+        'paper' => ['label' => 'Paper & card', 'colour' => '#0891b2', 'icon' => 'box'],
+        'garden' => ['label' => 'Garden', 'colour' => '#16a34a', 'icon' => 'leaf'],
+        'food' => ['label' => 'Food', 'colour' => '#ca8a04', 'icon' => 'apple'],
+        'electricals' => ['label' => 'Electricals', 'colour' => '#7c3aed', 'icon' => 'plug'],
+        'other' => ['label' => 'Bins', 'colour' => '#94a3b8', 'icon' => 'bin'],
     ];
 
     /** @var array<string, mixed> */
@@ -77,6 +77,7 @@ class BinCollection extends Model
         return self::KINDS[$this->kind]['colour'] ?? self::KINDS['other']['colour'];
     }
 
+    /** An <x-icon> name, not a glyph: the kiosk has no emoji font. */
     public function icon(): string
     {
         return self::KINDS[$this->kind]['icon'] ?? self::KINDS['other']['icon'];

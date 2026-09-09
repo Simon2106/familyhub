@@ -411,7 +411,9 @@ new class extends Component
                         @endif
 
                         @if ($idea->kidsVerdict())
-                            <span title="What the children think">{{ ['up' => '👍', 'down' => '👎', 'mixed' => '🤷'][$idea->kidsVerdict()] }}</span>
+                            <x-icon class="inline-block size-4 align-[-0.15em] {{ ['up' => 'text-emerald-500', 'down' => 'text-rose-500', 'mixed' => 'text-slate-400'][$idea->kidsVerdict()] }}"
+                                    :label="'What the children think'"
+                                    :name="['up' => 'thumb-up', 'down' => 'thumb-down', 'mixed' => 'thumbs-split'][$idea->kidsVerdict()]" />
                         @endif
 
                         @if ($idea->neverCooked())

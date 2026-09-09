@@ -153,12 +153,12 @@ new class extends Component
                                                      ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400'
                                                      : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400' }}"
                                           aria-hidden="true">
-                                        {{ match ($entry->kind) {
-                                            'redemption' => '🎁',
-                                            'reversal' => '↩',
-                                            'adjustment' => '✎',
-                                            default => '★',
-                                        } }}
+                                        <x-icon class="size-5" :name="match ($entry->kind) {
+                                            'redemption' => 'gift',
+                                            'reversal' => 'undo',
+                                            'adjustment' => 'pencil',
+                                            default => 'star',
+                                        }" />
                                     </span>
 
                                     <span class="min-w-0 flex-1">

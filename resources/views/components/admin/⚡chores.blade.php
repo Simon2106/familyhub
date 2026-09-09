@@ -280,7 +280,11 @@ new #[Layout('layouts::app')] class extends Component
                     class="flex w-full touch-target items-center gap-3 rounded-2xl bg-white p-3 text-left dark:bg-slate-900 {{ $chore->is_active ? '' : 'opacity-50' }}">
                 <span class="grid size-10 shrink-0 place-items-center rounded-xl text-lg"
                       style="background-color: {{ $chore->member?->colour ?? '#94a3b8' }}22;">
-                    {{ $chore->icon ?: '✓' }}
+                    @if ($chore->icon)
+                        {{ $chore->icon }}
+                    @else
+                        <x-icon name="check" class="size-5" />
+                    @endif
                 </span>
                 <span class="min-w-0 flex-1">
                     <span class="block truncate font-medium">{{ $chore->title }}</span>

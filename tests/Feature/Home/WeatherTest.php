@@ -87,8 +87,9 @@ class WeatherTest extends TestCase
     {
         $clear = fn (int $isDay) => new Forecast(temperature: 10, code: 0, isDay: (bool) $isDay);
 
-        $this->assertSame('☀️', $clear(1)->icon());
-        $this->assertSame('🌙', $clear(0)->icon());
+        // A drawing's name, not a glyph: the kiosk has no emoji font.
+        $this->assertSame('sun', $clear(1)->icon());
+        $this->assertSame('moon', $clear(0)->icon());
     }
 
     #[Test]

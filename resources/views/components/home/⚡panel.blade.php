@@ -410,7 +410,9 @@ new class extends Component
                      class="size-14 shrink-0 rounded-xl object-cover"
                      onerror="this.remove()">
             @else
-                <span class="grid size-14 shrink-0 place-items-center rounded-xl bg-white/10 text-2xl" aria-hidden="true">🎵</span>
+                <span class="grid size-14 shrink-0 place-items-center rounded-xl bg-white/10">
+                    <x-icon name="music" class="size-7 text-white/70" />
+                </span>
             @endif
 
             <span class="min-w-0 flex-1">

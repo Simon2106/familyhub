@@ -370,7 +370,7 @@ new class extends Component
 
                         @if ($progress->allDone())
                             <p class="mt-2 text-center text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                                {{ $progress->routine->label() }} all done! 🎉
+                                {{ $progress->routine->label() }} all done!
                             </p>
                         @endif
 
@@ -386,7 +386,13 @@ new class extends Component
                                                {{ $justDoneStep === $step->id ? 'chore-just-done' : '' }}"
                                         style="{{ $entry['done'] ? 'background-color: '.$this->member->colour.'; color: white;' : '' }}"
                                     >
-                                        <span class="text-3xl leading-none" aria-hidden="true">{{ $step->icon ?: ($entry['done'] ? '✅' : '⬜️') }}</span>
+                                        {{-- The step's own icon is the family's data and is left as
+                                             they typed it; only the fallback is drawn here. --}}
+                                        @if ($step->icon)
+                                            <span class="text-3xl leading-none" aria-hidden="true">{{ $step->icon }}</span>
+                                        @else
+                                            <x-icon :name="$entry['done'] ? 'ticked' : 'unticked'" class="size-8 {{ $entry['done'] ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600' }}" />
+                                        @endif
                                         <span class="text-center text-sm leading-tight font-semibold {{ $entry['done'] ? '' : 'text-slate-700 dark:text-slate-200' }}">
                                             {{ $step->title }}
                                         </span>
@@ -407,7 +413,10 @@ new class extends Component
                         @if ($this->allDone)
                             {{-- Worth a fuss. The whole scheme runs on this moment. --}}
                             <div class="mb-4 rounded-2xl bg-emerald-50 p-4 text-center dark:bg-emerald-950/40">
-                                <p class="text-2xl font-bold text-emerald-700 dark:text-emerald-300">All done! 🎉</p>
+                                <p class="flex items-center justify-center gap-2 text-2xl font-bold text-emerald-700 dark:text-emerald-300">
+                                    <x-icon name="celebrate" class="size-7" />
+                                    All done!
+                                </p>
                                 <p class="mt-0.5 text-sm text-emerald-700/80 dark:text-emerald-400/80">Everything ticked off for today.</p>
                             </div>
                         @else
@@ -448,7 +457,9 @@ new class extends Component
                                                     Waiting to be checked
                                                 </span>
                                             @elseif ($slot->isApproved())
-                                                <span class="block text-sm text-slate-400">Checked ✓</span>
+                                                <span class="flex items-center gap-1 text-sm text-slate-400">
+                                                    <x-icon name="check" class="size-4" /> Checked
+                                                </span>
                                             @endif
                                         </span>
 
@@ -514,7 +525,7 @@ new class extends Component
                                         @if ($reward->imageUrl())
                                             <img src="{{ $reward->imageUrl() }}" alt="" class="size-14 rounded-xl object-cover">
                                         @else
-                                            <span class="text-3xl leading-none" aria-hidden="true">🎁</span>
+                                            <x-icon name="gift" class="size-8" />
                                         @endif
                                         <span class="text-sm leading-tight font-semibold">{{ $reward->name }}</span>
                                         <span class="rounded-full px-2 py-0.5 text-sm font-bold tabular-nums

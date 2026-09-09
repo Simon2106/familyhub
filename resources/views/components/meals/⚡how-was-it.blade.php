@@ -70,7 +70,9 @@ new class extends Component
 
         <section class="mt-3 rounded-2xl bg-white p-3 dark:bg-slate-900">
             <div class="flex items-start gap-3">
-                <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-50 text-xl dark:bg-amber-900/30" aria-hidden="true">🍽️</span>
+                <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
+                    <x-icon name="cutlery" class="size-5" />
+                </span>
 
                 <div class="min-w-0 flex-1">
                     <p class="font-medium">How was {{ $meal->title }}?</p>

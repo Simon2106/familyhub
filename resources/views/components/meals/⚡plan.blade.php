@@ -543,7 +543,7 @@ new class extends Component
                             @php $ghost = $this->proposed[$proposals[$day['date']]] ?? null; @endphp
                             <span class="min-w-0 flex-1">
                                 <span class="block truncate font-semibold text-blue-700 italic dark:text-blue-300">{{ $ghost?->title }}</span>
-                                <span class="block text-xs text-blue-600/70 dark:text-blue-400/70">Suggested — tap ✓ to keep</span>
+                                <span class="block text-xs text-blue-600/70 dark:text-blue-400/70">Suggested — tap the tick to keep</span>
                             </span>
                         @else
                             <span class="text-sm text-slate-400">Add dinner</span>
@@ -555,7 +555,7 @@ new class extends Component
                              still means "let me choose something else". --}}
                         <button type="button" wire:click="acceptProposal('{{ $day['date'] }}')"
                                 class="grid touch-target shrink-0 place-items-center rounded-xl bg-blue-600 px-3 font-bold text-white"
-                                aria-label="Keep the suggestion for {{ $day['carbon']->format('l') }}">&check;</button>
+                                aria-label="Keep the suggestion for {{ $day['carbon']->format('l') }}"><x-icon name="check" class="size-6" /></button>
                     @endif
 
                     @foreach ($extras as $slot)

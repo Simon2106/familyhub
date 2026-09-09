@@ -191,7 +191,9 @@ new #[Layout('layouts::app')] class extends Component
                 @if ($reward->imageUrl())
                     <img src="{{ $reward->imageUrl() }}" alt="" class="size-12 shrink-0 rounded-xl object-cover">
                 @else
-                    <span class="grid size-12 shrink-0 place-items-center rounded-xl bg-slate-100 text-xl dark:bg-slate-800">🎁</span>
+                    <span class="grid size-12 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                        <x-icon name="gift" class="size-6" />
+                    </span>
                 @endif
                 <span class="min-w-0 flex-1">
                     <span class="block truncate font-medium">{{ $reward->name }}</span>

@@ -1070,7 +1070,7 @@ new #[Layout('layouts::display')] class extends Component
                                                     wire:click="$dispatch('show-my-day', { member: {{ $member->id }}, date: '{{ $day['date'] }}' })"
                                                     class="ml-auto shrink-0 rounded-full px-2 py-0.5 text-xs font-bold text-white"
                                                     style="background-color: {{ $member->colour }};">
-                                                {{ $running->allDone() ? 'done 🎉' : $running->routine->label().' '.$running->summary() }}
+                                                {{ $running->allDone() ? 'all done' : $running->routine->label().' '.$running->summary() }}
                                             </button>
                                         @elseif ($memberEvents->isNotEmpty())
                                             <span class="ml-auto text-sm text-slate-400">{{ $memberEvents->count() }}</span>
@@ -1485,7 +1485,7 @@ new #[Layout('layouts::display')] class extends Component
 
                         @if ($this->weather)
                             <p>
-                                <span class="mr-2">{{ $this->weather->icon() }}</span>
+                                <x-icon :name="$this->weather->icon()" class="mr-2 inline-block size-8 align-[-0.2em]" />
                                 {{ $this->weather->description() }}
                                 <span class="ml-2 tabular-nums">{{ $this->weather->round($this->weather->temperature) }}&deg;</span>
                             </p>

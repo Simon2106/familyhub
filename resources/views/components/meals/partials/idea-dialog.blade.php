@@ -55,8 +55,10 @@
                 @endif
 
                 @if ($idea->kidsVerdict())
-                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                        The children: {{ ['up' => '👍 liked it', 'down' => '👎 not for them', 'mixed' => '🤷 split'][$idea->kidsVerdict()] }}
+                    <p class="mt-1 flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400">
+                        <x-icon class="size-4 {{ ['up' => 'text-emerald-500', 'down' => 'text-rose-500', 'mixed' => 'text-slate-400'][$idea->kidsVerdict()] }}"
+                                :name="['up' => 'thumb-up', 'down' => 'thumb-down', 'mixed' => 'thumbs-split'][$idea->kidsVerdict()]" />
+                        The children {{ ['up' => 'liked it', 'down' => 'were not keen', 'mixed' => 'were split'][$idea->kidsVerdict()] }}
                         ({{ $idea->thumbs_up }} up, {{ $idea->thumbs_down }} down)
                     </p>
                 @endif

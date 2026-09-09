@@ -105,12 +105,12 @@ new class extends Component
                         <span class="text-base font-medium">{{ $child->name }}</span>
 
                         <button type="button" wire:click="thumb({{ $child->id }}, 1)"
-                                class="grid size-12 place-items-center rounded-xl text-2xl transition-colors {{ $vote !== null && $vote > 0 ? 'bg-emerald-500/20' : '' }}"
-                                aria-label="{{ $child->name }} liked it">👍</button>
+                                class="grid size-12 place-items-center rounded-xl transition-colors {{ $vote !== null && $vote > 0 ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' : 'text-slate-400' }}"
+                                aria-label="{{ $child->name }} liked it"><x-icon name="thumb-up" class="size-7" /></button>
 
                         <button type="button" wire:click="thumb({{ $child->id }}, -1)"
-                                class="grid size-12 place-items-center rounded-xl text-2xl transition-colors {{ $vote !== null && $vote < 0 ? 'bg-rose-500/20' : '' }}"
-                                aria-label="{{ $child->name }} did not like it">👎</button>
+                                class="grid size-12 place-items-center rounded-xl transition-colors {{ $vote !== null && $vote < 0 ? 'bg-rose-500/20 text-rose-600 dark:text-rose-400' : 'text-slate-400' }}"
+                                aria-label="{{ $child->name }} did not like it"><x-icon name="thumb-down" class="size-7" /></button>
                     </li>
                 @endforeach
             </ul>

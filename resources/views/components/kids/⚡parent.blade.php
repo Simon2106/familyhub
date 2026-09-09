@@ -404,7 +404,7 @@ new #[Layout('layouts::app')] class extends Component
 
                     @foreach ($this->requests as $request)
                         <li class="flex items-center gap-3 py-2" wire:key="req-{{ $request->id }}">
-                            <span class="shrink-0 text-lg" aria-hidden="true">🎁</span>
+                            <x-icon name="gift" class="size-5 shrink-0" />
                             <span class="min-w-0 flex-1">
                                 <span class="block truncate font-medium">{{ $request->name }}</span>
                                 <span class="block text-sm text-slate-500 dark:text-slate-400">

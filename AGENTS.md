@@ -163,6 +163,17 @@ is designed and tested against. Change it and the layout is untested.
   variable `<x-modal>` already measures against — so every dialog in the app
   rises above it without knowing it exists. Logic in `resources/js/keyboard.js`,
   tested in `tests/js/keyboard.test.mjs`.
+- **No emoji. Anywhere the wall draws.** The Pi has no emoji font, so an emoji
+  on /display is an empty box, and every device that does have one draws them
+  differently — the same forecast looked like three different forecasts on the
+  wall, an iPad and a phone. Use `<x-icon name="…">`
+  (`resources/views/components/icon.blade.php`); add a drawing there rather
+  than reaching for a glyph. `NoEmojiOnTheWallTest` fails any wall view that
+  gets one back, and checks every name the app asks for has something to draw —
+  an unknown name falls through to a plain circle, which is a bug that looks
+  like a design decision. Icons the household typed themselves (a chore's, a
+  routine step's) are their data and are left alone; only the fallbacks around
+  them are drawn.
 - **Touch only, no cursor, no hover.** There are no hover-only affordances and
   there must not be: on this screen they are invisible. `[data-kiosk]` sets
   `cursor: none`, kills text selection outside inputs, and suppresses the
