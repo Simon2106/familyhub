@@ -152,6 +152,17 @@ is designed and tested against. Change it and the layout is untested.
   read-only assistant `/app` uses, and read back by OpenAI TTS unless muted in
   /admin. Nothing is written to the database — a question lives in the cache
   for ten minutes and the recording is deleted the moment it becomes words.
+- **An on-screen keyboard, because Chromium on the Pi has none.** Every text
+  field on the wall would otherwise be one nobody standing at it can fill in.
+  It is `[data-kiosk]`-gated — but so is the iPad PWA, which has a keyboard of
+  its own, so the attribute alone cannot tell them apart and user-agent
+  sniffing is out. The first focus of a page load waits 350ms and asks the
+  device a question it can only answer honestly: a real soft keyboard shrinks
+  the visual viewport. Override it with `?keys=on` / `?keys=off` on the display
+  URL, remembered in localStorage. Showing it sets `--vv-height` — the same
+  variable `<x-modal>` already measures against — so every dialog in the app
+  rises above it without knowing it exists. Logic in `resources/js/keyboard.js`,
+  tested in `tests/js/keyboard.test.mjs`.
 - **Touch only, no cursor, no hover.** There are no hover-only affordances and
   there must not be: on this screen they are invisible. `[data-kiosk]` sets
   `cursor: none`, kills text selection outside inputs, and suppresses the

@@ -70,6 +70,96 @@
     }
 
     /*
+     * The wall's on-screen keyboard.
+     *
+     * Sized for 1920x1080 CSS px and touch only: keys big enough to hit with a
+     * thumb from a standing position, and a gap between them big enough that
+     * the miss lands on nothing rather than on the wrong letter.
+     */
+    .kb {
+        position: fixed;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 70;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+        background-color: rgb(15 23 42 / 0.97);
+        box-shadow: 0 -12px 40px rgb(2 6 23 / 0.5);
+    }
+
+    .kb-row {
+        display: flex;
+        justify-content: center;
+        gap: 0.5rem;
+        /* Capped and centred so every row lines up with the one above it: an
+           unbounded space bar made the bottom row span the whole 1920 while
+           the letters sat in a column down the middle. */
+        width: 100%;
+        max-width: 78rem;
+        margin-inline: auto;
+    }
+
+    .kb-key {
+        display: grid;
+        flex: 1 1 0;
+        place-items: center;
+        min-width: 0;
+        max-width: 7rem;
+        height: 4.5rem;
+        border-radius: 0.75rem;
+        background-color: rgb(51 65 85);
+        color: #fff;
+        font-size: 1.75rem;
+        font-weight: 600;
+        line-height: 1;
+        /* No hover state anywhere: on a touch screen it is invisible, and a
+           key that looks pressed because a finger passed over it is a lie. */
+        transition: background-color 80ms linear;
+    }
+
+    .kb-key:active {
+        background-color: rgb(100 116 139);
+    }
+
+    .kb-wide {
+        flex: 1.5 1 0;
+        max-width: 10rem;
+        font-size: 1.25rem;
+    }
+
+    .kb-space {
+        flex: 6 1 0;
+        max-width: none;
+        font-size: 1.125rem;
+        color: rgb(148 163 184);
+    }
+
+    .kb-done {
+        background-color: rgb(37 99 235);
+    }
+
+    .kb-on {
+        background-color: rgb(148 163 184);
+        color: rgb(15 23 42);
+    }
+
+    .kb-locked {
+        background-color: #fff;
+        color: rgb(15 23 42);
+    }
+
+    /*
+     * With the keyboard up the page is measured against a shorter viewport, so
+     * anything pinned to the bottom has to come up with it.
+     */
+    :root.kb-up [data-tab-bar] {
+        display: none;
+    }
+
+    /*
      * Overnight. Opaque black over everything, including the modals, because
      * the monitor cannot be switched off from here and a dialog left open at
      * bedtime should not glow all night.

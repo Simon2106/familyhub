@@ -9,6 +9,7 @@
 import { isDarkNow } from './dark-mode';
 import { createDragBoard } from './dragboard';
 import { createSilenceWatch, followUntilDone, levelOf } from './listen';
+import { createKeyboard, wantsKeyboard } from './keyboard';
 import { startEcho, watchConnection } from './echo';
 import { createScreenOff } from './screen-off';
 import { createUpdater } from './updater';
@@ -480,6 +481,93 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 });
+
+/* -------------------------------------------------------------------------
+ * The wall's on-screen keyboard
+ *
+ * Chromium on desktop Linux has no soft keyboard, so without this every text
+ * field on the kiosk is one nobody standing at the wall can fill in.
+ *
+ * The same /display page runs as an iPad PWA, which very much does have a
+ * keyboard of its own, and both carry [data-kiosk] — so the attribute alone
+ * cannot tell them apart, and AGENTS.md rightly forbids sniffing the user
+ * agent. Instead the first focus asks the device a question it can only answer
+ * honestly: a real soft keyboard shrinks the visual viewport when it opens.
+ * One short wait, once, and the answer is kept for the session.
+ * ---------------------------------------------------------------------- */
+
+if (document.documentElement.hasAttribute('data-kiosk')) {
+    const keyboard = createKeyboard();
+
+    // null = not yet known, true = the device has its own, false = it does not.
+    let deviceHasItsOwn = null;
+
+    // An override for when the probe below is wrong, settled once and
+    // remembered: open the kiosk URL with ?keys=on or ?keys=off. The Pi is a
+    // deliberate installation, and a wall with no way to type is not something
+    // to leave to a heuristic.
+    try {
+        const asked = new URL(window.location.href).searchParams.get('keys');
+
+        if (asked === 'on' || asked === 'off') localStorage.setItem('familyhub.keyboard', asked);
+
+        const remembered = localStorage.getItem('familyhub.keyboard');
+
+        if (remembered === 'on') deviceHasItsOwn = false;
+        if (remembered === 'off') deviceHasItsOwn = true;
+    } catch {
+        // Private browsing, or storage switched off. The probe still works.
+    }
+
+    const shrank = () => {
+        const viewport = window.visualViewport;
+
+        return Boolean(viewport) && window.innerHeight - viewport.height > 120;
+    };
+
+    async function decide() {
+        if (deviceHasItsOwn !== null) return deviceHasItsOwn;
+
+        // Long enough for iOS to raise its keyboard, short enough that a Pi
+        // does not feel slow. Paid once per page load.
+        await new Promise((resolve) => setTimeout(resolve, 350));
+
+        deviceHasItsOwn = shrank();
+
+        return deviceHasItsOwn;
+    }
+
+    document.addEventListener('focusin', async (event) => {
+        const target = event.target;
+
+        if (!wantsKeyboard(target)) return;
+
+        if (await decide()) return;
+
+        // Focus may have moved on while we were deciding.
+        if (document.activeElement === target) keyboard.show(target);
+    });
+
+    document.addEventListener('focusout', (event) => {
+        // Moving between two fields keeps it up; leaving the last one drops it.
+        requestAnimationFrame(() => {
+            if (!wantsKeyboard(document.activeElement)) keyboard.hide();
+        });
+    });
+
+    // Tapping anywhere that is not a field and not the keyboard itself.
+    document.addEventListener('pointerdown', (event) => {
+        if (!keyboard.visible) return;
+        if (event.target.closest('.kb')) return;
+        if (wantsKeyboard(event.target)) return;
+
+        keyboard.hide({ blur: true });
+    });
+
+    document.addEventListener('keydown', (event) => event.key === 'Escape' && keyboard.hide({ blur: true }));
+
+    window.familyhubKeyboard = keyboard;
+}
 
 /* -------------------------------------------------------------------------
  * Overnight screen off
