@@ -45,4 +45,27 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Member::class);
     }
+
+    /**
+     * Which member this login speaks for.
+     *
+     * Ratings are one per adult, so somebody has to be doing the rating. A
+     * login is normally linked to a member in /admin; where it is not, the
+     * name is the next best thing, and a household with one adult needs no
+     * disambiguating at all.
+     */
+    public function asMember(): ?Member
+    {
+        if ($this->member) {
+            return $this->member;
+        }
+
+        $adults = Member::where('household_id', $this->household_id)
+            ->where('is_child', false)
+            ->get();
+
+        return $adults->firstWhere(
+            fn (Member $m) => mb_strtolower($m->name) === mb_strtolower((string) $this->name)
+        ) ?? ($adults->count() === 1 ? $adults->first() : null);
+    }
 }
