@@ -37,10 +37,14 @@
     <meta
         name="reverb-key"
         content="{{ config('broadcasting.connections.reverb.key') }}"
-        data-host="{{ config('broadcasting.connections.reverb.options.host') }}"
-        data-port="{{ config('broadcasting.connections.reverb.options.port') }}"
-        data-scheme="{{ config('broadcasting.connections.reverb.options.scheme') }}"
-        data-path="{{ config('reverb.servers.reverb.path') ? '/'.trim(config('reverb.servers.reverb.path'), '/') : '' }}"
+        {{-- The browser's journey, not PHP's: out to the public hostname and
+             back in through nginx. `options` beside it is the loopback the
+             server-side client uses, and pointing the wall at that would send
+             its websocket to 127.0.0.1. --}}
+        data-host="{{ config('broadcasting.connections.reverb.browser.host') }}"
+        data-port="{{ config('broadcasting.connections.reverb.browser.port') }}"
+        data-scheme="{{ config('broadcasting.connections.reverb.browser.scheme') }}"
+        data-path="{{ config('broadcasting.connections.reverb.browser.path') }}"
     >
 @endif
 

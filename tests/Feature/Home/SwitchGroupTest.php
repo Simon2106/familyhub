@@ -8,7 +8,9 @@ use App\Models\SwitchGroup;
 use App\Services\HomeAssistant\HomeAssistant;
 use App\Services\HomeAssistant\SwitchBoard;
 use Carbon\CarbonImmutable;
+use Illuminate\Contracts\Broadcasting\Broadcaster;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Queue;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\FakeHomeAssistant;
@@ -262,6 +264,46 @@ class SwitchGroupTest extends TestCase
             'broadcasting.connections.reverb.secret' => null,
             'broadcasting.connections.reverb.app_id' => null,
         ]);
+    }
+
+    /**
+     * A broadcaster that answers, badly.
+     *
+     * Closer to what production actually did than a missing key: Reverb was
+     * running, the server-side client was posting to the public hostname,
+     * nginx handed that to Laravel, and the Pusher client choked on a 404
+     * page — "Pusher error: <!DOCTYPE html>".
+     */
+    protected function breakBroadcastingMidFlight(): void
+    {
+        config(['broadcasting.default' => 'exploding']);
+
+        Broadcast::extend('exploding', fn () => new class implements Broadcaster
+        {
+            public function auth($request) {}
+
+            public function validAuthenticationResponse($request, $result) {}
+
+            public function broadcast(array $channels, $event, array $payload = []): void
+            {
+                throw new \RuntimeException('Pusher error: <!DOCTYPE html>');
+            }
+        });
+    }
+
+    #[Test]
+    public function a_broadcaster_that_throws_mid_flight_does_not_break_the_tap(): void
+    {
+        // The devices are switched first and the wall is told afterwards, so a
+        // nudge that fails costs the household nothing.
+        FakeHomeAssistant::entity('light.lamp', 'off');
+
+        $group = $this->group(entities: ['light.lamp']);
+
+        $this->breakBroadcastingMidFlight();
+
+        $this->assertSame('on', $this->board()->press($group, $this->states()));
+        $this->assertSame(['turn_on:light.lamp'], $this->services(), 'The lamp still went on.');
     }
 
     #[Test]
