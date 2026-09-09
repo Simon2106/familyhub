@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Exceptions\HouseholdNotProvisioned;
+use App\Services\PhotoLibrary;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -240,6 +241,84 @@ class Household extends Model
     protected function cleanTime(string $value, string $fallback): string
     {
         return preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', trim($value)) ? trim($value) : $fallback;
+    }
+
+    /**
+     * When the wall dims itself.
+     *
+     * Config supplies the first answer and the household overrides it: an
+     * installation default is a sensible thing to ship, and a wall that can
+     * only be re-timed by editing .env is not.
+     *
+     * @return array{start: string, end: string}
+     */
+    public function darkMode(): array
+    {
+        return [
+            'start' => $this->timeSetting('dark_start', (string) config('familyhub.dark_mode.start')),
+            'end' => $this->timeSetting('dark_end', (string) config('familyhub.dark_mode.end')),
+        ];
+    }
+
+    public function setDarkMode(string $start, string $end): void
+    {
+        $this->putSettings([
+            'dark_start' => $this->cleanTime($start, (string) config('familyhub.dark_mode.start')),
+            'dark_end' => $this->cleanTime($end, (string) config('familyhub.dark_mode.end')),
+        ]);
+    }
+
+    /** Minutes of nobody touching the wall before the screensaver. 0 = never. */
+    public function screensaverMinutes(): int
+    {
+        $minutes = $this->settings['screensaver_minutes']
+            ?? config('familyhub.screensaver.idle_minutes');
+
+        return max(0, min(240, (int) $minutes));
+    }
+
+    public function setScreensaverMinutes(int $minutes): void
+    {
+        $this->putSettings(['screensaver_minutes' => max(0, min(240, $minutes))]);
+    }
+
+    /** clock | today | photos */
+    public const SCREENSAVER_STYLES = [
+        'clock' => 'A big drifting clock',
+        'today' => 'Clock, the next thing on, and the weather',
+        'photos' => 'Photographs',
+    ];
+
+    /**
+     * What the screensaver shows.
+     *
+     * Unset means "whatever this household was already getting" — photographs
+     * where there are any, the clock where there are not — so switching the
+     * setting on does not silently take the family's photos away.
+     */
+    public function screensaverStyle(): string
+    {
+        $style = (string) ($this->settings['screensaver_style'] ?? '');
+
+        if (array_key_exists($style, self::SCREENSAVER_STYLES)) {
+            return $style;
+        }
+
+        return $this->hasPhotos() ? 'photos' : 'clock';
+    }
+
+    public function setScreensaverStyle(string $style): void
+    {
+        $this->putSettings([
+            'screensaver_style' => array_key_exists($style, self::SCREENSAVER_STYLES) ? $style : 'clock',
+        ]);
+    }
+
+    public function hasPhotos(): bool
+    {
+        // Through the library the wall already reads, rather than a second
+        // opinion about the same directory.
+        return app(PhotoLibrary::class)->urls(1) !== [];
     }
 
     /**

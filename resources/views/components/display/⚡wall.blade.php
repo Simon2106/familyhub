@@ -440,6 +440,49 @@ new #[Layout('layouts::display')] class extends Component
     }
 
     /** @return list<string> */
+    /**
+     * The wall's own settings, re-read on every poll.
+     *
+     * These live in the household rather than in config so /admin can change
+     * them, and they are read here rather than only in the layout so a change
+     * reaches the wall within a minute instead of at the next reload.
+     *
+     * @return array{darkStart: string, darkEnd: string, idleMs: int, style: string}
+     */
+    #[Computed]
+    public function wallSettings(): array
+    {
+        $dark = $this->household()->darkMode();
+
+        return [
+            'darkStart' => $dark['start'],
+            'darkEnd' => $dark['end'],
+            'idleMs' => $this->household()->screensaverMinutes() * 60 * 1000,
+            'style' => $this->household()->screensaverStyle(),
+        ];
+    }
+
+    /**
+     * The next thing on today, for the screensaver that shows one.
+     *
+     * Only what is still to come: a screensaver announcing this morning's
+     * dentist appointment at nine in the evening is worse than a blank screen.
+     */
+    #[Computed]
+    public function nextUp(): ?Event
+    {
+        $now = $this->household()->nowLocal();
+
+        return Event::query()
+            ->notCancelled()
+            ->whereHas('calendar', fn ($q) => $q->where('is_visible', true))
+            ->where('start_at', '>=', $now)
+            ->where('start_at', '<=', $now->endOfDay())
+            ->with('calendar.member')
+            ->orderBy('start_at')
+            ->first();
+    }
+
     #[Computed]
     public function photos(): array
     {
@@ -452,7 +495,7 @@ new #[Layout('layouts::display')] class extends Component
     $days = $this->days;
     $week = $this->week;
     $tz = $this->household()->displayTimezone();
-    $idleMs = config('familyhub.screensaver.idle_minutes') * 60 * 1000;
+    $wall = $this->wallSettings;
 @endphp
 
 <div
@@ -467,15 +510,32 @@ new #[Layout('layouts::display')] class extends Component
         searching: false,
         now: new Date(),
         idle: false,
+        idleSince: 0,
         photoIndex: 0,
         photos: @js($this->photos),
-        idleMs: @js($idleMs),
+        idleMs: @js($wall['idleMs']),
+        saverStyle: @js($wall['style']),
+        darkStart: @js($wall['darkStart']),
+        darkEnd: @js($wall['darkEnd']),
+        drift: { x: 0, y: 0 },
         tz: @js($tz),
         weekDates: @js(array_column($week, 'date')),
 
         init() {
             setInterval(() => (this.now = new Date()), 1000);
             this.armIdleTimer();
+            this.applyDarkSchedule();
+
+            /* The settings come back down on every poll, so a change made in
+               /admin reaches the wall within the minute rather than at the
+               next reload. */
+            this.$watch('darkStart', () => this.applyDarkSchedule());
+            this.$watch('darkEnd', () => this.applyDarkSchedule());
+            this.$watch('idleMs', () => this.armIdleTimer());
+
+            /* Five steps a second: at the speed this moves that is under a
+               pixel and a half a step, and the panel may only run at 30Hz. */
+            setInterval(() => this.stepDrift(), 200);
 
             if (this.photos.length > 1) {
                 setInterval(() => {
@@ -523,10 +583,37 @@ new #[Layout('layouts::display')] class extends Component
             this.selected = this.weekDates[next];
         },
 
+        /* Handed to the plain, framework-free applier in app.js, which is what
+           runs the schedule whether or not Livewire ever booted. */
+        applyDarkSchedule() {
+            const root = document.documentElement;
+
+            root.dataset.darkStart = this.darkStart;
+            root.dataset.darkEnd = this.darkEnd;
+
+            window.familyhubDarkMode?.();
+        },
+
+        stepDrift() {
+            if (!this.idle || this.saverStyle === 'photos') return;
+
+            const clock = this.$refs.driftingClock;
+            const screen = this.$refs.screensaver;
+
+            if (!clock || !screen) return;
+
+            const room = window.familyhubDrift.roomFor(screen.getBoundingClientRect(), clock.getBoundingClientRect());
+
+            this.drift = window.familyhubDrift.driftAt(Date.now() - this.idleSince, room);
+        },
+
         armIdleTimer() {
             if (!this.idleMs) return;
             clearTimeout(this.idleTimer);
-            this.idleTimer = setTimeout(() => (this.idle = true), this.idleMs);
+            this.idleTimer = setTimeout(() => {
+                this.idleSince = Date.now();
+                this.idle = true;
+            }, this.idleMs);
         },
 
         wake() {
@@ -1345,22 +1432,67 @@ new #[Layout('layouts::display')] class extends Component
     </nav>
 
     {{-- ========================== SCREENSAVER =========================== --}}
+    {{-- Any touch wakes it, wherever it lands: on a dark screen there is
+         nothing to aim at, so everything is the target. --}}
     <div
+        x-ref="screensaver"
         x-show="idle"
         x-cloak
         x-transition.opacity.duration.700ms
         x-on:click="wake()"
-        class="fixed inset-0 z-50 grid place-items-center bg-black"
+        x-on:touchstart="wake()"
+        class="fixed inset-0 z-50 overflow-hidden bg-black"
     >
-        <template x-if="photos.length">
+        <template x-if="saverStyle === 'photos' && photos.length">
             <img :src="photos[photoIndex]" alt="" class="h-full w-full object-cover">
         </template>
 
-        {{-- With no photos loaded the wall becomes a large, quiet clock. --}}
-        <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-10 text-white">
-            <p class="text-7xl font-bold tabular-nums" x-text="clock"></p>
-            <p class="mt-1 text-xl text-white/70"
-               x-text="now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz })"></p>
-        </div>
+        @if ($wall['style'] === 'photos')
+            {{-- Over a photograph the clock stays put and stays small: there
+                 is nothing to burn in behind a picture that changes. --}}
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-10 text-white">
+                <p class="text-7xl font-bold tabular-nums" x-text="clock"></p>
+                <p class="mt-1 text-xl text-white/70"
+                   x-text="now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz })"></p>
+            </div>
+        @else
+            {{-- A clock that wanders, so the same numerals never sit in the
+                 same pixels all night. Positioned rather than centred: the
+                 drift is a translate within the room it has. --}}
+            <div x-ref="driftingClock"
+                 class="absolute top-0 left-0 p-10 text-white will-change-transform"
+                 :style="`transform: translate3d(${drift.x}px, ${drift.y}px, 0)`"
+                 style="transition: transform 200ms linear;">
+                <p class="text-[9rem] leading-none font-bold tabular-nums" x-text="clock"></p>
+                <p class="mt-3 text-3xl text-white/60"
+                   x-text="now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz })"></p>
+
+                @if ($wall['style'] === 'today')
+                    @php $next = $this->nextUp; @endphp
+
+                    <div class="mt-6 space-y-2 text-2xl text-white/70">
+                        @if ($next)
+                            <p>
+                                <span class="tabular-nums">{{ $next->all_day ? 'All day' : $next->start_at->timezone($tz)->format('H:i') }}</span>
+                                <span class="ml-3 font-semibold text-white/90">{{ $next->title }}</span>
+                                @if ($next->calendar?->member?->name)
+                                    <span class="ml-2 text-white/50">{{ $next->calendar->member->name }}</span>
+                                @endif
+                            </p>
+                        @else
+                            <p class="text-white/40">Nothing else on today.</p>
+                        @endif
+
+                        @if ($this->weather)
+                            <p>
+                                <span class="mr-2">{{ $this->weather->icon() }}</span>
+                                {{ $this->weather->description() }}
+                                <span class="ml-2 tabular-nums">{{ $this->weather->round($this->weather->temperature) }}&deg;</span>
+                            </p>
+                        @endif
+                    </div>
+                @endif
+            </div>
+        @endif
     </div>
 </div>

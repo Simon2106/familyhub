@@ -46,6 +46,16 @@ new #[Layout('layouts::app')] class extends Component
     /** Whether the wall reads its answers out loud. */
     public bool $wallSpeaks = true;
 
+    public string $darkStart = '21:00';
+
+    public string $darkEnd = '06:30';
+
+    /** Minutes of nobody touching the wall before the screensaver. 0 = never. */
+    public int $screensaverMinutes = 10;
+
+    /** clock | today | photos */
+    public string $screensaverStyle = 'clock';
+
     public bool $screenOffEnabled = false;
 
     public string $screenOffStart = '23:00';
@@ -93,6 +103,12 @@ new #[Layout('layouts::app')] class extends Component
         $this->binWeekB = $pattern?->weekB ?? [];
 
         $this->wallSpeaks = $household->wallSpeaks();
+
+        $dark = $household->darkMode();
+        $this->darkStart = $dark['start'];
+        $this->darkEnd = $dark['end'];
+        $this->screensaverMinutes = $household->screensaverMinutes();
+        $this->screensaverStyle = $household->screensaverStyle();
         $screenOff = $household->screenOff();
         $this->screenOffEnabled = $screenOff['enabled'];
         $this->screenOffStart = $screenOff['start'];
@@ -294,6 +310,10 @@ new #[Layout('layouts::app')] class extends Component
             'binCalendarUrl' => 'nullable|string|max:2000',
             'screenOffStart' => 'required|date_format:H:i',
             'screenOffEnd' => 'required|date_format:H:i',
+            'darkStart' => 'required|date_format:H:i',
+            'darkEnd' => 'required|date_format:H:i',
+            'screensaverMinutes' => 'required|integer|min:0|max:240',
+            'screensaverStyle' => 'required|in:'.implode(',', array_keys(Household::SCREENSAVER_STYLES)),
             'mirrorCalendarId' => 'nullable|integer',
         ]);
 
@@ -309,6 +329,9 @@ new #[Layout('layouts::app')] class extends Component
         $household->setMealSlots($this->mealSlots);
         $household->setScreenOff($this->screenOffEnabled, $this->screenOffStart, $this->screenOffEnd);
         $household->setWallSpeaks($this->wallSpeaks);
+        $household->setDarkMode($this->darkStart, $this->darkEnd);
+        $household->setScreensaverMinutes($this->screensaverMinutes);
+        $household->setScreensaverStyle($this->screensaverStyle);
         $household->setBinCalendarUrl($this->binCalendarUrl);
 
         $this->dispatch('saved', message: 'Household saved.');
@@ -854,16 +877,55 @@ new #[Layout('layouts::app')] class extends Component
                 Pair the iPad by opening the display URL on it once. Get the URL with
                 <code class="rounded bg-slate-100 px-1 dark:bg-slate-800">php artisan familyhub:display-token</code>.
             </p>
-            <dl class="mt-3 space-y-1 text-sm">
-                <div class="flex justify-between gap-4">
-                    <dt class="text-slate-500 dark:text-slate-400">Dark mode</dt>
-                    <dd class="tabular-nums">{{ config('familyhub.dark_mode.start') }} – {{ config('familyhub.dark_mode.end') }}</dd>
+            {{-- Dark mode: the wall dimming itself of an evening, distinct
+                 from the screen going off entirely below. --}}
+            <div class="mt-4">
+                <p class="text-sm font-medium">Dark mode</p>
+                <div class="mt-1 flex gap-2">
+                    <label class="min-w-0 flex-1">
+                        <span class="block text-sm text-slate-500 dark:text-slate-400">From</span>
+                        <input wire:model="darkStart" type="time"
+                               class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                    </label>
+                    <label class="min-w-0 flex-1">
+                        <span class="block text-sm text-slate-500 dark:text-slate-400">until</span>
+                        <input wire:model="darkEnd" type="time"
+                               class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                    </label>
                 </div>
-                <div class="flex justify-between gap-4">
-                    <dt class="text-slate-500 dark:text-slate-400">Screensaver after</dt>
-                    <dd>{{ config('familyhub.screensaver.idle_minutes') ?: 'never' }} @if (config('familyhub.screensaver.idle_minutes')) min @endif</dd>
+                @error('darkStart') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                @error('darkEnd') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+            </div>
+
+            <div class="mt-4">
+                <label class="block text-sm font-medium" for="screensaver-minutes">Screensaver after</label>
+                <div class="mt-1 flex items-center gap-2">
+                    <input id="screensaver-minutes" wire:model="screensaverMinutes" type="number" min="0" max="240"
+                           class="touch-target w-28 rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                    <span class="text-sm text-slate-500 dark:text-slate-400">minutes of nobody touching it. 0 never shows it.</span>
                 </div>
-            </dl>
+                @error('screensaverMinutes') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+            </div>
+
+            @if ($screensaverMinutes > 0)
+                <fieldset class="mt-3">
+                    <legend class="text-sm font-medium">What it shows</legend>
+                    <div class="mt-1 space-y-1">
+                        @foreach (Household::SCREENSAVER_STYLES as $key => $label)
+                            <label class="flex touch-target items-center gap-3">
+                                <input wire:model.live="screensaverStyle" type="radio" value="{{ $key }}" class="size-5 shrink-0">
+                                <span class="text-sm">{{ $label }}</span>
+                            </label>
+                        @endforeach
+                    </div>
+                    @if ($screensaverStyle !== 'photos')
+                        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                            The clock drifts slowly around the screen so the same numerals never
+                            sit in the same pixels all night.
+                        </p>
+                    @endif
+                </fieldset>
+            @endif
             {{-- The microphone answers out loud unless told not to. A
                  kitchen at seven in the morning is a reasonable place to want
                  that off without losing the answers themselves. --}}

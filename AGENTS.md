@@ -111,7 +111,7 @@ conventions. The points most easily got wrong:
 The wall display runs on a Raspberry Pi 5 (Bookworm, Wayland) driving a 15.6"
 4K touchscreen through Chromium in kiosk mode.
 
-**URL.** `https://hub.thewills.uk/display?token=<display token>` — get the token
+**URL.** `https://hub.thewills.uk/display?token=1bbf8365b5429ac252bc9fd5e269dc5a87b51f23453809e4` — get the token
 with `php artisan familyhub:display-token`. The token stays in the URL on
 purpose (see `EnsureDisplayToken`); the middleware sets a year-long cookie and
 renders in the same response, so the kiosk survives a cookie wipe by reloading

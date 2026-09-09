@@ -5,14 +5,20 @@
 <!DOCTYPE html>
 <html
     lang="{{ str_replace('_', '-', app()->getLocale()) }}"
-    data-dark-start="{{ config('familyhub.dark_mode.start') }}"
-    data-dark-end="{{ config('familyhub.dark_mode.end') }}"
-    @php $screenOff = \App\Models\Household::current()->screenOff(); @endphp
+    @php
+        $household = \App\Models\Household::current();
+        $dark = $household->darkMode();
+        $screenOff = $household->screenOff();
+    @endphp
+    {{-- Seeded here so the schedule is right before Livewire boots; the wall
+         component keeps them in step from then on. --}}
+    data-dark-start="{{ $dark['start'] }}"
+    data-dark-end="{{ $dark['end'] }}"
     @if ($screenOff['enabled'])
         data-screen-off-start="{{ $screenOff['start'] }}"
         data-screen-off-end="{{ $screenOff['end'] }}"
     @endif
-    data-timezone="{{ \App\Models\Household::current()->displayTimezone() }}"
+    data-timezone="{{ $household->displayTimezone() }}"
     data-kiosk
 >
     <head>

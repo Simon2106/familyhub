@@ -9,6 +9,7 @@
 import { isDarkNow } from './dark-mode';
 import { createDragBoard } from './dragboard';
 import { createSilenceWatch, followUntilDone, levelOf } from './listen';
+import { driftAt, roomFor } from './drift';
 import { createKeyboard, wantsKeyboard } from './keyboard';
 import { startEcho, watchConnection } from './echo';
 import { createScreenOff } from './screen-off';
@@ -30,6 +31,14 @@ function applyDarkModeSchedule() {
 
 applyDarkModeSchedule();
 setInterval(applyDarkModeSchedule, 60_000);
+
+// Exposed so the wall can re-run it the moment the schedule changes in /admin,
+// rather than waiting up to a minute for the next tick.
+window.familyhubDarkMode = applyDarkModeSchedule;
+
+// The screensaver clock's wander. Kept here rather than in the Blade so the
+// path can be tested; the wall only asks it where to be.
+window.familyhubDrift = { driftAt, roomFor };
 
 // The clock and the schedule must not drift while the tab is backgrounded.
 document.addEventListener('visibilitychange', () => {
