@@ -248,6 +248,82 @@ class SwitchGroupTest extends TestCase
         $this->assertTrue($group->fresh()->hasPending(), 'The newer countdown is untouched.');
     }
 
+    /* --------------------------- the wall's nudge ------------------------ */
+
+    /**
+     * A broadcaster that cannot be built, which is what a Reverb that is
+     * misconfigured or simply not running looks like from in here.
+     */
+    protected function breakBroadcasting(): void
+    {
+        config([
+            'broadcasting.default' => 'reverb',
+            'broadcasting.connections.reverb.key' => null,
+            'broadcasting.connections.reverb.secret' => null,
+            'broadcasting.connections.reverb.app_id' => null,
+        ]);
+    }
+
+    #[Test]
+    public function a_broadcaster_nobody_is_listening_on_does_not_break_the_tap(): void
+    {
+        // Reported from the wall: tapping a group gave a 500 while the lamps
+        // had already been switched perfectly well. The event is
+        // ShouldBroadcastNow, so it goes out inside the request — and this is
+        // the only thing in the app that broadcasts from one.
+        FakeHomeAssistant::entity('light.lamp', 'off');
+
+        $group = $this->group(entities: ['light.lamp']);
+
+        $this->breakBroadcasting();
+
+        $this->assertSame('on', $this->board()->press($group, $this->states()));
+        $this->assertSame(['turn_on:light.lamp'], $this->services(), 'And the lamp still went on.');
+    }
+
+    #[Test]
+    public function nor_a_countdown_or_its_cancel(): void
+    {
+        FakeHomeAssistant::entity('light.lamp', 'on');
+
+        $group = $this->group(['off_delay' => 5], ['light.lamp']);
+
+        $this->breakBroadcasting();
+
+        $this->assertSame('pending', $this->board()->press($group, $this->states()));
+        $this->assertTrue($group->fresh()->hasPending());
+
+        $this->board()->cancel($group->fresh());
+        $this->assertFalse($group->fresh()->hasPending());
+    }
+
+    #[Test]
+    public function nor_toggling_one_member(): void
+    {
+        FakeHomeAssistant::entity('light.lamp', 'on');
+
+        $group = $this->group(entities: ['light.lamp']);
+
+        $this->breakBroadcasting();
+
+        $this->board()->toggleMember($group, 'light.lamp');
+
+        $this->assertSame(['toggle:light.lamp'], $this->services());
+    }
+
+    #[Test]
+    public function a_group_with_nothing_in_it_yet_can_still_be_tapped(): void
+    {
+        // Made in /admin a moment ago and not filled in yet.
+        $group = $this->group(entities: []);
+
+        $this->breakBroadcasting();
+
+        $this->assertSame('unknown', $this->board()->stateOf($group, $this->states()));
+        $this->assertSame('off', $this->board()->press($group, $this->states()));
+        $this->assertSame([], $this->services(), 'Nothing to switch, and nothing thrown.');
+    }
+
     /* ------------------------------ members ------------------------------ */
 
     #[Test]

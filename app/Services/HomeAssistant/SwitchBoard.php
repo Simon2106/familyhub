@@ -110,14 +110,14 @@ class SwitchBoard
         SwitchGroupJob::dispatch($group->id, $direction, $firesAt->toIso8601String())
             ->delay($firesAt);
 
-        HomeStateChanged::dispatch();
+        HomeStateChanged::nudge();
     }
 
     public function cancel(SwitchGroup $group): void
     {
         $group->forceFill(['pending_direction' => null, 'pending_fires_at' => null])->save();
 
-        HomeStateChanged::dispatch();
+        HomeStateChanged::nudge();
     }
 
     /** Switch every member, one entity at a time, and say so on the wall. */
@@ -143,7 +143,7 @@ class SwitchBoard
 
         $group->forceFill(['pending_direction' => null, 'pending_fires_at' => null])->save();
 
-        HomeStateChanged::dispatch();
+        HomeStateChanged::nudge();
     }
 
     /** One member of a group, toggled on its own — the long-press on the wall. */
@@ -155,6 +155,6 @@ class SwitchBoard
 
         $this->home->toggle($entityId);
 
-        HomeStateChanged::dispatch();
+        HomeStateChanged::nudge();
     }
 }

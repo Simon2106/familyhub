@@ -8,7 +8,6 @@ use App\Services\HomeAssistant\HomeAssistant;
 use App\Services\HomeAssistant\StateStore;
 use App\Support\DeployWatch;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 use WebSocket\Client as WebSocketClient;
@@ -186,11 +185,9 @@ class ListenToHomeAssistant extends Command
 
         $this->lastBroadcastAt = $now;
 
-        try {
-            HomeStateChanged::dispatch();
-        } catch (Throwable $e) {
-            Log::warning('Could not tell the wall about a state change', ['error' => $e->getMessage()]);
-        }
+        // Guarded inside nudge(), so the daemon cannot be brought down by a
+        // websocket nobody is listening on.
+        HomeStateChanged::nudge();
     }
 
     /**
