@@ -1263,8 +1263,14 @@ new #[Layout('layouts::display')] class extends Component
             <div class="flex min-h-0 flex-col xl:col-span-3">
                 <livewire:meals.plan />
             </div>
-            <div class="min-h-0 xl:col-span-2">
-                <livewire:recipes.box />
+            <div class="flex min-h-0 flex-col xl:col-span-2">
+                {{-- Tonight first: it is the only thing on this tab a child
+                     walking past can act on. --}}
+                <livewire:meals.tonight />
+
+                <div class="min-h-0 flex-1">
+                    <livewire:recipes.box />
+                </div>
             </div>
         </div>
 

@@ -143,16 +143,33 @@ class MealSuggestionTest extends TestCase
     /* ---------------------------- fill the week -------------------------- */
 
     #[Test]
-    public function a_week_is_seven_different_dinners(): void
+    public function a_week_is_a_different_dinner_every_night(): void
     {
+        foreach (['A', 'B', 'C', 'D', 'E', 'F', 'G'] as $title) {
+            $this->idea($title);
+        }
+
+        // Next week, so all seven nights are still to come.
+        $week = $this->suggester()->week($this->household, $this->monday()->addWeek());
+
+        $this->assertCount(7, $week);
+        $this->assertCount(7, $week->pluck('id')->unique(), 'The same favourite four times is not a plan.');
+    }
+
+    #[Test]
+    public function a_night_that_has_already_been_is_not_proposed(): void
+    {
+        // Wednesday is no time to be told what to have on Monday.
         foreach (['A', 'B', 'C', 'D', 'E', 'F', 'G'] as $title) {
             $this->idea($title);
         }
 
         $week = $this->suggester()->week($this->household, $this->monday());
 
-        $this->assertCount(7, $week);
-        $this->assertCount(7, $week->pluck('id')->unique(), 'The same favourite four times is not a plan.');
+        $this->assertSame(
+            ['2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13'],
+            $week->keys()->all(),
+        );
     }
 
     #[Test]

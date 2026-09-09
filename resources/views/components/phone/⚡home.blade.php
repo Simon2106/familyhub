@@ -175,6 +175,9 @@ new #[Layout('layouts::app')] class extends Component
             </div>
         @endforelse
 
+        {{-- Last night's dinner, asked about once. --}}
+        <livewire:meals.how-was-it />
+
         {{-- Capture inbox --}}
         @php $waiting = \App\Models\CaptureItem::query()
             ->whereHas('capture', fn ($q) => $q->where('household_id', \App\Models\Household::current()->id))

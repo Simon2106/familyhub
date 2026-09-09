@@ -76,9 +76,12 @@ class MealSuggester
 
         $pool = $this->pool($household);
         $chosen = collect();
+        $today = $household->todayLocal();
 
         for ($day = $weekStart; $day->lessThan($weekStart->addDays(7)); $day = $day->addDay()) {
-            if (in_array($day->toDateString(), $planned, true)) {
+            // Wednesday is no time to be told what to have on Monday. Filling
+            // the current week means filling the rest of it.
+            if ($day->lessThan($today) || in_array($day->toDateString(), $planned, true)) {
                 continue;
             }
 

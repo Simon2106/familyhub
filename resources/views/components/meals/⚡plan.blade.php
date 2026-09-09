@@ -3,6 +3,7 @@
 use App\Models\Household;
 use App\Models\Meal;
 use App\Models\Recipe;
+use App\Services\Meals\MealSuggester;
 use App\Services\Meals\ShoppingListGenerator;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -29,6 +30,19 @@ new class extends Component
 
     /** Picker tab: favourites first, because that is what makes a week quick. */
     public string $picking = 'favourites';
+
+    /**
+     * A proposed week, held here and written nowhere.
+     *
+     * Keyed by date, valued by recipe id. This is the whole of "fill the
+     * week": the grid draws it as ghosts until somebody accepts, and closing
+     * the page throws it away. A planner that filled itself in is one the
+     * family stops trusting, because the only thing worse than an empty
+     * Thursday is a Thursday that says something wrong.
+     *
+     * @var array<string, int>
+     */
+    public array $proposals = [];
 
     public function household(): Household
     {
@@ -96,12 +110,23 @@ new class extends Component
     #[Computed]
     public function pickable(): Collection
     {
-        return Recipe::query()
+        $today = $this->household()->todayLocal();
+
+        $ideas = Recipe::query()
             ->where('household_id', $this->household()->id)
             ->ready()
+            ->withCookedHistory($today->toDateString())
+            ->withOpinions()
             ->when($this->picking === 'favourites', fn ($q) => $q->where('is_favourite', true))
             ->orderBy('title')
             ->get();
+
+        // "Not had for a while" is the shelf a family actually reaches for
+        // when nobody can think of anything.
+        return $this->picking === 'while'
+            ? $ideas->filter(fn (Recipe $r) => $r->lastCooked() === null
+                || $r->lastCooked()->lessThan($today->subDays(Recipe::A_WHILE_DAYS)))->values()
+            : $ideas;
     }
 
     #[Computed]
@@ -169,6 +194,80 @@ new class extends Component
         $recipe = Recipe::where('household_id', $this->household()->id)->findOrFail($recipeId);
 
         $this->put($recipe->title, $recipe->id);
+    }
+
+    /**
+     * One idea for the night being edited, chosen for us.
+     *
+     * Fills the cell straight away rather than proposing: the dialog is open
+     * and the family is looking at it, so the undo is the same Cancel that was
+     * already there.
+     */
+    public function surprise(): void
+    {
+        if (! $this->editing) {
+            return;
+        }
+
+        [$on] = explode('|', $this->editing);
+
+        $pick = app(MealSuggester::class)->surprise(
+            $this->household(),
+            CarbonImmutable::parse($on, $this->household()->displayTimezone()),
+        );
+
+        if (! $pick) {
+            $this->addError('title', 'Nothing to suggest yet — add a few ideas first.');
+
+            return;
+        }
+
+        $this->put($pick->title, $pick->id);
+    }
+
+    /**
+     * A whole week proposed at once. Nothing is written until it is accepted.
+     */
+    public function suggestWeek(): void
+    {
+        $this->proposals = app(MealSuggester::class)
+            ->week($this->household(), $this->weekStart)
+            ->map(fn (Recipe $recipe) => $recipe->id)
+            ->all();
+    }
+
+    public function acceptProposal(string $on): void
+    {
+        $recipeId = $this->proposals[$on] ?? null;
+
+        if ($recipeId) {
+            $this->place($recipeId, $on, 'dinner');
+        }
+
+        unset($this->proposals[$on]);
+    }
+
+    public function acceptAllProposals(): void
+    {
+        foreach ($this->proposals as $on => $recipeId) {
+            $this->place($recipeId, $on, 'dinner');
+        }
+
+        $this->proposals = [];
+    }
+
+    public function dismissProposals(): void
+    {
+        $this->proposals = [];
+    }
+
+    /** The ideas behind the proposals, for drawing the ghosts. */
+    #[Computed]
+    public function proposed(): Collection
+    {
+        return $this->proposals === []
+            ? collect()
+            : Recipe::whereIn('id', array_values($this->proposals))->get()->keyBy('id');
     }
 
     public function clearCell(): void
@@ -289,7 +388,11 @@ new class extends Component
     {
         $this->weekOffset = max(-52, min(52, $offset));
 
-        unset($this->weekStart, $this->days, $this->meals);
+        // A proposal is for the week it was made about; carrying it across
+        // would put next week's Thursday onto this one.
+        $this->proposals = [];
+
+        unset($this->weekStart, $this->days, $this->meals, $this->proposed);
     }
 
     protected function put(string $title, ?int $recipeId = null): void
@@ -367,6 +470,11 @@ new class extends Component
             <span wire:loading.remove wire:target="generateShoppingList">Shopping list</span>
             <span wire:loading wire:target="generateShoppingList">Adding…</span>
         </button>
+        <button type="button" wire:click="suggestWeek"
+                class="touch-target rounded-xl px-3 text-sm font-semibold text-blue-600 dark:text-blue-400">
+            <span wire:loading.remove wire:target="suggestWeek">Fill the week</span>
+            <span wire:loading wire:target="suggestWeek">Thinking…</span>
+        </button>
         <button type="button" wire:click="copyLastWeek"
                 class="touch-target rounded-xl px-3 text-sm font-semibold text-blue-600 dark:text-blue-400">
             Copy last week
@@ -377,6 +485,20 @@ new class extends Component
             Clear week
         </button>
     </div>
+
+    {{-- A proposal, not a plan. Said in words as well as in ghost text,
+         because a suggestion that looks like a decision is worse than none. --}}
+    @if ($proposals !== [])
+        <div class="mb-2 flex flex-wrap items-center gap-2 rounded-2xl bg-blue-50 px-3 py-2 dark:bg-blue-950/40">
+            <p class="min-w-0 flex-1 text-sm font-medium text-blue-900 dark:text-blue-200">
+                Suggested for {{ count($proposals) }} empty {{ Str::plural('night', count($proposals)) }}. Nothing is saved yet.
+            </p>
+            <button type="button" wire:click="acceptAllProposals"
+                    class="touch-target rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white">Accept all</button>
+            <button type="button" wire:click="dismissProposals"
+                    class="touch-target rounded-xl px-3 text-sm font-semibold text-blue-700 dark:text-blue-300">No thanks</button>
+        </div>
+    @endif
 
     {{-- ------------------------------- GRID ----------------------------- --}}
     <div class="pane-scroll min-h-0 flex-1">
@@ -417,10 +539,24 @@ new class extends Component
                                     </span>
                                 @endif
                             </span>
+                        @elseif ($proposals[$day['date']] ?? null)
+                            @php $ghost = $this->proposed[$proposals[$day['date']]] ?? null; @endphp
+                            <span class="min-w-0 flex-1">
+                                <span class="block truncate font-semibold text-blue-700 italic dark:text-blue-300">{{ $ghost?->title }}</span>
+                                <span class="block text-xs text-blue-600/70 dark:text-blue-400/70">Suggested — tap ✓ to keep</span>
+                            </span>
                         @else
                             <span class="text-sm text-slate-400">Add dinner</span>
                         @endif
                     </button>
+
+                    @if (($proposals[$day['date']] ?? null) && ! $dinner)
+                        {{-- Accepting is its own button, so tapping the cell
+                             still means "let me choose something else". --}}
+                        <button type="button" wire:click="acceptProposal('{{ $day['date'] }}')"
+                                class="grid touch-target shrink-0 place-items-center rounded-xl bg-blue-600 px-3 font-bold text-white"
+                                aria-label="Keep the suggestion for {{ $day['carbon']->format('l') }}">&check;</button>
+                    @endif
 
                     @foreach ($extras as $slot)
                         @php $meal = $this->meals[$day['date'].'|'.$slot] ?? null; @endphp
@@ -502,8 +638,13 @@ new class extends Component
                 </form>
                 @error('title') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
 
-                <div class="mt-4 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
-                    @foreach (['favourites' => 'Favourites', 'all' => 'All recipes'] as $key => $label)
+                <button type="button" wire:click="surprise"
+                        class="mt-3 w-full touch-target rounded-xl bg-slate-900 text-sm font-semibold text-white dark:bg-white dark:text-slate-900">
+                    Surprise me
+                </button>
+
+                <div class="mt-3 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+                    @foreach (['favourites' => 'Favourites', 'while' => 'Not lately', 'all' => 'All ideas'] as $key => $label)
                         <button type="button" wire:click="$set('picking', '{{ $key }}')"
                                 class="touch-target rounded-lg text-sm font-semibold {{ $picking === $key ? 'bg-white shadow-sm dark:bg-slate-900' : 'text-slate-500' }}">
                             {{ $label }}
@@ -523,17 +664,22 @@ new class extends Component
                                 @endif
                                 <span class="min-w-0 flex-1">
                                     <span class="block truncate font-medium">{{ $recipe->title }}</span>
-                                    @if ($recipe->summary())
-                                        <span class="block truncate text-xs text-slate-400">{{ $recipe->summary() }}</span>
-                                    @endif
+                                    <span class="block truncate text-xs text-slate-400">
+                                        @if ($recipe->stars())<span class="font-semibold text-amber-500">{{ number_format($recipe->stars(), 1) }}&#9733;</span> @endif
+                                        @if ($recipe->neverCooked())
+                                            Never tried
+                                        @elseif ($recipe->lastCooked())
+                                            Last had {{ $recipe->lastCooked()->diffForHumans(['short' => true, 'parts' => 1]) }}
+                                        @endif
+                                    </span>
                                 </span>
                             </button>
                         </li>
                     @empty
                         <li class="px-2 py-3 text-sm text-slate-400">
                             {{ $picking === 'favourites'
-                                ? 'No favourites yet — star a few in the recipe box.'
-                                : 'Nothing in the recipe box yet.' }}
+                                ? 'No favourites yet — heart a few under Ideas.'
+                                : 'Nothing under Ideas yet.' }}
                         </li>
                     @endforelse
                 </ul>
