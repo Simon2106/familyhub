@@ -198,12 +198,29 @@ class Recipe extends Model
         return $this->hero_image_url;
     }
 
-    /** @return list<array{quantity: float|null, unit: string|null, item: string, note: string|null}> */
+    /**
+     * The ingredients, every row filled out to the same shape.
+     *
+     * The rows come from an AI extraction, a shared page, or somebody typing,
+     * so a row with no unit and no note is normal. Everything downstream — the
+     * dialog, cook mode, the shopping list — is spared guarding four keys by
+     * being handed the whole shape here.
+     *
+     * @return list<array{quantity: float|null, unit: string|null, item: string, note: string|null}>
+     */
     public function ingredientList(): array
     {
-        return array_values(array_filter(
-            $this->ingredients ?? [],
-            fn ($row) => is_array($row) && filled($row['item'] ?? null),
+        return array_values(array_map(
+            fn (array $row) => [
+                'quantity' => isset($row['quantity']) && $row['quantity'] !== '' ? (float) $row['quantity'] : null,
+                'unit' => filled($row['unit'] ?? null) ? (string) $row['unit'] : null,
+                'item' => (string) $row['item'],
+                'note' => filled($row['note'] ?? null) ? (string) $row['note'] : null,
+            ],
+            array_filter(
+                $this->ingredients ?? [],
+                fn ($row) => is_array($row) && filled($row['item'] ?? null),
+            ),
         ));
     }
 

@@ -707,6 +707,128 @@ document.addEventListener('alpine:init', () => {
 });
 
 /* -------------------------------------------------------------------------
+ * Cook mode
+ *
+ * Timers and a screen that refuses to sleep. Both are browser APIs with no
+ * server side to them, and both have to survive a Livewire re-render when the
+ * step changes — so they live on the wrapper, which does not.
+ * ---------------------------------------------------------------------- */
+
+document.addEventListener('alpine:init', () => {
+    window.Alpine.data('cookMode', () => ({
+        timers: [],
+        awake: false,
+        lock: null,
+        ticker: null,
+
+        async init() {
+            this.ticker = setInterval(() => this.tick(), 1000);
+
+            await this.keepAwake();
+
+            // A wake lock is dropped whenever the page is hidden — switching
+            // apps to look something up, say — and is not given back on its
+            // own.
+            document.addEventListener('visibilitychange', this.reacquire);
+        },
+
+        destroy() {
+            clearInterval(this.ticker);
+            document.removeEventListener('visibilitychange', this.reacquire);
+            this.release();
+        },
+
+        reacquire: async function reacquire() {
+            if (document.visibilityState === 'visible') await this.keepAwake?.();
+        },
+
+        async keepAwake() {
+            try {
+                this.lock = await navigator.wakeLock?.request('screen');
+                this.awake = Boolean(this.lock);
+            } catch {
+                // Refused, unsupported, or the battery is low. Cooking still
+                // works; the screen just dims as it normally would.
+                this.awake = false;
+            }
+        },
+
+        release() {
+            try {
+                this.lock?.release();
+            } catch {
+                // Already gone.
+            }
+
+            this.lock = null;
+            this.awake = false;
+        },
+
+        startTimer(minutes) {
+            this.timers.push({ id: Date.now() + Math.random(), left: minutes * 60, rung: false });
+        },
+
+        stopTimer(id) {
+            this.timers = this.timers.filter((timer) => timer.id !== id);
+        },
+
+        tick() {
+            for (const timer of this.timers) {
+                if (timer.left > 0) {
+                    timer.left -= 1;
+
+                    if (timer.left === 0 && !timer.rung) {
+                        timer.rung = true;
+                        this.ring();
+                    }
+                }
+            }
+        },
+
+        /**
+         * A short tone rather than an audio file: the kiosk may have no
+         * speakers worth the download, and a beep somebody can hear over an
+         * extractor fan is three sine waves and nothing else.
+         */
+        ring() {
+            try {
+                const context = new (window.AudioContext || window.webkitAudioContext)();
+
+                for (const [at, hz] of [
+                    [0, 880],
+                    [0.35, 880],
+                    [0.7, 1174],
+                ]) {
+                    const oscillator = context.createOscillator();
+                    const gain = context.createGain();
+
+                    oscillator.frequency.value = hz;
+                    gain.gain.setValueAtTime(0.0001, context.currentTime + at);
+                    gain.gain.exponentialRampToValueAtTime(0.3, context.currentTime + at + 0.02);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + at + 0.25);
+
+                    oscillator.connect(gain).connect(context.destination);
+                    oscillator.start(context.currentTime + at);
+                    oscillator.stop(context.currentTime + at + 0.3);
+                }
+
+                setTimeout(() => context.close(), 2000);
+            } catch {
+                // No audio. The timer still turns amber, which is the part
+                // somebody standing at the wall will see anyway.
+            }
+        },
+
+        formatted(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+
+            return `${m}:${String(s).padStart(2, '0')}`;
+        },
+    }));
+});
+
+/* -------------------------------------------------------------------------
  * Overnight screen off
  *
  * The kiosk monitor cannot be power-cycled remotely, so "off" is a full-black

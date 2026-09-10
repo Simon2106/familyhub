@@ -507,6 +507,16 @@ new class extends Component
                         </div>
                     @endif
 
+                    @if ($recipe->steps)
+                        {{-- Cooking from the wall: one step to a screen, big
+                             buttons, and a display that stays awake. --}}
+                        <button type="button"
+                                wire:click="$dispatch('cook', { recipe: {{ $recipe->id }} })"
+                                class="touch-target w-full rounded-xl bg-blue-600 text-lg font-semibold text-white">
+                            Cook this
+                        </button>
+                    @endif
+
                     @if ($recipe->source_url)
                         <a href="{{ $recipe->source_url }}" target="_blank" rel="noopener noreferrer"
                            class="inline-flex touch-target items-center font-semibold text-blue-600 dark:text-blue-400">

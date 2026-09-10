@@ -1608,6 +1608,10 @@ new #[Layout('layouts::display')] class extends Component
         </x-modal>
     </div>
 
+    {{-- Cooking. Not a dialog over the wall — the wall, for as long as
+         somebody is at the hob. --}}
+    <livewire:recipes.cook />
+
     {{-- A child's day, and the keypad that guards the two things it should. --}}
     <livewire:kids.my-day />
     <livewire:kids.ledger />
