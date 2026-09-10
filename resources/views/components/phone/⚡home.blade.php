@@ -460,6 +460,17 @@ new #[Layout('layouts::app')] class extends Component
             </span>
         </a>
 
+        <a href="{{ route('summary') }}" wire:navigate
+           class="mt-3 flex touch-target items-center gap-3 rounded-2xl bg-white p-3 dark:bg-slate-900">
+            <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400">
+                <x-icon name="star" class="size-5" />
+            </span>
+            <span class="min-w-0 flex-1">
+                <span class="block font-medium">The week</span>
+                <span class="block text-sm text-slate-500 dark:text-slate-400">Jobs, stars, dinners and what is coming</span>
+            </span>
+        </a>
+
         {{-- Editable here: phones are where a to-do actually gets written. --}}
         <section class="mt-4 rounded-2xl bg-white p-3 dark:bg-slate-900">
             <livewire:todos.panel :editable="true" />

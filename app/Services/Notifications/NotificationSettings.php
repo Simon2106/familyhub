@@ -20,6 +20,7 @@ class NotificationSettings
         'approval_waiting' => 'Chores and rewards waiting for a grown-up',
         'chore_due' => 'A child\'s chore still not done',
         'list_added' => 'Something added to the shopping list',
+        'weekly_summary' => 'The week, on a Sunday evening',
     ];
 
     /** How much warning, for the one trigger that needs a choice. */

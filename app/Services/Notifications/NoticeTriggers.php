@@ -10,6 +10,7 @@ use App\Models\Redemption;
 use App\Models\User;
 use App\Services\Chores\ChoreBoard;
 use App\Services\Chores\ChoreSlot;
+use App\Services\Summary\WeeklySummary;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
@@ -41,6 +42,7 @@ class NoticeTriggers
             ...$this->reviewWaiting($household, $now),
             ...$this->approvalWaiting($household, $now),
             ...$this->choresDue($household, $now),
+            ...$this->weeklySummary($household, $now),
         ]);
     }
 
@@ -75,6 +77,39 @@ class NoticeTriggers
             body: $this->when($event, $household, $lead),
             url: route('app', ['event' => $event->id]),
         ))->all();
+    }
+
+    /**
+     * Sunday evening, once.
+     *
+     * The subject is the week rather than the moment, so the every-minute
+     * schedule cannot send it sixty times — and a week where nothing happened
+     * is not announced at all, because "a quiet week" is not news.
+     *
+     * @return list<Notice>
+     */
+    protected function weeklySummary(Household $household, CarbonImmutable $now): array
+    {
+        $summary = app(WeeklySummary::class);
+        $local = $now->timezone($household->displayTimezone());
+
+        if (! $summary->isDue($household, $local)) {
+            return [];
+        }
+
+        $week = $summary->for($household);
+
+        if ($week->isEmpty()) {
+            return [];
+        }
+
+        return [new Notice(
+            trigger: 'weekly_summary',
+            subject: 'week:'.$week->weekStart->toDateString(),
+            title: 'The week — '.$week->heading(),
+            body: $week->line(),
+            url: route('summary'),
+        )];
     }
 
     protected function when(Event $event, Household $household, int $lead): string
