@@ -52,6 +52,8 @@ class ComponentNamingTest extends TestCase
             ['meals.how-was-it'],
             ['meals.tonight'],
             ['home.switches'],
+            ['display.wall'],
+            ['phone.home'],
         ];
     }
 

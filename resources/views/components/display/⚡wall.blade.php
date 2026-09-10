@@ -216,6 +216,51 @@ new #[Layout('layouts::display')] class extends Component
      *
      * @return Collection<string, Collection<int, \App\Services\Schools\SchoolClosure>>
      */
+    /** Months either side of this one, for paging the month grid. */
+    public int $monthOffset = 0;
+
+    /**
+     * The day the timeline is showing.
+     *
+     * A Livewire property rather than Alpine state because the placement is
+     * worked out on the server; set once when the timeline is opened, so
+     * picking days in the column view stays instant.
+     */
+    public ?string $timelineDate = null;
+
+    #[Computed]
+    public function month(): array
+    {
+        return app(\App\Services\Calendar\CalendarViews::class)->month(
+            $this->household(),
+            $this->household()->todayLocal()->startOfMonth()->addMonths($this->monthOffset),
+        );
+    }
+
+    #[Computed]
+    public function timeline(): array
+    {
+        $date = $this->timelineDate
+            ? CarbonImmutable::parse($this->timelineDate, $this->household()->displayTimezone())
+            : $this->household()->todayLocal();
+
+        return app(\App\Services\Calendar\CalendarViews::class)->day($this->household(), $date);
+    }
+
+    public function shiftMonth(int $by): void
+    {
+        $this->monthOffset = max(-24, min(24, $this->monthOffset + $by));
+
+        unset($this->month);
+    }
+
+    public function showMonth(): void
+    {
+        $this->monthOffset = 0;
+
+        unset($this->month);
+    }
+
     /**
      * Whether the wall has anything to listen with.
      *
@@ -522,6 +567,29 @@ new #[Layout('layouts::display')] class extends Component
         weekDates: @js(array_column($week, 'date')),
 
         init() {
+            /* Remembered per device, not per household: the wall in the
+               kitchen and a phone previewing it want different things, and
+               neither should have to be set again every morning. */
+            try {
+                const kept = localStorage.getItem('familyhub.view');
+
+                if (['day', 'week', 'month', 'timeline'].includes(kept)) {
+                    this.view = kept;
+                    if (kept === 'timeline') this.$wire.set('timelineDate', this.selected, false);
+                }
+            } catch {
+                /* Private browsing, or storage switched off. The default view
+                   is a perfectly good answer. */
+            }
+
+            this.$watch('view', (to) => {
+                try {
+                    localStorage.setItem('familyhub.view', to);
+                } catch {
+                    /* As above. */
+                }
+            });
+
             setInterval(() => (this.now = new Date()), 1000);
             this.armIdleTimer();
             this.applyDarkSchedule();
@@ -554,6 +622,19 @@ new #[Layout('layouts::display')] class extends Component
                 this.view = 'day';
                 this.selected = date;
             }
+        },
+
+        showMonthView() {
+            this.view = 'month';
+            this.$wire.showMonth();
+        },
+
+        /* The timeline needs the server to place the events, so opening it
+           sends the day across once rather than on every tap. */
+        showTimeline(date) {
+            this.selected = date || this.selected;
+            this.view = 'timeline';
+            this.$wire.set('timelineDate', this.selected);
         },
 
         showToday() {
@@ -854,6 +935,56 @@ new #[Layout('layouts::display')] class extends Component
                     $weekColumns = $members->count() + ($this->weekHasHouseholdEvents ? 1 : 0);
                 @endphp
 
+                {{-- The month. Paged on the server, because a month is a
+                     different set of events rather than a different slice of
+                     the ones already loaded. --}}
+                <div x-show="view === 'month'" class="flex h-full min-h-0 flex-col" x-cloak>
+                    <div class="flex shrink-0 items-center gap-2 pb-2">
+                        <button type="button" wire:click="shiftMonth(-1)"
+                                class="grid touch-target place-items-center rounded-xl px-3 text-slate-500"
+                                aria-label="The month before">
+                            <svg class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
+                        </button>
+
+                        <h2 class="min-w-0 flex-1 text-center text-xl font-bold">
+                            {{ $this->month['anchor']->format('F Y') }}
+                        </h2>
+
+                        <button type="button" wire:click="shiftMonth(1)"
+                                class="grid touch-target place-items-center rounded-xl px-3 text-slate-500"
+                                aria-label="The month after">
+                            <svg class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+                        </button>
+                    </div>
+
+                    <div class="min-h-0 flex-1">
+                        <x-calendar.month :month="$this->month" :on-wall="true" />
+                    </div>
+                </div>
+
+                {{-- One day, hour by hour. --}}
+                <div x-show="view === 'timeline'" class="flex h-full min-h-0 flex-col" x-cloak>
+                    <div class="flex shrink-0 items-center gap-2 pb-2">
+                        <h2 class="min-w-0 flex-1 text-xl font-bold">
+                            {{ $this->timeline['date']->format('l j F') }}
+                        </h2>
+                        {{-- Only where the columns actually have that day
+                             loaded; offering it for next March would open an
+                             empty screen. --}}
+                        <button type="button"
+                                x-show="weekDates.includes(@js($this->timeline['date']->toDateString()))"
+                                x-cloak
+                                x-on:click="selected = @js($this->timeline['date']->toDateString()); view = 'day'"
+                                class="touch-target rounded-xl px-3 text-sm font-semibold text-blue-600 dark:text-blue-400">
+                            By person
+                        </button>
+                    </div>
+
+                    <div class="min-h-0 flex-1">
+                        <x-calendar.day :day="$this->timeline" :on-wall="true" />
+                    </div>
+                </div>
+
                 <div x-show="view === 'week'" class="h-full min-h-0" x-cloak>
 
                     {{-- Landscape: a member-by-day grid. Sized to fit five
@@ -1057,8 +1188,15 @@ new #[Layout('layouts::display')] class extends Component
                         $dayNeedsHousehold = $dayHouseholdEvents->isNotEmpty() || $dayHouseholdTodos->isNotEmpty();
                         $dayColumns = $members->count() + ($dayNeedsHousehold ? 1 : 0);
                     @endphp
-                    <div x-show="isPicked(@js($day['date']))" class="h-full min-h-0" x-cloak wire:key="day-{{ $day['date'] }}">
-                        <div class="grid h-full min-h-0 gap-3" style="grid-template-columns: repeat({{ max($dayColumns, 1) }}, minmax(0, 1fr));">
+                    <div x-show="isPicked(@js($day['date']))" class="flex h-full min-h-0 flex-col" x-cloak wire:key="day-{{ $day['date'] }}">
+                        <div class="flex shrink-0 justify-end pb-1">
+                            <button type="button" x-on:click="showTimeline(@js($day['date']))"
+                                    class="touch-target rounded-xl px-3 text-sm font-semibold text-blue-600 dark:text-blue-400">
+                                By the hour
+                            </button>
+                        </div>
+
+                        <div class="grid min-h-0 flex-1 gap-3" style="grid-template-columns: repeat({{ max($dayColumns, 1) }}, minmax(0, 1fr));">
                             @foreach ($members as $member)
                                 @php
                                     $memberEvents = $day['events_by_member'][$member->id] ?? collect();
@@ -1254,6 +1392,19 @@ new #[Layout('layouts::display')] class extends Component
                         <span class="text-sm leading-tight font-bold">week</span>
                     </button>
 
+                    <button
+                        type="button"
+                        data-view="month"
+                        x-on:click="showMonthView()"
+                        class="flex touch-target shrink-0 flex-col items-center justify-center rounded-xl px-3 py-2 transition-colors"
+                        :class="view === 'month'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100'"
+                    >
+                        <span class="text-xs font-medium opacity-70">The</span>
+                        <span class="text-sm leading-tight font-bold">month</span>
+                    </button>
+
                     <div class="grid min-w-0 flex-1 grid-cols-7 gap-1.5">
                         @foreach ($week as $day)
                             <button
@@ -1333,7 +1484,11 @@ new #[Layout('layouts::display')] class extends Component
                     @endforeach
 
                     {{-- ---------------------- THIS WEEK --------------------- --}}
-                    <div x-show="view === 'week'">
+                    {{-- In the month and timeline views nothing is picked and
+                         the week is not on screen, so the rail would be an
+                         empty white card the height of the wall. "Coming up"
+                         is the right thing to show there. --}}
+                    <div x-show="view === 'week' || view === 'month' || view === 'timeline'">
                     <h2 class="px-1 pb-2 text-sm font-semibold tracking-wide text-slate-400 uppercase">Coming up</h2>
 
                     @forelse ($this->upcoming as $entry)

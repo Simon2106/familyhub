@@ -8,6 +8,7 @@ use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
+use App\Services\Calendar\CalendarViews;
 use Livewire\Component;
 
 /**
@@ -27,6 +28,76 @@ new #[Layout('layouts::app')] class extends Component
         if ($id = request()->integer('event')) {
             $this->dispatch('edit-event', $id);
         }
+    }
+
+    /**
+     * agenda | month | day — remembered on the device, not in the URL.
+     *
+     * A phone and the wall want different things open, and neither should have
+     * to be set again every morning.
+     */
+    public string $view = 'agenda';
+
+    public int $monthOffset = 0;
+
+    public ?string $dayDate = null;
+
+    #[Computed]
+    public function month(): array
+    {
+        return app(CalendarViews::class)->month(
+            $this->household(),
+            $this->household()->todayLocal()->startOfMonth()->addMonths($this->monthOffset),
+        );
+    }
+
+    #[Computed]
+    public function day(): array
+    {
+        $date = $this->dayDate
+            ? \Carbon\CarbonImmutable::parse($this->dayDate, $this->household()->displayTimezone())
+            : $this->household()->todayLocal();
+
+        return app(CalendarViews::class)->day($this->household(), $date);
+    }
+
+    public function showView(string $view): void
+    {
+        $this->view = in_array($view, ['agenda', 'month', 'day'], true) ? $view : 'agenda';
+
+        if ($this->view === 'month') {
+            $this->monthOffset = 0;
+            unset($this->month);
+        }
+
+        if ($this->view === 'day' && ! $this->dayDate) {
+            $this->dayDate = $this->household()->todayLocal()->toDateString();
+            unset($this->day);
+        }
+    }
+
+    public function openDay(string $date): void
+    {
+        $this->dayDate = $date;
+        $this->view = 'day';
+
+        unset($this->day);
+    }
+
+    public function shiftMonth(int $by): void
+    {
+        $this->monthOffset = max(-24, min(24, $this->monthOffset + $by));
+
+        unset($this->month);
+    }
+
+    public function shiftDay(int $by): void
+    {
+        $this->dayDate = \Carbon\CarbonImmutable::parse(
+            $this->dayDate ?: $this->household()->todayLocal()->toDateString(),
+        )->addDays($by)->toDateString();
+
+        unset($this->day);
     }
 
     public function household(): Household
@@ -120,6 +191,33 @@ new #[Layout('layouts::app')] class extends Component
         </div>
     </header>
 
+    {{-- Agenda, month or day. Remembered on the device: a phone and the wall
+         want different things open. --}}
+    <div class="shrink-0 px-4 pb-2"
+         x-data="{
+             init() {
+                 try {
+                     const kept = localStorage.getItem('familyhub.phone-view');
+                     if (kept && kept !== $wire.view) $wire.showView(kept);
+                 } catch {
+                     /* Private browsing. The default is a fine answer. */
+                 }
+
+                 this.$watch('$wire.view', (to) => {
+                     try { localStorage.setItem('familyhub.phone-view', to) } catch {}
+                 });
+             },
+         }">
+        <div class="grid grid-cols-3 gap-1 rounded-xl bg-slate-200/70 p-1 dark:bg-slate-800">
+            @foreach (['agenda' => 'Agenda', 'month' => 'Month', 'day' => 'Day'] as $key => $label)
+                <button type="button" wire:click="showView('{{ $key }}')"
+                        class="touch-target rounded-lg text-sm font-semibold {{ $view === $key ? 'bg-white shadow-sm dark:bg-slate-900' : 'text-slate-500 dark:text-slate-400' }}">
+                    {{ $label }}
+                </button>
+            @endforeach
+        </div>
+    </div>
+
     {{-- One box that looks everywhere, pinned under the header rather than
          scrolling away with the page. --}}
     <div class="shrink-0 px-4 pb-2">
@@ -140,6 +238,45 @@ new #[Layout('layouts::app')] class extends Component
         <span x-text="message"></span>
     </div>
 
+    @if ($view === 'month')
+        <div class="flex min-h-0 flex-1 flex-col px-4 pb-24">
+            <div class="flex shrink-0 items-center gap-2 pb-2">
+                <button type="button" wire:click="shiftMonth(-1)"
+                        class="grid touch-target place-items-center rounded-xl px-3 text-slate-500" aria-label="The month before">
+                    <svg class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
+                </button>
+                <h2 class="min-w-0 flex-1 text-center font-bold">{{ $this->month['anchor']->format('F Y') }}</h2>
+                <button type="button" wire:click="shiftMonth(1)"
+                        class="grid touch-target place-items-center rounded-xl px-3 text-slate-500" aria-label="The month after">
+                    <svg class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+                </button>
+            </div>
+
+            {{-- On a phone a month tap opens that day here rather than
+                 switching to a timeline nobody asked for. --}}
+            <div class="min-h-0 flex-1" x-data="{ showTimeline: (date) => $wire.openDay(date), pickDay: (date) => $wire.openDay(date) }">
+                <x-calendar.month :month="$this->month" />
+            </div>
+        </div>
+    @elseif ($view === 'day')
+        <div class="flex min-h-0 flex-1 flex-col px-4 pb-24">
+            <div class="flex shrink-0 items-center gap-2 pb-2">
+                <button type="button" wire:click="shiftDay(-1)"
+                        class="grid touch-target place-items-center rounded-xl px-3 text-slate-500" aria-label="The day before">
+                    <svg class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
+                </button>
+                <h2 class="min-w-0 flex-1 text-center font-bold">{{ $this->day['date']->format('D j M') }}</h2>
+                <button type="button" wire:click="shiftDay(1)"
+                        class="grid touch-target place-items-center rounded-xl px-3 text-slate-500" aria-label="The day after">
+                    <svg class="size-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+                </button>
+            </div>
+
+            <div class="min-h-0 flex-1">
+                <x-calendar.day :day="$this->day" />
+            </div>
+        </div>
+    @else
     <div class="pane-scroll min-h-0 flex-1 px-4 pb-24">
         @forelse ($this->eventsByDay as $date => $events)
             @php $day = Carbon::parse($date, $tz); @endphp
@@ -313,6 +450,7 @@ new #[Layout('layouts::app')] class extends Component
             <button type="submit" class="touch-target w-full rounded-xl text-sm font-medium text-slate-400">Sign out</button>
         </form>
     </div>
+    @endif
 
     {{-- Compose. Sits above the scroll area so it is always in thumb reach. --}}
     <button type="button" wire:click="$dispatch('edit-event')"
