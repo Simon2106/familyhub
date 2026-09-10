@@ -2,7 +2,9 @@
 
 use App\Models\Household;
 use App\Models\Meal;
+use App\Models\MealPlanProposal;
 use App\Models\Recipe;
+use App\Services\Meals\MealPlanProposer;
 use App\Services\Meals\MealSuggester;
 use App\Services\Meals\ShoppingListGenerator;
 use Carbon\CarbonImmutable;
@@ -238,30 +240,114 @@ new class extends Component
 
     public function acceptProposal(string $on): void
     {
-        $recipeId = $this->proposals[$on] ?? null;
+        if (! $this->isThisWeek($on)) {
+            return;
+        }
 
-        if ($recipeId) {
+        if ($suggestion = $this->suggested) {
+            app(MealPlanProposer::class)->accept($this->household(), $suggestion, $on);
+        }
+
+        if ($recipeId = $this->proposals[$on] ?? null) {
             $this->place($recipeId, $on, 'dinner');
         }
 
         unset($this->proposals[$on]);
+
+        $this->forgetGhosts();
     }
 
     public function acceptAllProposals(): void
     {
+        if ($suggestion = $this->suggested) {
+            app(MealPlanProposer::class)->acceptAll($this->household(), $suggestion);
+        }
+
         foreach ($this->proposals as $on => $recipeId) {
             $this->place($recipeId, $on, 'dinner');
         }
 
         $this->proposals = [];
+
+        $this->forgetGhosts();
     }
 
     public function dismissProposals(): void
     {
         $this->proposals = [];
+
+        app(MealPlanProposer::class)->clear($this->household(), $this->weekStart);
+
+        $this->forgetGhosts();
     }
 
-    /** The ideas behind the proposals, for drawing the ghosts. */
+    protected function forgetGhosts(): void
+    {
+        unset($this->meals, $this->shelf, $this->suggested, $this->ghosts, $this->proposed);
+
+        $this->dispatch('meals-changed');
+    }
+
+    /** Somebody asked the assistant for a week while the planner was open. */
+    #[On('meal-plan-proposed')]
+    public function refreshSuggestions(): void
+    {
+        $this->forgetGhosts();
+    }
+
+    /**
+     * The week the assistant suggested, if somebody asked it for one.
+     *
+     * Kept in a table rather than a property because the two halves happen in
+     * different places: asked for at the wall, quite possibly looked at on a
+     * phone twenty minutes later.
+     */
+    #[Computed]
+    public function suggested(): ?MealPlanProposal
+    {
+        return app(MealPlanProposer::class)->forWeek($this->household(), $this->weekStart);
+    }
+
+    /**
+     * Every ghost on the grid, whoever proposed it.
+     *
+     * Fill the week and the assistant produce the same thing — a night with a
+     * name on it that nobody has agreed to — so the grid draws them the same
+     * way and does not care which is which. The assistant's wins where both
+     * have an opinion, because it was asked for more recently.
+     *
+     * @return array<string, array{title: string, recipe_id: int|null, why: string|null}>
+     */
+    #[Computed]
+    public function ghosts(): array
+    {
+        $ghosts = [];
+
+        foreach ($this->proposals as $on => $recipeId) {
+            $recipe = $this->proposed[$recipeId] ?? null;
+
+            if ($recipe) {
+                $ghosts[$on] = ['title' => $recipe->title, 'recipe_id' => $recipe->id, 'why' => null];
+            }
+        }
+
+        foreach ($this->suggested?->entryList() ?? [] as $entry) {
+            $ghosts[$entry['on']] = [
+                'title' => $entry['title'],
+                'recipe_id' => $entry['recipe_id'],
+                'why' => $entry['why'],
+            ];
+        }
+
+        // A night somebody has since decided about is not a gap any more.
+        return array_filter(
+            $ghosts,
+            fn (string $on) => ! isset($this->meals[$on.'|dinner']),
+            ARRAY_FILTER_USE_KEY,
+        );
+    }
+
+    /** The ideas behind Fill the week's proposals, for drawing the ghosts. */
     #[Computed]
     public function proposed(): Collection
     {
@@ -392,7 +478,7 @@ new class extends Component
         // would put next week's Thursday onto this one.
         $this->proposals = [];
 
-        unset($this->weekStart, $this->days, $this->meals, $this->proposed);
+        unset($this->weekStart, $this->days, $this->meals, $this->proposed, $this->suggested, $this->ghosts);
     }
 
     protected function put(string $title, ?int $recipeId = null): void
@@ -488,10 +574,15 @@ new class extends Component
 
     {{-- A proposal, not a plan. Said in words as well as in ghost text,
          because a suggestion that looks like a decision is worse than none. --}}
-    @if ($proposals !== [])
+    @if ($this->ghosts !== [])
         <div class="mb-2 flex flex-wrap items-center gap-2 rounded-2xl bg-blue-50 px-3 py-2 dark:bg-blue-950/40">
-            <p class="min-w-0 flex-1 text-sm font-medium text-blue-900 dark:text-blue-200">
-                Suggested for {{ count($proposals) }} empty {{ Str::plural('night', count($proposals)) }}. Nothing is saved yet.
+            {{-- basis-full until there is room: on a phone the buttons wedged
+                 themselves into the middle of the wrapped sentence. --}}
+            <p class="min-w-0 flex-1 basis-full text-sm font-medium text-blue-900 sm:basis-auto dark:text-blue-200">
+                Suggested for {{ count($this->ghosts) }} empty {{ Str::plural('night', count($this->ghosts)) }}. Nothing is saved yet.
+                @if ($this->suggested?->note)
+                    <span class="block font-normal text-blue-800/80 dark:text-blue-300/80">{{ $this->suggested->note }}</span>
+                @endif
             </p>
             <button type="button" wire:click="acceptAllProposals"
                     class="touch-target rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white">Accept all</button>
@@ -539,18 +630,19 @@ new class extends Component
                                     </span>
                                 @endif
                             </span>
-                        @elseif ($proposals[$day['date']] ?? null)
-                            @php $ghost = $this->proposed[$proposals[$day['date']]] ?? null; @endphp
+                        @elseif ($ghost = $this->ghosts[$day['date']] ?? null)
                             <span class="min-w-0 flex-1">
-                                <span class="block truncate font-semibold text-blue-700 italic dark:text-blue-300">{{ $ghost?->title }}</span>
-                                <span class="block text-xs text-blue-600/70 dark:text-blue-400/70">Suggested — tap the tick to keep</span>
+                                <span class="block truncate font-semibold text-blue-700 italic dark:text-blue-300">{{ $ghost['title'] }}</span>
+                                <span class="block truncate text-xs text-blue-600/70 dark:text-blue-400/70">
+                                    {{ $ghost['why'] ?: 'Suggested — tap the tick to keep' }}
+                                </span>
                             </span>
                         @else
                             <span class="text-sm text-slate-400">Add dinner</span>
                         @endif
                     </button>
 
-                    @if (($proposals[$day['date']] ?? null) && ! $dinner)
+                    @if (($this->ghosts[$day['date']] ?? null) && ! $dinner)
                         {{-- Accepting is its own button, so tapping the cell
                              still means "let me choose something else". --}}
                         <button type="button" wire:click="acceptProposal('{{ $day['date'] }}')"

@@ -35,6 +35,8 @@ new class extends Component
         'school_dates' => 'term dates',
         'points' => 'the points ledger',
         'recipe' => 'the recipe box',
+        'meal_ideas' => 'the recipe box',
+        'propose_meal_plan' => 'the meal planner',
         'search' => 'a search',
     ];
 
@@ -74,6 +76,12 @@ new class extends Component
             'content' => $answer->text,
             'used' => array_values(array_unique($answer->used)),
         ];
+
+        // A week suggested here is drawn over there. The planner may be on the
+        // same screen — the wall's Meals tab — so tell it to look again.
+        if (in_array('propose_meal_plan', $answer->used, true)) {
+            $this->dispatch('meal-plan-proposed');
+        }
 
         // Older than this and nobody is following up on it any more.
         $this->exchanges = array_slice($this->exchanges, -(self::REMEMBERED * 2));

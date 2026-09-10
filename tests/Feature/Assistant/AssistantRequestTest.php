@@ -163,8 +163,15 @@ class AssistantRequestTest extends TestCase
         $this->assertStringContainsString('nothing upcoming', $prompt);
     }
 
+    /**
+     * The read-only guarantee, in the one place it can be enforced.
+     *
+     * Exactly one tool is allowed to change anything, it is named here, and
+     * what it changes is a table of suggestions rather than the meal plan —
+     * see MealPlanProposalTest. Everything else must still be a noun.
+     */
     #[Test]
-    public function every_tool_is_offered_and_none_of_them_writes(): void
+    public function every_tool_is_offered_and_only_the_proposal_writes(): void
     {
         $this->queueText('Nothing on.');
 
@@ -173,13 +180,23 @@ class AssistantRequestTest extends TestCase
         $names = array_column($this->calls[0]['tools'], 'name');
 
         $this->assertEqualsCanonicalizing(
-            ['calendar', 'meals', 'chores', 'lists', 'bins', 'school_dates', 'points', 'recipe', 'search'],
+            [
+                'calendar', 'meals', 'chores', 'lists', 'bins', 'school_dates',
+                'points', 'recipe', 'meal_ideas', 'propose_meal_plan', 'search',
+            ],
             $names,
         );
 
         foreach ($this->calls[0]['tools'] as $tool) {
             $this->assertSame('object', $tool['inputSchema']['type']);
             $this->assertFalse($tool['inputSchema']['additionalProperties']);
+
+            if ($tool['name'] === 'propose_meal_plan') {
+                // It must say what it is not, where the model will read it.
+                $this->assertStringContainsString('does NOT save', $tool['description']);
+
+                continue;
+            }
 
             // A tool whose name is a verb is a tool that changes something.
             foreach (['add', 'create', 'update', 'delete', 'set', 'tick', 'buy', 'send'] as $verb) {

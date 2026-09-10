@@ -3,23 +3,32 @@
 namespace App\Services\Assistant;
 
 use App\Models\Household;
+use App\Services\Meals\MealPlanProposer;
 use Carbon\CarbonImmutable;
 use Throwable;
 
 /**
  * The tools the assistant is given, and what running one does.
  *
- * Every tool is a read. There is deliberately no tool that writes, ticks,
- * plans, buys or sends anything — the assistant cannot change the household
- * because there is no verb here that would let it, not because it has been
- * asked nicely not to.
+ * All but one are reads. There is deliberately no tool that ticks, buys,
+ * sends or deletes anything, and nothing here reaches iCloud — the assistant
+ * cannot change the household because there is no verb here that would let
+ * it, not because it has been asked nicely not to.
+ *
+ * The exception is propose_meal_plan, and it is an exception in name only: it
+ * writes to a table of suggestions the planner draws in ghost text, and a
+ * grown-up still has to accept each night. A model that proposes something
+ * daft costs the family one tap.
  *
  * The descriptions matter as much as the schemas: they are what decides
  * whether "what's for tea?" reaches the meal plan or the search box.
  */
 class AssistantTools
 {
-    public function __construct(protected HouseholdFacts $facts) {}
+    public function __construct(
+        protected HouseholdFacts $facts,
+        protected MealPlanProposer $proposer,
+    ) {}
 
     /**
      * @return list<array<string, mixed>>
@@ -112,6 +121,46 @@ class AssistantTools
             ),
 
             $this->tool(
+                'meal_ideas',
+                'Everything in the recipe box at once, with what it is tagged, what the grown-ups scored it out of '
+                .'five, what the children thought, and when it was last cooked. Read this before proposing a week, '
+                .'so a plan can point at ideas the family already has.',
+                [],
+                [],
+            ),
+
+            $this->tool(
+                'propose_meal_plan',
+                'Put a suggested week in front of the family. This does NOT save anything: the planner draws each '
+                .'night in ghost text with Keep and No thanks beside it, and nothing is on anybody\'s calendar '
+                .'until a grown-up accepts it. Use it when asked to plan, fill or suggest a week of dinners. '
+                .'Read meal_ideas and meals first: only propose nights that are still empty. Propose things they '
+                .'have not had lately as well as ones they like — a plan of the same six favourites is not a plan. '
+                .'Honour anything they asked for (a veggie night, something quick on a busy evening) and say so in '
+                .'each "why".',
+                [
+                    'week_start' => $this->dateProperty('The Monday of the week being planned, YYYY-MM-DD.'),
+                    'entries' => [
+                        'type' => 'array',
+                        'description' => 'One per night. Only nights with nothing planned already.',
+                        'items' => [
+                            'type' => 'object',
+                            'properties' => [
+                                'on' => $this->dateProperty('The night, YYYY-MM-DD. Must be inside that week.'),
+                                'title' => ['type' => 'string', 'description' => 'What to have, as the family would write it on a planner.'],
+                                'recipe_id' => ['type' => 'integer', 'description' => 'The id from meal_ideas when this is one of their saved ideas. Leave out for something new.'],
+                                'why' => ['type' => 'string', 'description' => 'A few words on why this night — "quick, swimming after school". Shown to the family.'],
+                            ],
+                            'required' => ['on', 'title'],
+                            'additionalProperties' => false,
+                        ],
+                    ],
+                    'note' => ['type' => 'string', 'description' => 'One line on how the week hangs together. Shown above the suggestions.'],
+                ],
+                ['week_start', 'entries'],
+            ),
+
+            $this->tool(
                 'search',
                 'Free-text search across everything at once — events, to-dos, shopping, chores, routines, meals, '
                 .'recipes, rewards, the review inbox, people and places. Use it when no other tool fits, or when '
@@ -162,9 +211,35 @@ class AssistantTools
             'school_dates' => $this->facts->schoolDates($household, ...$this->range($input, $household)),
             'points' => $this->facts->points($household, $member),
             'recipe' => $this->facts->recipe($household, (string) ($input['name'] ?? '')),
+            'meal_ideas' => $this->facts->mealIdeas($household),
+            'propose_meal_plan' => $this->proposeMealPlan($household, $input),
             'search' => $this->facts->search($household, (string) ($input['query'] ?? '')),
             default => 'There is no tool called '.$name.'.',
         };
+    }
+
+    /**
+     * The one tool that writes a row — and the row is not a meal.
+     *
+     * Everything it stages is drawn as ghost text in the planner until a
+     * grown-up taps Keep. That is what makes this safe enough to hand a
+     * language model: the worst it can do is put a bad suggestion on screen,
+     * and the family's answer to a bad suggestion is already there next to it.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    protected function proposeMealPlan(Household $household, array $input): string
+    {
+        $weekStart = $this->facts->date($household, $input['week_start'] ?? null);
+
+        $result = $this->proposer->propose(
+            $household,
+            $weekStart,
+            array_values(array_filter((array) ($input['entries'] ?? []), 'is_array')),
+            note: filled($input['note'] ?? null) ? (string) $input['note'] : null,
+        );
+
+        return $this->proposer->describe($household, $result, $weekStart);
     }
 
     /**

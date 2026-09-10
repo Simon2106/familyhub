@@ -12,12 +12,14 @@ use App\Models\Member;
 use App\Models\Recipe;
 use App\Services\Chores\ChoreBoard;
 use App\Services\Chores\ChoreSlot;
+use App\Services\Meals\MealPlanProposer;
 use App\Services\Points\PointsLedger;
 use App\Services\Schools\SchoolCalendar;
 use App\Services\Schools\SchoolClosure;
 use App\Services\Search\HouseholdSearch;
 use App\Services\Search\SearchResult;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Str;
 
 /**
  * The household, read out loud.
@@ -45,6 +47,7 @@ class HouseholdFacts
         protected ChoreBoard $chores,
         protected PointsLedger $ledger,
         protected SchoolCalendar $schools,
+        protected MealPlanProposer $proposer,
     ) {}
 
     /** Anything, anywhere — the fallback when no other tool fits. */
@@ -326,6 +329,67 @@ class HouseholdFacts
     }
 
     /** One saved recipe, with what is in it. */
+    /**
+     * The recipe box as somebody planning a week needs to see it.
+     *
+     * One line per idea, carrying the four things that decide whether it
+     * belongs on a Tuesday: what it is tagged, what the adults scored it,
+     * what the children thought, and how long ago they last had it. The id
+     * goes on the line so a plan can point at the family's own recipe rather
+     * than at a second copy of its name.
+     */
+    public function mealIdeas(Household $household): string
+    {
+        $ideas = $this->proposer->ideas($household);
+
+        if ($ideas->isEmpty()) {
+            return 'The recipe box is empty — there is nothing saved to plan from yet.';
+        }
+
+        $lines = ['From the recipe box, '.$ideas->count().' saved '.Str::plural('idea', $ideas->count()).':'];
+
+        foreach ($ideas as $recipe) {
+            $lines[] = '- #'.$recipe->id.' '.$recipe->title.$this->opinion($household, $recipe);
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /** The bracketed half of an idea's line: tags, scores, and when it was last had. */
+    protected function opinion(Household $household, Recipe $recipe): string
+    {
+        $parts = [];
+
+        if ($recipe->is_favourite) {
+            $parts[] = 'favourite';
+        }
+
+        if ($tags = array_filter((array) ($recipe->tags ?? []))) {
+            $parts[] = 'tagged '.implode('/', $tags);
+        }
+
+        if ($stars = $recipe->stars()) {
+            $parts[] = $stars.' stars from the grown-ups';
+        }
+
+        $parts[] = match ($recipe->kidsVerdict()) {
+            'up' => 'the children liked it',
+            'down' => 'the children did not like it',
+            'mixed' => 'the children were split',
+            default => null,
+        };
+
+        // "Never tried" is a real answer and a different one from "ages ago":
+        // it is exactly what makes something worth proposing.
+        $parts[] = $recipe->neverCooked()
+            ? 'never cooked'
+            : 'last cooked '.$this->day($household, $recipe->lastCooked());
+
+        $parts = array_filter($parts);
+
+        return $parts === [] ? '' : ' ('.implode(', ', $parts).')';
+    }
+
     public function recipe(Household $household, string $name): string
     {
         $recipe = Recipe::query()
