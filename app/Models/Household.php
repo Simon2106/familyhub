@@ -314,6 +314,19 @@ class Household extends Model
         ]);
     }
 
+    /** A public iCloud shared album the screensaver pulls from. */
+    public function photoAlbumUrl(): ?string
+    {
+        return filled($this->settings['photo_album_url'] ?? null)
+            ? (string) $this->settings['photo_album_url']
+            : null;
+    }
+
+    public function setPhotoAlbumUrl(?string $url): void
+    {
+        $this->putSettings(['photo_album_url' => filled($url) ? trim($url) : null]);
+    }
+
     public function hasPhotos(): bool
     {
         // Through the library the wall already reads, rather than a second

@@ -46,6 +46,9 @@ new #[Layout('layouts::app')] class extends Component
     /** Whether the wall reads its answers out loud. */
     public bool $wallSpeaks = true;
 
+    /** A public iCloud shared album the screensaver pulls from. */
+    public string $photoAlbumUrl = '';
+
     public string $darkStart = '21:00';
 
     public string $darkEnd = '06:30';
@@ -107,6 +110,7 @@ new #[Layout('layouts::app')] class extends Component
 
         $this->wallSpeaks = $household->wallSpeaks();
 
+        $this->photoAlbumUrl = (string) $household->photoAlbumUrl();
         $dark = $household->darkMode();
         $this->darkStart = $dark['start'];
         $this->darkEnd = $dark['end'];
@@ -335,6 +339,7 @@ new #[Layout('layouts::app')] class extends Component
         $household->setDarkMode($this->darkStart, $this->darkEnd);
         $household->setScreensaverMinutes($this->screensaverMinutes);
         $household->setScreensaverStyle($this->screensaverStyle);
+        $household->setPhotoAlbumUrl($this->photoAlbumUrl);
         $household->setBinCalendarUrl($this->binCalendarUrl);
 
         $this->dispatch('saved', message: 'Household saved.');
@@ -932,6 +937,24 @@ new #[Layout('layouts::app')] class extends Component
                             </label>
                         @endforeach
                     </div>
+                    @if ($screensaverStyle === 'photos')
+                        <label class="mt-3 block">
+                            <span class="block text-sm font-medium">iCloud shared album</span>
+                            <input wire:model="photoAlbumUrl" type="url" placeholder="https://www.icloud.com/sharedalbum/#B0…"
+                                   class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                            <span class="mt-1 block text-sm text-slate-500 dark:text-slate-400">
+                                Optional. Share an album publicly in Photos, paste the link here, and it is
+                                fetched overnight. Photographs are downloaded rather than linked, so the wall
+                                keeps showing them when the internet is out.
+                            </span>
+                        </label>
+
+                        <a href="{{ route('photos') }}" wire:navigate
+                           class="mt-2 inline-flex touch-target items-center font-semibold text-blue-600 dark:text-blue-400">
+                            Add photographs, or hide one
+                        </a>
+                    @endif
+
                     @if ($screensaverStyle !== 'photos')
                         <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
                             The clock drifts slowly around the screen so the same numerals never

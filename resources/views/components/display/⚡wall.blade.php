@@ -538,7 +538,15 @@ new #[Layout('layouts::display')] class extends Component
     #[Computed]
     public function photos(): array
     {
-        return app(PhotoLibrary::class)->urls();
+        // The caption travels with the URL: the screensaver cycles in the
+        // browser, so anything it wants to draw has to be in hand before it
+        // starts.
+        return app(PhotoLibrary::class)->photos()
+            ->map(fn (\App\Models\Photo $photo) => [
+                'url' => $photo->url(),
+                'caption' => $photo->caption,
+            ])
+            ->all();
     }
 }; ?>
 
@@ -1655,7 +1663,15 @@ new #[Layout('layouts::display')] class extends Component
         class="fixed inset-0 z-50 overflow-hidden bg-black"
     >
         <template x-if="saverStyle === 'photos' && photos.length">
-            <img :src="photos[photoIndex]" alt="" class="h-full w-full object-cover">
+            <div class="h-full w-full">
+                <img :src="photos[photoIndex].url" alt="" class="h-full w-full object-cover">
+
+                {{-- A caption when there is one, above the gradient the clock
+                     already sits on. --}}
+                <p x-show="photos[photoIndex].caption" x-cloak
+                   x-text="photos[photoIndex].caption"
+                   class="absolute inset-x-0 bottom-32 px-10 text-2xl font-medium text-white drop-shadow"></p>
+            </div>
         </template>
 
         @if ($wall['style'] === 'photos')

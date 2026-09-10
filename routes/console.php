@@ -51,6 +51,14 @@ Schedule::command('familyhub:notice-digest')
     ->dailyAt('07:30')
     ->withoutOverlapping();
 
+/*
+| Photographs. Nightly, because a shared album is added to at the pace of a
+| family holiday rather than a news feed.
+*/
+Schedule::command('familyhub:sync-photos')
+    ->dailyAt('03:20')
+    ->withoutOverlapping();
+
 Schedule::command('familyhub:prune-done')
     ->dailyAt('04:00')
     ->withoutOverlapping();

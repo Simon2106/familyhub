@@ -145,6 +145,7 @@ Route::middleware('auth')->group(function () {
     Route::livewire('/app/switches', 'home.switches')->name('switches');
     Route::livewire('/app/notifications', 'notify.settings')->name('notifications');
     Route::livewire('/app/lists', 'lists.page')->name('lists');
+    Route::livewire('/app/photos', 'photos.page')->name('photos');
 
     Route::post('/app/push', [PushSubscriptionController::class, 'store'])->name('push.subscribe');
     Route::delete('/app/push', [PushSubscriptionController::class, 'destroy'])->name('push.unsubscribe');
