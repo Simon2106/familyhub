@@ -21,8 +21,6 @@ new #[Layout('layouts::app')] class extends Component
     /** @var array<string, bool> */
     public array $triggers = [];
 
-    public int $lead = NotificationSettings::DEFAULT_LEAD;
-
     public function mount(): void
     {
         $settings = app(NotificationSettings::class);
@@ -31,8 +29,6 @@ new #[Layout('layouts::app')] class extends Component
         foreach (array_keys(NotificationSettings::TRIGGERS) as $trigger) {
             $this->triggers[$trigger] = $user ? $settings->wants($user, $trigger) : false;
         }
-
-        $this->lead = $user ? $settings->leadMinutes($user) : NotificationSettings::DEFAULT_LEAD;
     }
 
     public function household(): Household
@@ -59,7 +55,7 @@ new #[Layout('layouts::app')] class extends Component
             return;
         }
 
-        app(NotificationSettings::class)->put(auth()->user(), $this->triggers, $this->lead);
+        app(NotificationSettings::class)->put(auth()->user(), $this->triggers);
 
         $this->dispatch('saved', message: 'Saved.');
     }
@@ -154,15 +150,10 @@ new #[Layout('layouts::app')] class extends Component
                         <input wire:model="triggers.{{ $key }}" type="checkbox" class="size-6 shrink-0 rounded">
                     </label>
 
-                    @if ($key === 'event_reminder' && ($triggers['event_reminder'] ?? false))
-                        <div class="pb-2 pl-1">
-                            <select wire:model="lead"
-                                    class="touch-target w-full rounded-xl border border-slate-300 px-3 text-sm dark:border-slate-700 dark:bg-slate-950">
-                                @foreach (NotificationSettings::LEAD_TIMES as $minutes => $when)
-                                    <option value="{{ $minutes }}">{{ $when }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                    @if ($key === 'event_reminder')
+                        <p class="pb-2 pl-1 text-xs text-slate-400">
+                            Which events, and how far ahead, is set by the reminders below.
+                        </p>
                     @endif
                 @endforeach
             </div>
@@ -178,6 +169,8 @@ new #[Layout('layouts::app')] class extends Component
         </section>
 
         {{-- Every device signed up. --}}
+        <livewire:notify.rules />
+
         <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
             <h2 class="font-semibold">Devices</h2>
 

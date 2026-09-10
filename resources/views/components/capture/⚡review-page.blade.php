@@ -42,5 +42,7 @@ new #[Layout('layouts::app')] class extends Component
         </div>
 
         <livewire:capture.review :editable="true" />
+
+        <livewire:notify.remind-me />
     </div>
 </div>

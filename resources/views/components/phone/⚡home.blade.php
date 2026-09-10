@@ -529,4 +529,5 @@ new #[Layout('layouts::app')] class extends Component
     </button>
 
     <livewire:phone.event-editor />
+    <livewire:notify.remind-me />
 </div>

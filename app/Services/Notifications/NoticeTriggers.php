@@ -3,7 +3,6 @@
 namespace App\Services\Notifications;
 
 use App\Models\ChecklistItem;
-use App\Models\Event;
 use App\Models\Household;
 use App\Models\Redemption;
 use App\Models\User;
@@ -30,6 +29,7 @@ class NoticeTriggers
     public function __construct(
         protected NotificationSettings $settings,
         protected NeedsAttention $attention,
+        protected ReminderEngine $reminders,
     ) {}
 
     /**
@@ -49,36 +49,33 @@ class NoticeTriggers
     }
 
     /**
-     * Events starting within this person's chosen warning.
+     * Everything the rules say to tell this person about, right now.
      *
-     * The window is the minute the reminder is due rather than "anything in
-     * the next hour", so moving the lead time from an hour to fifteen minutes
-     * does not immediately fire for everything this afternoon.
+     * The rules replaced a single lead time, which was the setting nobody
+     * wanted: fifteen minutes before everything is either noise or silence.
+     * All of the deciding lives in ReminderEngine, and the rule editor's
+     * preview asks the same engine the same question — a preview computed by
+     * different code from the thing it previews eventually lies.
      *
      * @return list<Notice>
      */
     protected function eventReminders(User $user, Household $household, CarbonImmutable $now): array
     {
-        $lead = $this->settings->leadMinutes($user);
-        $due = $now->addMinutes($lead);
+        $timezone = $household->displayTimezone();
 
-        $events = Event::query()
-            ->notCancelled()
-            ->whereHas('calendar', fn ($q) => $q
-                ->where('is_visible', true)
-                ->whereHas('account', fn ($a) => $a->where('household_id', $household->id)))
-            ->where('all_day', false)
-            ->whereBetween('start_at', [$due->startOfMinute(), $due->addMinutes(4)->endOfMinute()])
-            ->with('members')
-            ->get();
-
-        return $events->map(fn (Event $event) => new Notice(
-            trigger: 'event_reminder',
-            subject: 'event:'.$event->id,
-            title: $event->title,
-            body: $this->when($event, $household, $lead),
-            url: route('app', ['event' => $event->id]),
-        ))->all();
+        return array_map(
+            fn (DueReminder $reminder) => new Notice(
+                trigger: 'event_reminder',
+                subject: $reminder->subject(),
+                title: $reminder->event->title,
+                body: trim(
+                    $reminder->whenWords($timezone, $now)
+                    .($reminder->event->location ? ' · '.$reminder->event->location : '')
+                ),
+                url: route('app', ['event' => $reminder->event->id]),
+            ),
+            $this->reminders->due($user, $household, $now),
+        );
     }
 
     /**
@@ -112,18 +109,6 @@ class NoticeTriggers
             body: $week->line(),
             url: route('summary'),
         )];
-    }
-
-    protected function when(Event $event, Household $household, int $lead): string
-    {
-        $at = $event->start_at->timezone($household->displayTimezone())->format('H:i');
-        $who = $event->members->pluck('name')->join(', ');
-
-        return match (true) {
-            $lead >= 1440 => 'Tomorrow at '.$at.($who ? ' · '.$who : ''),
-            $lead >= 60 => 'In an hour, at '.$at.($who ? ' · '.$who : ''),
-            default => 'At '.$at.($who ? ' · '.$who : ''),
-        };
     }
 
     /**

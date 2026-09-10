@@ -11,6 +11,7 @@ use App\Models\Household;
 use App\Models\Member;
 use App\Models\NoticeSent;
 use App\Models\PushSubscription;
+use App\Models\ReminderRule;
 use App\Models\User;
 use App\Services\Chores\ChoreBoard;
 use App\Services\Notifications\Notice;
@@ -59,7 +60,6 @@ class NotificationTest extends TestCase
         $this->settings()->put(
             $this->simon,
             collect($triggers)->mapWithKeys(fn ($t) => [$t => true])->all(),
-            NotificationSettings::DEFAULT_LEAD,
         );
 
         $this->simon->refresh();
@@ -90,14 +90,6 @@ class NotificationTest extends TestCase
         app(Notifier::class)->tell($this->simon, $this->notice());
 
         $this->assertSame(0, NoticeSent::count());
-    }
-
-    #[Test]
-    public function a_lead_time_nobody_offers_falls_back(): void
-    {
-        $this->settings()->put($this->simon, [], 999);
-
-        $this->assertSame(NotificationSettings::DEFAULT_LEAD, $this->settings()->leadMinutes($this->simon->fresh()));
     }
 
     /* ------------------------------- once -------------------------------- */
@@ -180,7 +172,7 @@ class NotificationTest extends TestCase
     public function an_event_is_announced_at_the_minute_the_reminder_is_due(): void
     {
         // The window is the due minute rather than "anything in the next
-        // hour", so changing the lead time does not fire for the whole
+        // hour", so a rule with a long warning does not fire for the whole
         // afternoon at once.
         $account = CalendarAccount::factory()->create(['household_id' => $this->household->id]);
         $calendar = Calendar::factory()->create(['calendar_account_id' => $account->id]);
@@ -190,6 +182,15 @@ class NotificationTest extends TestCase
             'title' => 'Dentist',
             'start_at' => '2026-09-10 19:00:00',
             'end_at' => '2026-09-10 19:30:00',
+        ]);
+
+        ReminderRule::create([
+            'user_id' => $this->simon->id,
+            'household_id' => $this->household->id,
+            'name' => 'An hour before everything',
+            'scope' => 'all',
+            'members' => [],
+            'times' => ['before:60'],
         ]);
 
         $this->wants('event_reminder');

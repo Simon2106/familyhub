@@ -506,6 +506,16 @@ new class extends Component
 
                                     <span class="flex-1"></span>
 
+                                    {{-- Once it is on the calendar there is
+                                         something to be reminded about. --}}
+                                    @if ($item->event_id)
+                                        <button type="button"
+                                                x-on:click="$dispatch('remind-me', { event: {{ $item->event_id }} })"
+                                                class="touch-target rounded-xl px-3 text-sm font-semibold text-blue-600 dark:text-blue-400">
+                                            Remind me
+                                        </button>
+                                    @endif
+
                                     @if ($editable)
                                         <button type="button" wire:click="edit({{ $item->id }})"
                                                 class="touch-target rounded-xl px-3 text-sm font-semibold text-slate-500">Edit</button>

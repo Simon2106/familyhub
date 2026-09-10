@@ -394,6 +394,14 @@ new class extends Component
                         </button>
                         <button type="button" wire:click="$set('open', false)" class="touch-target rounded-xl px-4 font-semibold text-slate-500">Cancel</button>
                         @if ($eventId)
+                            {{-- A reminder about this one only. Makes an ordinary
+                                 rule scoped to a single event — see notify.remind-me. --}}
+                            <button type="button"
+                                    wire:click="$set('open', false)"
+                                    x-on:click="$dispatch('remind-me', { event: {{ $eventId }} })"
+                                    class="touch-target rounded-xl px-4 font-semibold text-blue-600 dark:text-blue-400">
+                                Remind me
+                            </button>
                             <button type="button" wire:click="deleteEvent" wire:confirm="Delete this event from iCloud?"
                                     class="touch-target rounded-xl px-4 font-semibold text-red-600">Delete</button>
                         @endif

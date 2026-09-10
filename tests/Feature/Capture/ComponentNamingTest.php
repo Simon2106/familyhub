@@ -35,6 +35,8 @@ class ComponentNamingTest extends TestCase
             ['recipes.box'],
             ['recipes.cook'],
             ['notes.board'],
+            ['notify.remind-me'],
+            ['notify.rules'],
             ['summary.week'],
             ['meals.plan'],
             ['meals.shopping'],
