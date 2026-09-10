@@ -53,6 +53,14 @@ new class extends Component
     /** Whether this event's members were pinned by hand. */
     public bool $isManual = false;
 
+    /**
+     * Whether the wall should count the days to this.
+     *
+     * Kept in a table of its own rather than on the event, so the next iCloud
+     * sync overwriting the row cannot quietly take the countdown with it.
+     */
+    public bool $countdown = false;
+
     /** Only calendars on a real iCloud account can be written to. */
     #[Computed]
     public function writableCalendars(): Collection
@@ -96,6 +104,7 @@ new class extends Component
             $this->location = '';
             $this->notes = '';
             $this->memberIds = [];
+            $this->countdown = false;
             $this->open = true;
 
             return;
@@ -115,7 +124,37 @@ new class extends Component
         $this->notes = (string) $event->notes;
         $this->memberIds = $event->members->pluck('id')->map(fn ($id) => (string) $id)->all();
         $this->isManual = $event->attributionIsManual();
+        $this->countdown = \App\Models\Countdown::where('event_id', $event->id)->exists();
         $this->open = true;
+    }
+
+    /**
+     * Start or stop counting the days to this event.
+     *
+     * The label is copied rather than referenced: an event renamed to
+     * "CANCELLED - Cornwall" should not silently rewrite what the wall has
+     * been counting down to, and the family can say what they are looking
+     * forward to in their own words.
+     */
+    protected function rememberCountdown(Event $event): void
+    {
+        $household = Household::current();
+
+        if (! $this->countdown) {
+            \App\Models\Countdown::where('household_id', $household->id)
+                ->where('event_id', $event->id)
+                ->delete();
+
+            return;
+        }
+
+        \App\Models\Countdown::updateOrCreate(
+            ['household_id' => $household->id, 'event_id' => $event->id],
+            [
+                'label' => $event->title,
+                'on' => $event->start_at->timezone($household->displayTimezone())->toDateString(),
+            ],
+        );
     }
 
     public function save(): void
@@ -169,6 +208,8 @@ new class extends Component
 
             return;
         }
+
+        $this->rememberCountdown($event);
 
         // Only pin the members when the user actually changed them; otherwise
         // leave the event under automatic attribution so later edits to
@@ -276,6 +317,14 @@ new class extends Component
                     <label class="flex touch-target items-center gap-3">
                         <input wire:model.live="allDay" type="checkbox" class="size-5 rounded">
                         <span class="text-sm font-medium">All day</span>
+                    </label>
+
+                    {{-- Counting the days. Its own row rather than a setting
+                         somewhere else: the moment somebody is putting the
+                         holiday in is the moment they want it counted. --}}
+                    <label class="flex touch-target items-center gap-2">
+                        <input wire:model="countdown" type="checkbox" class="size-5 rounded">
+                        <span class="text-sm font-medium">Count down to this on the wall</span>
                     </label>
 
                     @if (! $allDay)

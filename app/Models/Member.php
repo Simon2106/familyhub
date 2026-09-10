@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\CalendarDate;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Builder;
@@ -15,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 
-#[Fillable(['household_id', 'name', 'colour', 'avatar_path', 'is_child', 'pin', 'sort_order'])]
+#[Fillable(['household_id', 'name', 'colour', 'avatar_path', 'is_child', 'pin', 'sort_order', 'birthday'])]
 #[Hidden(['pin'])]
 class Member extends Model
 {
@@ -26,6 +27,9 @@ class Member extends Model
         return [
             'is_child' => 'boolean',
             'pin' => 'hashed',
+            // CalendarDate rather than date: a birthday with a time on it is
+            // a birthday that lands on the wrong day in MySQL.
+            'birthday' => CalendarDate::class,
         ];
     }
 

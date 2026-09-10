@@ -73,6 +73,9 @@ new #[Layout('layouts::app')] class extends Component
 
     public bool $isChild = false;
 
+    /** Optional; the wall counts down to it and it comes round by itself. */
+    public string $birthday = '';
+
     public string $pin = '';
 
     /** Comma-separated, because chips are fiddly on a phone keyboard. */
@@ -345,6 +348,7 @@ new #[Layout('layouts::app')] class extends Component
         $this->name = $member->name;
         $this->colour = $member->colour;
         $this->isChild = $member->is_child;
+        $this->birthday = $member->birthday ? \Carbon\CarbonImmutable::parse($member->birthday)->toDateString() : '';
         $this->pin = '';
         $this->aliases = $member->aliases->where('kind', 'name')->pluck('alias')->join(', ');
         $this->domains = $member->aliases->where('kind', 'domain')->pluck('alias')->join(', ');
@@ -352,7 +356,7 @@ new #[Layout('layouts::app')] class extends Component
 
     public function addMember(): void
     {
-        $this->reset(['editingId', 'name', 'colour', 'isChild', 'pin', 'aliases', 'domains']);
+        $this->reset(['editingId', 'name', 'colour', 'isChild', 'birthday', 'pin', 'aliases', 'domains']);
         $this->editingId = 0; // 0 means "new"
     }
 
@@ -375,6 +379,7 @@ new #[Layout('layouts::app')] class extends Component
             'name' => $this->name,
             'colour' => strtolower($this->colour),
             'is_child' => $this->isChild,
+            'birthday' => $this->birthday ?: null,
         ]);
 
         // Leaving the pin blank keeps whatever is already set.
@@ -388,7 +393,7 @@ new #[Layout('layouts::app')] class extends Component
         $this->syncAliases($member);
         $this->syncDomains($member);
 
-        $this->reset(['editingId', 'name', 'colour', 'isChild', 'pin', 'aliases', 'domains']);
+        $this->reset(['editingId', 'name', 'colour', 'isChild', 'birthday', 'pin', 'aliases', 'domains']);
         unset($this->members);
 
         // Titles that mention this member may now match differently.
@@ -614,6 +619,15 @@ new #[Layout('layouts::app')] class extends Component
                         <label class="ml-auto flex touch-target items-center gap-2">
                             <input wire:model="isChild" type="checkbox" class="size-5 rounded">
                             <span class="text-sm font-medium">Child</span>
+                        </label>
+
+                        <label class="block">
+                            <span class="block text-sm font-medium">Birthday</span>
+                            <input wire:model="birthday" type="date"
+                                   class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                            <span class="mt-1 block text-sm text-slate-500 dark:text-slate-400">
+                                Optional. The wall counts down to it, and it comes round by itself.
+                            </span>
                         </label>
                     </div>
 

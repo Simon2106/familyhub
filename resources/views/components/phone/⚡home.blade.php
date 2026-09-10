@@ -42,6 +42,13 @@ new #[Layout('layouts::app')] class extends Component
 
     public ?string $dayDate = null;
 
+    /** Up to three things the household is counting the days to. */
+    #[Computed]
+    public function countdowns(): Collection
+    {
+        return app(\App\Services\Countdowns\CountdownBoard::class)->upcoming($this->household(), 3);
+    }
+
     #[Computed]
     public function month(): array
     {
@@ -190,6 +197,12 @@ new #[Layout('layouts::app')] class extends Component
             @endforeach
         </div>
     </header>
+
+    @if ($this->countdowns->isNotEmpty())
+        <div class="shrink-0 px-4 pb-2">
+            <x-countdown-strip :entries="$this->countdowns" :compact="true" />
+        </div>
+    @endif
 
     {{-- Agenda, month or day. Remembered on the device: a phone and the wall
          want different things open. --}}

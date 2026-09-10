@@ -216,6 +216,13 @@ new #[Layout('layouts::display')] class extends Component
      *
      * @return Collection<string, Collection<int, \App\Services\Schools\SchoolClosure>>
      */
+    /** Up to three things the household is counting the days to. */
+    #[Computed]
+    public function countdowns(): \Illuminate\Support\Collection
+    {
+        return app(\App\Services\Countdowns\CountdownBoard::class)->upcoming($this->household(), 3);
+    }
+
     /** Months either side of this one, for paging the month grid. */
     public int $monthOffset = 0;
 
@@ -746,6 +753,12 @@ new #[Layout('layouts::display')] class extends Component
                     </span>
                 </div>
             @endforeach
+
+            {{-- What the household is counting the days to. Beside the clock
+                 because it is the other thing people look at on their way
+                 past, and because it is the only part of the header that is
+                 good news. --}}
+            <x-countdown-strip :entries="$this->countdowns" class="hidden xl:flex" />
 
             {{-- Bins, when they are close enough to matter. Beside the clock
                  because it is a thing you check on your way past. --}}
