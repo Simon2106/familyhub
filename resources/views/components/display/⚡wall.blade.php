@@ -865,11 +865,23 @@ new #[Layout('layouts::display')] class extends Component
                             {{-- Header row --}}
                             <div class="sticky top-0 z-10 bg-white dark:bg-slate-900"></div>
                             @foreach ($members as $member)
-                                <div class="sticky top-0 z-10 flex items-center gap-1.5 bg-white px-1.5 pb-1 dark:bg-slate-900"
-                                     wire:key="wk-head-{{ $member->id }}">
+                                {{-- The dot stays the cue; the whole heading is
+                                     the target. A child's opens their own day,
+                                     which is the thing behind their name;
+                                     anybody else's opens today, because an
+                                     adult's column already is their view. --}}
+                                <button type="button"
+                                        @if ($member->is_child)
+                                            wire:click="$dispatch('show-my-day', { member: {{ $member->id }} })"
+                                        @else
+                                            x-on:click="showToday()"
+                                        @endif
+                                        class="sticky top-0 z-10 flex touch-target items-center gap-1.5 bg-white px-1.5 pb-1 text-left dark:bg-slate-900"
+                                        aria-label="{{ $member->is_child ? $member->name."'s day" : $member->name }}"
+                                        wire:key="wk-head-{{ $member->id }}">
                                     <span class="size-2.5 shrink-0 rounded-full" style="background-color: {{ $member->colour }};"></span>
                                     <span class="truncate text-sm font-semibold">{{ $member->name }}</span>
-                                </div>
+                                </button>
                             @endforeach
                             @if ($this->weekHasHouseholdEvents)
                                 <div class="sticky top-0 z-10 flex items-center gap-1.5 bg-white px-1.5 pb-1 dark:bg-slate-900">
@@ -901,8 +913,16 @@ new #[Layout('layouts::display')] class extends Component
 
                                 @foreach ($members as $member)
                                     @php $cellEvents = $day['events_by_member'][$member->id] ?? collect(); @endphp
-                                    <div class="space-y-0.5 px-0.5 py-1.5 {{ $rowTint }}"
-                                         wire:key="wk-cell-{{ $day['date'] }}-{{ $member->id }}">
+                                    {{-- The whole cell, not just the date at the
+                                         end of the row: a finger goes to the
+                                         name it is reading, and a tap that
+                                         lands on a member's column and does
+                                         nothing reads as a broken screen. --}}
+                                    <button type="button"
+                                            x-on:click="pickDay(@js($day['date']))"
+                                            class="space-y-0.5 px-0.5 py-1.5 text-left {{ $rowTint }}"
+                                            aria-label="{{ $member->name }}, {{ $day['carbon']->format('l j F') }}"
+                                            wire:key="wk-cell-{{ $day['date'] }}-{{ $member->id }}">
                                         {{-- Empty cells stay empty; placeholder text would
                                              be noise repeated 35 times. --}}
                                         @foreach ($cellEvents as $event)
@@ -914,12 +934,15 @@ new #[Layout('layouts::display')] class extends Component
                                                 <span class="block truncate text-xs leading-tight font-medium">{{ $event->title }}</span>
                                             </div>
                                         @endforeach
-                                    </div>
+                                    </button>
                                 @endforeach
 
                                 @if ($this->weekHasHouseholdEvents)
                                     @php $cellEvents = $day['events_by_member'][$this::HOUSEHOLD] ?? collect(); @endphp
-                                    <div class="space-y-0.5 px-0.5 py-1.5 {{ $rowTint }} {{ $day['is_today'] ? 'rounded-r-lg' : '' }}">
+                                    <button type="button"
+                                            x-on:click="pickDay(@js($day['date']))"
+                                            class="space-y-0.5 px-0.5 py-1.5 text-left {{ $rowTint }} {{ $day['is_today'] ? 'rounded-r-lg' : '' }}"
+                                            aria-label="Household, {{ $day['carbon']->format('l j F') }}">
                                         @foreach ($cellEvents as $event)
                                             <div class="rounded border-l-2 border-slate-400 bg-slate-50 px-1 py-0.5 dark:bg-slate-800/70">
                                                 <span class="block text-[0.7rem] leading-tight font-semibold tabular-nums text-slate-500 dark:text-slate-400">
@@ -928,7 +951,7 @@ new #[Layout('layouts::display')] class extends Component
                                                 <span class="block truncate text-xs leading-tight font-medium">{{ $event->title }}</span>
                                             </div>
                                         @endforeach
-                                    </div>
+                                    </button>
                                 @endif
                             @endforeach
                         </div>
@@ -972,7 +995,13 @@ new #[Layout('layouts::display')] class extends Component
                                         @foreach ($members as $member)
                                             @php $cellEvents = $day['events_by_member'][$member->id] ?? collect(); @endphp
                                             @if ($cellEvents->isNotEmpty())
-                                                <div wire:key="wk-stack-{{ $day['date'] }}-{{ $member->id }}">
+                                                {{-- The member's whole card, not
+                                                     the dot beside their name. --}}
+                                                <button type="button"
+                                                        x-on:click="pickDay(@js($day['date']))"
+                                                        class="w-full text-left"
+                                                        aria-label="{{ $member->name }}, {{ $day['carbon']->format('l j F') }}"
+                                                        wire:key="wk-stack-{{ $day['date'] }}-{{ $member->id }}">
                                                     <p class="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
                                                         <span class="size-2 rounded-full" style="background-color: {{ $member->colour }};"></span>
                                                         {{ $member->name }}
@@ -988,7 +1017,7 @@ new #[Layout('layouts::display')] class extends Component
                                                             </li>
                                                         @endforeach
                                                     </ul>
-                                                </div>
+                                                </button>
                                             @endif
                                         @endforeach
 
@@ -1036,7 +1065,21 @@ new #[Layout('layouts::display')] class extends Component
                                     $memberTodos = $this->todosByDate[$day['date']][$member->id] ?? collect();
                                 @endphp
 
-                                <div class="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-slate-900">
+                                {{-- The whole column is the door for a child,
+                                     header and body alike — the avatar alone
+                                     was a nine-millimetre target on a wall
+                                     nobody stands close to. Anything inside it
+                                     that does its own thing still does it:
+                                     the guard lets a chore tile, a link or a
+                                     checkbox have the tap first. --}}
+                                <div class="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-slate-900"
+                                     @if ($member->is_child)
+                                         role="button"
+                                         tabindex="0"
+                                         aria-label="{{ $member->name }}'s day"
+                                         x-on:click="$event.target.closest('button, a, input, label')
+                                             || $wire.dispatch('show-my-day', { member: {{ $member->id }}, date: '{{ $day['date'] }}' })"
+                                     @endif>
                                     <div class="flex items-center gap-2 px-3 py-2" style="background-color: {{ $member->colour }}1a;">
                                         {{-- A child's avatar is the door into
                                              their own day. An adult's column
