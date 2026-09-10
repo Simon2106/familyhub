@@ -10,7 +10,7 @@ import { isDarkNow } from './dark-mode';
 import { createDragBoard } from './dragboard';
 import { createSilenceWatch, followUntilDone, levelOf } from './listen';
 import { driftAt, roomFor } from './drift';
-import { createKeyboard, wantsKeyboard } from './keyboard';
+import { createHideGate, createKeyboard, wantsKeyboard } from './keyboard';
 import { startEcho, watchConnection } from './echo';
 import { createScreenOff } from './screen-off';
 import { createUpdater } from './updater';
@@ -557,21 +557,39 @@ if (document.documentElement.hasAttribute('data-kiosk')) {
         if (document.activeElement === target) keyboard.show(target);
     });
 
-    document.addEventListener('focusout', (event) => {
+    // See createHideGate: hiding mid-tap moves the dialog out from under the
+    // finger, and the click never reaches what it was aimed at.
+    const gate = createHideGate((options) => keyboard.hide(options));
+
+    document.addEventListener('focusout', () => {
         // Moving between two fields keeps it up; leaving the last one drops it.
         requestAnimationFrame(() => {
-            if (!wantsKeyboard(document.activeElement)) keyboard.hide();
+            if (!wantsKeyboard(document.activeElement)) gate.ask();
         });
     });
 
-    // Tapping anywhere that is not a field and not the keyboard itself.
-    document.addEventListener('pointerdown', (event) => {
-        if (!keyboard.visible) return;
-        if (event.target.closest('.kb')) return;
-        if (wantsKeyboard(event.target)) return;
+    document.addEventListener(
+        'pointerdown',
+        (event) => {
+            gate.down();
 
-        keyboard.hide({ blur: true });
-    });
+            if (!keyboard.visible) return;
+            if (event.target.closest('.kb')) return;
+            if (wantsKeyboard(event.target)) return;
+
+            // Asked for now, applied once the finger lifts.
+            gate.ask({ blur: true });
+        },
+        true,
+    );
+
+    // Bubble phase on the document, so anything the tap was aimed at — a
+    // Livewire action, an Alpine handler — has already run.
+    document.addEventListener('click', () => gate.settle());
+
+    // A tap that never becomes a click: a scroll, or a finger sliding off.
+    document.addEventListener('pointercancel', () => gate.settle(), true);
+    window.addEventListener('blur', () => gate.settle());
 
     document.addEventListener('keydown', (event) => event.key === 'Escape' && keyboard.hide({ blur: true }));
 

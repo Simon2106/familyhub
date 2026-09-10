@@ -471,6 +471,10 @@ new #[Layout('layouts::app')] class extends Component
             </span>
         </a>
 
+        <div class="mt-4">
+            <livewire:notes.board />
+        </div>
+
         {{-- Editable here: phones are where a to-do actually gets written. --}}
         <section class="mt-4 rounded-2xl bg-white p-3 dark:bg-slate-900">
             <livewire:todos.panel :editable="true" />

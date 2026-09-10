@@ -941,7 +941,8 @@ new #[Layout('layouts::display')] class extends Component
     <div class="min-h-0 flex-1 px-6 pb-3 sm:px-8">
 
         {{-- ---------------------------- HOME ---------------------------- --}}
-        <div x-show="tab === 'home'" class="grid h-full min-h-0 gap-4 lg:grid-cols-5">
+        <div x-show="tab === 'home'" class="flex h-full min-h-0 flex-col gap-3">
+          <div class="grid min-h-0 flex-1 gap-4 lg:grid-cols-5">
 
             <section
                 class="min-h-0 lg:col-span-3"
@@ -1552,6 +1553,13 @@ new #[Layout('layouts::display')] class extends Component
                     <livewire:todos.panel />
                 </div>
             </section>
+          </div>
+
+          {{-- The fridge door, across the foot of Home. Takes no room at all
+               when there is nothing on it, which is most weeks. --}}
+          <div class="shrink-0">
+              <livewire:notes.board :on-wall="true" />
+          </div>
         </div>
 
         {{-- ---------------------------- LISTS --------------------------- --}}

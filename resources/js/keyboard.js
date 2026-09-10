@@ -115,6 +115,63 @@ export function wantsKeyboard(element) {
  *   modal component already measures against, which is what makes every
  *   dialog in the app rise above it without knowing this exists.
  */
+/**
+ * Holds a hide until the tap that asked for it has finished.
+ *
+ * Putting the keyboard away restores the visual-viewport variables the modal
+ * centres itself against, so the dialog jumps back down the screen. Do that
+ * between pointerdown and pointerup and the button under the finger has moved
+ * by the time the tap finishes: the browser dispatches the click on the common
+ * ancestor instead, and every other control in an open dialog silently stops
+ * working while the keyboard is up.
+ *
+ * So: while a finger is down, a hide is remembered rather than performed, and
+ * runs the moment the tap is over.
+ */
+export function createHideGate(hide) {
+    let holding = false;
+    let pending = null;
+
+    return {
+        /** A finger has gone down. Anything asked for before now is stale. */
+        down() {
+            holding = true;
+            pending = null;
+        },
+
+        /** Hide, or promise to. */
+        ask(options = {}) {
+            if (holding) {
+                pending = options;
+
+                return false;
+            }
+
+            hide(options);
+
+            return true;
+        },
+
+        /** The tap is over. */
+        settle() {
+            holding = false;
+
+            if (!pending) return false;
+
+            const options = pending;
+            pending = null;
+
+            hide(options);
+
+            return true;
+        },
+
+        get waiting() {
+            return pending !== null;
+        },
+    };
+}
+
 export function createKeyboard({
     root = document.documentElement,
     body = document.body,

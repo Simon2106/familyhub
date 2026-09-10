@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
     LETTERS,
+    createHideGate,
     applyKey,
     labelFor,
     rowsFor,
@@ -122,4 +123,57 @@ test('and not for the ones a keyboard cannot help with', () => {
     assert.equal(wantsKeyboard(field('INPUT', 'date')), false);
     assert.equal(wantsKeyboard(field('BUTTON')), false);
     assert.equal(wantsKeyboard(null), false);
+});
+
+/* ---------------------------- hiding mid-tap ---------------------------- */
+
+test('a hide asked for between finger down and finger up waits for the tap', () => {
+    const hidden = [];
+    const gate = createHideGate((options) => hidden.push(options));
+
+    gate.down();
+    gate.ask({ blur: true });
+
+    // Nothing yet: hiding here moves the dialog out from under the finger
+    // and the click never reaches the button it was aimed at.
+    assert.deepEqual(hidden, []);
+    assert.equal(gate.waiting, true);
+
+    gate.settle();
+
+    assert.deepEqual(hidden, [{ blur: true }]);
+    assert.equal(gate.waiting, false);
+});
+
+test('a hide with no finger down happens immediately', () => {
+    const hidden = [];
+    const gate = createHideGate((options) => hidden.push(options));
+
+    gate.ask();
+
+    assert.equal(hidden.length, 1);
+});
+
+test('a second tap forgets what the first one asked for', () => {
+    const hidden = [];
+    const gate = createHideGate((options) => hidden.push(options));
+
+    gate.down();
+    gate.ask({ blur: true });
+    gate.down();
+    gate.settle();
+
+    assert.deepEqual(hidden, []);
+});
+
+test('settling twice only hides once', () => {
+    const hidden = [];
+    const gate = createHideGate((options) => hidden.push(options));
+
+    gate.down();
+    gate.ask();
+    gate.settle();
+    gate.settle();
+
+    assert.equal(hidden.length, 1);
 });
