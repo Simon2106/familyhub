@@ -2,6 +2,7 @@
 
 use App\Models\Event;
 use App\Models\Household;
+use App\Services\Notifications\NeedsAttention;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -21,6 +22,19 @@ new #[Layout('layouts::app')] class extends Component
     /** Filter to one member; kept in the URL so it survives a refresh. */
     #[Url(as: 'member', except: '')]
     public string $memberFilter = '';
+
+    /**
+     * Whether the bell wears a dot.
+     *
+     * The same rule the notifications themselves use — see NeedsAttention.
+     * A bell that lit up on a different rule from the notice it leads to
+     * would be a bell nobody trusted.
+     */
+    #[Computed]
+    public function waitingOnAGrownUp(): int
+    {
+        return app(NeedsAttention::class)->total($this->household());
+    }
 
     /** Opened straight from a search result or a link. */
     public function mount(): void
@@ -170,6 +184,19 @@ new #[Layout('layouts::app')] class extends Component
                 <h1 class="text-2xl font-bold">{{ $this->household()->name }}</h1>
                 <p class="text-sm text-slate-500 dark:text-slate-400">{{ $this->household()->nowLocal()->format('l j F') }}</p>
             </div>
+
+            {{-- The bell, and a dot when something is waiting. A count would
+                 be a second badge competing with the ones on the tiles
+                 below; the dot only has to say "worth a look". --}}
+            <a href="{{ route('notifications') }}" wire:navigate
+               class="relative grid touch-target place-items-center rounded-xl bg-white text-slate-500 dark:bg-slate-900"
+               aria-label="Notifications{{ $this->waitingOnAGrownUp > 0 ? ' — '.$this->waitingOnAGrownUp.' waiting for a grown-up' : '' }}">
+                <x-icon name="bell" class="size-6" />
+                @if ($this->waitingOnAGrownUp > 0)
+                    <span class="absolute top-2 right-2 size-2.5 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900"
+                          aria-hidden="true"></span>
+                @endif
+            </a>
 
             <a href="{{ route('admin') }}" wire:navigate
                class="grid touch-target place-items-center rounded-xl bg-white text-slate-500 dark:bg-slate-900"

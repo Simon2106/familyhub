@@ -271,6 +271,33 @@ new #[Layout('layouts::app')] class extends Component
         return 'Next: '.$next->label().' on '.$next->on->format('D j M').'.';
     }
 
+    /**
+     * What this adult is told about, and whether push is even set up.
+     *
+     * Named for the person rather than the household: two parents can want
+     * entirely different things, and the row should not imply otherwise.
+     */
+    public function notificationSummary(): string
+    {
+        if (! app(\App\Services\Notifications\Notifier::class)->isConfigured()) {
+            return 'Not set up yet — no push keys on the server.';
+        }
+
+        $user = auth()->user();
+        $settings = app(\App\Services\Notifications\NotificationSettings::class);
+
+        if (! $user || ! $settings->anything($user)) {
+            return 'You are not being told about anything yet.';
+        }
+
+        $on = collect(\App\Services\Notifications\NotificationSettings::TRIGGERS)
+            ->keys()
+            ->filter(fn (string $trigger) => $settings->wants($user, $trigger))
+            ->count();
+
+        return trans_choice('{1}:count thing|[2,*]:count things', $on, ['count' => $on]).' you are told about.';
+    }
+
     public function homeSummary(): string
     {
         if (! app(\App\Services\HomeAssistant\HomeAssistant::class)->isConfigured()) {
@@ -871,6 +898,23 @@ new #[Layout('layouts::app')] class extends Component
             @if ($binError)
                 <p class="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">{{ $binError }}</p>
             @endif
+        </section>
+
+        {{-- Notifications. Per person rather than per household, so this
+             points at the signed-in adult's own settings. --}}
+        <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
+            <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <h2 class="font-semibold">Notifications</h2>
+                    <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        {{ $this->notificationSummary() }}
+                    </p>
+                </div>
+                <a href="{{ route('notifications') }}" wire:navigate
+                   class="grid touch-target shrink-0 place-items-center rounded-xl px-4 font-semibold text-blue-600 dark:text-blue-400">
+                    Manage
+                </a>
+            </div>
         </section>
 
         {{-- Smart home --}}

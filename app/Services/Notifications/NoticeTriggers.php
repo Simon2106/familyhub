@@ -2,7 +2,6 @@
 
 namespace App\Services\Notifications;
 
-use App\Models\CaptureItem;
 use App\Models\ChecklistItem;
 use App\Models\Event;
 use App\Models\Household;
@@ -28,7 +27,10 @@ class NoticeTriggers
     /** How long before a nudge about a standing pile is worth repeating. */
     public const REMIND_AGAIN_DAYS = 1;
 
-    public function __construct(protected NotificationSettings $settings) {}
+    public function __construct(
+        protected NotificationSettings $settings,
+        protected NeedsAttention $attention,
+    ) {}
 
     /**
      * Everything this person should be told at this moment.
@@ -139,10 +141,7 @@ class NoticeTriggers
             return [];
         }
 
-        $waiting = CaptureItem::query()
-            ->whereHas('capture', fn ($q) => $q->where('household_id', $household->id))
-            ->pending()
-            ->count();
+        $waiting = $this->attention->review($household);
 
         if ($waiting === 0) {
             return [];
@@ -166,7 +165,7 @@ class NoticeTriggers
 
         $chores = app(ChoreBoard::class)->awaitingApproval($household)->count();
         $rewards = Redemption::where('household_id', $household->id)->pending()->count();
-        $total = $chores + $rewards;
+        $total = $this->attention->approvals($household);
 
         if ($total === 0) {
             return [];
