@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * The brief calls this "List"; `list` is a reserved word in PHP and cannot be a
  * class name, so the model is Checklist over the `checklists` table.
  */
-#[Fillable(['household_id', 'name', 'type', 'icon', 'colour', 'sort_order', 'is_home_list'])]
+#[Fillable(['household_id', 'member_id', 'name', 'type', 'icon', 'colour', 'sort_order', 'is_home_list'])]
 class Checklist extends Model
 {
     use HasFactory;
@@ -45,6 +45,27 @@ class Checklist extends Model
     }
 
     /** @return HasMany<ChecklistItem, $this> */
+    /**
+     * The two lists every household starts with, which cannot be deleted.
+     *
+     * Not because the data would not survive it, but because half the app
+     * points at them: the shopping generator, the capture pipeline's to-dos,
+     * and the wall's own panels all assume they exist.
+     */
+    public const BUILT_IN = ['todo', 'shopping'];
+
+    /** A list somebody made, as opposed to one the app relies on. */
+    public function isBuiltIn(): bool
+    {
+        return in_array($this->type, self::BUILT_IN, true);
+    }
+
+    /** @return BelongsTo<Member, $this> */
+    public function member(): BelongsTo
+    {
+        return $this->belongsTo(Member::class);
+    }
+
     public function items(): HasMany
     {
         return $this->hasMany(ChecklistItem::class)->orderBy('is_done')->orderBy('sort_order')->orderBy('id');

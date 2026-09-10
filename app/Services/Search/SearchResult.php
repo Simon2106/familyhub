@@ -24,6 +24,7 @@ class SearchResult
         'event' => 'Calendar',
         'todo' => 'To-dos',
         'shopping' => 'Shopping',
+        'list' => 'Lists',
         'chore' => 'Chores',
         'routine' => 'Routines',
         'meal' => 'Meals',
@@ -50,7 +51,7 @@ class SearchResult
     {
         return match ($this->type) {
             'event', 'chore', 'routine' => 'home',
-            'todo', 'shopping' => 'lists',
+            'todo', 'shopping', 'list' => 'lists',
             'meal', 'recipe' => 'meals',
             'capture' => 'review',
             default => null,

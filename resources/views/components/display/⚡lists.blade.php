@@ -22,9 +22,13 @@ new class extends Component
      */
     public string $onlyType = '';
 
-    public function mount(string $only = ''): void
+    /** Set on the wall, where a list has to be invited rather than assumed. */
+    public bool $wallOnly = false;
+
+    public function mount(string $only = '', bool $wallOnly = false): void
     {
         $this->onlyType = $only;
+        $this->wallOnly = $wallOnly;
     }
 
     #[Computed]
@@ -33,6 +37,11 @@ new class extends Component
         return Household::current()
             ->checklists()
             ->when($this->onlyType !== '', fn ($q) => $q->where('type', $this->onlyType))
+            // On the wall, only the lists somebody has asked to see there: a
+            // birthday wishlist is not something to leave on a kitchen wall.
+            ->when($this->onlyType === '' && $this->wallOnly, fn ($q) => $q->where(
+                fn ($w) => $w->where('is_home_list', true)->orWhereIn('type', \App\Models\Checklist::BUILT_IN),
+            ))
             ->with(['items' => fn ($q) => $q->with(['member', 'event'])])
             ->get();
     }

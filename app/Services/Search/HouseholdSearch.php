@@ -149,10 +149,17 @@ class HouseholdSearch
             ->get();
 
         return $items->map(function (ChecklistItem $item) {
-            $shopping = $item->checklist?->type === 'shopping';
+            $type = $item->checklist?->type;
+            $shopping = $type === 'shopping';
 
             return new SearchResult(
-                type: $shopping ? 'shopping' : 'todo',
+                // A list somebody made is neither a to-do nor shopping, and
+                // filing it under one of those sends the tap to the wrong page.
+                type: match (true) {
+                    $shopping => 'shopping',
+                    $type === 'todo' => 'todo',
+                    default => 'list',
+                },
                 title: $item->title,
                 snippet: $this->join([
                     $item->checklist?->name,
@@ -160,7 +167,11 @@ class HouseholdSearch
                     $item->is_done ? 'done' : null,
                 ]),
                 date: $item->due_on,
-                url: $shopping ? route('shopping') : route('app'),
+                url: match (true) {
+                    $shopping => route('shopping'),
+                    $type === 'todo' => route('app'),
+                    default => route('lists', ['list' => $item->checklist_id]),
+                },
             );
         })->all();
     }

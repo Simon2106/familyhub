@@ -1548,7 +1548,7 @@ new #[Layout('layouts::display')] class extends Component
 
         {{-- ---------------------------- LISTS --------------------------- --}}
         <div x-show="tab === 'lists'" x-cloak class="h-full min-h-0">
-            <livewire:display.lists />
+            <livewire:display.lists :wall-only="true" />
         </div>
 
         {{-- --------------------------- REVIEW --------------------------- --}}

@@ -54,6 +54,7 @@ class ComponentNamingTest extends TestCase
             ['home.switches'],
             ['display.wall'],
             ['notify.settings'],
+            ['lists.page'],
             ['phone.home'],
         ];
     }

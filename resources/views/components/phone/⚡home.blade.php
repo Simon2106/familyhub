@@ -449,6 +449,17 @@ new #[Layout('layouts::app')] class extends Component
             </span>
         </a>
 
+        <a href="{{ route('lists') }}" wire:navigate
+           class="mt-3 flex touch-target items-center gap-3 rounded-2xl bg-white p-3 dark:bg-slate-900">
+            <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-teal-50 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400">
+                <x-icon name="ticked" class="size-5" />
+            </span>
+            <span class="min-w-0 flex-1">
+                <span class="block font-medium">Lists</span>
+                <span class="block text-sm text-slate-500 dark:text-slate-400">Packing, wishlists, anything else</span>
+            </span>
+        </a>
+
         {{-- Editable here: phones are where a to-do actually gets written. --}}
         <section class="mt-4 rounded-2xl bg-white p-3 dark:bg-slate-900">
             <livewire:todos.panel :editable="true" />
