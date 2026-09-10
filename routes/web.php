@@ -151,6 +151,12 @@ Route::middleware('auth')->group(function () {
     Route::post('/app/push', [PushSubscriptionController::class, 'store'])->name('push.subscribe');
     Route::delete('/app/push', [PushSubscriptionController::class, 'destroy'])->name('push.unsubscribe');
 
+    // Proving the whole path on demand, because "nothing arrived" has half a
+    // dozen causes and only one of them is visible from the browser.
+    Route::post('/app/push/test', [PushSubscriptionController::class, 'test'])
+        ->middleware('throttle:10,1')
+        ->name('push.test');
+
     /*
     | PWA share target. iOS posts the shared payload here; anything with
     | content becomes a capture and the user lands on the review inbox.

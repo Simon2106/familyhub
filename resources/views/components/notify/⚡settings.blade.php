@@ -103,19 +103,41 @@ new #[Layout('layouts::app')] class extends Component
         {{-- This device. Subscribing is a browser permission, so it has to be
              asked for from the browser rather than switched on server-side. --}}
         <section class="rounded-2xl bg-white p-4 dark:bg-slate-900"
-                 x-data="pushSetup(@js(config('familyhub.push.public_key')), @js(route('push.subscribe')), @js(route('push.unsubscribe')))">
+                 x-data="pushSetup(@js(config('familyhub.push.public_key')), @js(route('push.subscribe')), @js(route('push.unsubscribe')), @js(route('push.test')))">
             <h2 class="font-semibold">This device</h2>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400" x-text="explanation"></p>
 
-            <button type="button" x-on:click="toggle()" x-show="supported" x-cloak
-                    class="mt-3 touch-target rounded-xl px-4 font-semibold text-white"
-                    :class="subscribed ? 'bg-slate-500' : 'bg-blue-600'"
-                    x-text="subscribed ? 'Stop notifications here' : 'Turn on notifications here'"></button>
+            {{-- The browser's own answer, said out loud. "Nothing arrived" has
+                 half a dozen causes and this is the one the page can see. --}}
+            <div class="mt-3 flex items-center gap-2" x-show="supported" x-cloak>
+                <span class="text-sm text-slate-500 dark:text-slate-400">Permission</span>
+                <span class="rounded-lg px-2 py-1 text-sm font-semibold"
+                      :class="{
+                          'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300': permission === 'granted',
+                          'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300': permission === 'denied',
+                          'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300': permission === 'default',
+                      }"
+                      x-text="permissionLabel"></span>
+            </div>
 
-            <p x-show="! supported" x-cloak class="mt-3 text-sm text-slate-400">
-                This browser cannot receive notifications. On an iPhone, add FamilyHub to
-                the Home Screen first — Safari only allows them from an installed app.
-            </p>
+            <p x-show="supported && permissionDetail" x-cloak
+               class="mt-2 text-sm text-slate-500 dark:text-slate-400" x-text="permissionDetail"></p>
+
+            <div class="mt-3 flex flex-wrap gap-2" x-show="supported" x-cloak>
+                <button type="button" x-on:click="toggle()" :disabled="busy || permission === 'denied'"
+                        class="touch-target rounded-xl px-4 font-semibold text-white disabled:opacity-40"
+                        :class="subscribed ? 'bg-slate-500' : 'bg-blue-600'"
+                        x-text="subscribed ? 'Stop notifications here' : 'Turn on notifications here'"></button>
+
+                <button type="button" x-on:click="test()" x-show="subscribed" :disabled="busy"
+                        class="touch-target rounded-xl bg-slate-100 px-4 font-semibold disabled:opacity-40 dark:bg-slate-800">
+                    Send me a test notification
+                </button>
+            </div>
+
+            <p x-show="result" x-cloak class="mt-2 text-sm font-medium" x-text="result"></p>
+
+            <p x-show="! supported" x-cloak class="mt-3 text-sm text-slate-400" x-text="explanation"></p>
         </section>
 
         {{-- What to be told about. --}}

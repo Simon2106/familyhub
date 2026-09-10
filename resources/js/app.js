@@ -11,6 +11,7 @@ import { createDragBoard } from './dragboard';
 import { createSilenceWatch, followUntilDone, levelOf } from './listen';
 import { driftAt, roomFor } from './drift';
 import { createHideGate, createKeyboard, wantsKeyboard } from './keyboard';
+import { describePermission, isStandalone, keyToBytes, looksLikeIos, unavailableReason } from './push';
 import { startEcho, watchConnection } from './echo';
 import { createScreenOff } from './screen-off';
 import { createUpdater } from './updater';
@@ -666,16 +667,6 @@ if (document.documentElement.hasAttribute('data-kiosk')) {
  * ---------------------------------------------------------------------- */
 
 /** VAPID keys travel as base64url and the browser wants bytes. */
-function keyToBytes(base64) {
-    const padded = (base64 + '='.repeat((4 - (base64.length % 4)) % 4))
-        .replace(/-/g, '+')
-        .replace(/_/g, '/');
-
-    const raw = atob(padded);
-
-    return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
-}
-
 /** Something a person will recognise in a list of devices. */
 function describeDevice() {
     const ua = navigator.userAgent;
@@ -694,22 +685,25 @@ function describeDevice() {
 }
 
 document.addEventListener('alpine:init', () => {
-    window.Alpine.data('pushSetup', (publicKey, subscribeUrl, unsubscribeUrl) => ({
+    window.Alpine.data('pushSetup', (publicKey, subscribeUrl, unsubscribeUrl, testUrl) => ({
         supported: false,
         subscribed: false,
+        busy: false,
         explanation: 'Checking…',
+        /** granted | denied | default — shown as words, so it can be acted on. */
+        permission: 'default',
+        permissionLabel: '',
+        permissionDetail: null,
+        result: null,
 
         async init() {
-            this.supported =
-                'serviceWorker' in navigator &&
-                'PushManager' in window &&
-                'Notification' in window &&
-                Boolean(publicKey);
+            const reason = unavailableReason(window, publicKey);
+
+            this.supported = reason === null;
+            this.readPermission();
 
             if (!this.supported) {
-                this.explanation = publicKey
-                    ? 'This browser cannot receive notifications.'
-                    : 'No key is set on the server yet.';
+                this.explanation = reason;
 
                 return;
             }
@@ -721,37 +715,76 @@ document.addEventListener('alpine:init', () => {
             this.describe();
         },
 
+        readPermission() {
+            this.permission = 'Notification' in window ? Notification.permission : 'default';
+
+            const described = describePermission(this.permission, {
+                ios: looksLikeIos(window),
+                standalone: isStandalone(window),
+            });
+
+            this.permissionLabel = described.label;
+            this.permissionDetail = described.detail;
+        },
+
         describe() {
             this.explanation = this.subscribed
                 ? 'This device will be notified.'
                 : 'Notifications are off on this device.';
         },
 
-        async toggle() {
-            const registration = await navigator.serviceWorker.ready;
+        /*
+         * The tap handler, and the reason this is not simply async.
+         *
+         * Notification.requestPermission() has to be reached synchronously
+         * from the tap. WebKit spends the user activation on the first await,
+         * and after that the call resolves to "default" without ever showing
+         * a prompt — no error, no dialog, nothing to catch. That is exactly
+         * what made this fail on an iPhone while working everywhere else.
+         *
+         * So: no await before the ask. The service worker is looked up after.
+         */
+        toggle() {
+            if (this.busy) return;
+
+            this.result = null;
 
             if (this.subscribed) {
-                const existing = await registration.pushManager.getSubscription();
-
-                if (existing) {
-                    await this.post(unsubscribeUrl, { endpoint: existing.endpoint }, 'DELETE');
-                    await existing.unsubscribe();
-                }
-
-                this.subscribed = false;
-                this.describe();
+                this.busy = true;
+                this.unsubscribe().finally(() => (this.busy = false));
 
                 return;
             }
 
-            if ((await Notification.requestPermission()) !== 'granted') {
-                // Denied permission cannot be asked for again from script; say
-                // so rather than leaving a button that does nothing.
-                this.explanation = 'Blocked in this browser’s settings. Allow notifications there first.';
+            if (Notification.permission === 'granted') {
+                this.busy = true;
+                this.subscribe().finally(() => (this.busy = false));
 
                 return;
             }
 
+            // Called first, and deliberately not awaited on the way in.
+            const asked = Notification.requestPermission();
+
+            this.busy = true;
+
+            asked
+                .then((permission) => {
+                    this.readPermission();
+
+                    if (permission !== 'granted') {
+                        this.explanation = 'Notifications are off on this device.';
+
+                        return;
+                    }
+
+                    return this.subscribe();
+                })
+                .finally(() => (this.busy = false));
+        },
+
+        async subscribe() {
+            const registration = await navigator.serviceWorker.ready;
             const subscription = await registration.pushManager.subscribe({
                 userVisibleOnly: true,
                 applicationServerKey: keyToBytes(publicKey),
@@ -759,14 +792,61 @@ document.addEventListener('alpine:init', () => {
 
             const json = subscription.toJSON();
 
-            await this.post(subscribeUrl, {
+            const response = await this.post(subscribeUrl, {
                 endpoint: json.endpoint,
                 keys: json.keys,
                 label: describeDevice(),
             });
 
+            // A subscription the server did not keep is worse than none: the
+            // browser is signed up, the page says so, and nothing will ever
+            // arrive. Undo it and say what happened.
+            if (!response.ok) {
+                await subscription.unsubscribe();
+
+                this.subscribed = false;
+                this.explanation = `The server would not store this device (${response.status}). Try again, or sign in again.`;
+
+                return;
+            }
+
             this.subscribed = true;
+            this.readPermission();
             this.describe();
+        },
+
+        async unsubscribe() {
+            const registration = await navigator.serviceWorker.ready;
+            const existing = await registration.pushManager.getSubscription();
+
+            if (existing) {
+                await this.post(unsubscribeUrl, { endpoint: existing.endpoint }, 'DELETE');
+                await existing.unsubscribe();
+            }
+
+            this.subscribed = false;
+            this.describe();
+        },
+
+        /** Prove the whole path, end to end, on demand. */
+        async test() {
+            if (this.busy) return;
+
+            this.busy = true;
+            this.result = null;
+
+            try {
+                const response = await this.post(testUrl, {});
+                const body = await response.json().catch(() => ({}));
+
+                this.result = response.ok
+                    ? (body.message ?? 'Sent. It should arrive in a moment.')
+                    : (body.message ?? `That did not work (${response.status}).`);
+            } catch (error) {
+                this.result = `That did not work: ${error.message}`;
+            } finally {
+                this.busy = false;
+            }
         },
 
         post(url, body, method = 'POST') {

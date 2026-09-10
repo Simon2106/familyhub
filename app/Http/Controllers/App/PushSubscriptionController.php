@@ -4,6 +4,8 @@ namespace App\Http\Controllers\App;
 
 use App\Http\Controllers\Controller;
 use App\Models\PushSubscription;
+use App\Services\Notifications\Notice;
+use App\Services\Notifications\Notifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -39,6 +41,56 @@ class PushSubscriptionController extends Controller
         );
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Send one, now, to whoever asked.
+     *
+     * Deliberately not routed through Notifier::tell(): that checks the
+     * person's settings, honours quiet hours and writes a ledger row so the
+     * same thing is never sent twice — all correct for a real notice, and all
+     * wrong for somebody standing there tapping "test" at half past ten at
+     * night wanting to know whether any of this works.
+     *
+     * The reply says which of the several possible failures it was, because
+     * "nothing arrived" is the one symptom they all share.
+     */
+    public function test(Request $request, Notifier $notifier): JsonResponse
+    {
+        if (! $notifier->isConfigured()) {
+            return response()->json([
+                'message' => 'No push keys are set on the server yet, so nothing can be sent.',
+            ], 503);
+        }
+
+        $devices = $request->user()->pushSubscriptions()->count();
+
+        if ($devices === 0) {
+            return response()->json([
+                'message' => 'This device is not signed up yet — turn notifications on above first.',
+            ], 422);
+        }
+
+        $sent = $notifier->push($request->user(), new Notice(
+            trigger: 'test',
+            subject: 'test:'.now()->timestamp,
+            title: 'FamilyHub',
+            body: 'This is the test notification. Everything is working.',
+            url: route('notifications'),
+        ));
+
+        if (! $sent) {
+            return response()->json([
+                'message' => 'The server tried, but no device accepted it. It may have been removed — turn notifications off and on again.',
+            ], 502);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'message' => $devices === 1
+                ? 'Sent. It should arrive in a moment.'
+                : 'Sent to all '.$devices.' of your devices. It should arrive in a moment.',
+        ]);
     }
 
     public function destroy(Request $request): JsonResponse
