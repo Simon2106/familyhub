@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -25,6 +26,7 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [
+            'notify_settings' => 'array',
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
@@ -44,6 +46,12 @@ class User extends Authenticatable
     public function member(): BelongsTo
     {
         return $this->belongsTo(Member::class);
+    }
+
+    /** @return HasMany<PushSubscription, $this> */
+    public function pushSubscriptions(): HasMany
+    {
+        return $this->hasMany(PushSubscription::class);
     }
 
     /**

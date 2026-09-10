@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\App\PushSubscriptionController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Display\ListenController;
 use App\Http\Controllers\ShareTargetController;
@@ -142,6 +143,10 @@ Route::middleware('auth')->group(function () {
     Route::livewire('/app/shopping', 'meals.shopping')->name('shopping');
     Route::livewire('/app/kids', 'kids.parent')->name('kids');
     Route::livewire('/app/switches', 'home.switches')->name('switches');
+    Route::livewire('/app/notifications', 'notify.settings')->name('notifications');
+
+    Route::post('/app/push', [PushSubscriptionController::class, 'store'])->name('push.subscribe');
+    Route::delete('/app/push', [PushSubscriptionController::class, 'destroy'])->name('push.unsubscribe');
 
     /*
     | PWA share target. iOS posts the shared payload here; anything with

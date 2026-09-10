@@ -990,6 +990,10 @@ new #[Layout('layouts::app')] class extends Component
             <a href="{{ route('display') }}" wire:navigate class="mt-3 inline-flex touch-target items-center font-semibold text-blue-600 dark:text-blue-400">
                 Preview the wall display
             </a>
+
+            <a href="{{ route('notifications') }}" wire:navigate class="mt-3 block touch-target font-semibold text-blue-600 dark:text-blue-400">
+                Notifications on this device
+            </a>
         </section>
 
         {{-- About --}}

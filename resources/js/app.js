@@ -579,6 +579,134 @@ if (document.documentElement.hasAttribute('data-kiosk')) {
 }
 
 /* -------------------------------------------------------------------------
+ * Web Push, from the browser's side
+ *
+ * Subscribing is a permission, so it has to be asked for here rather than
+ * switched on server-side. The key is passed in from the page: a browser that
+ * subscribes with the wrong application key gets an endpoint the server can
+ * never sign for, and fails silently for ever after.
+ * ---------------------------------------------------------------------- */
+
+/** VAPID keys travel as base64url and the browser wants bytes. */
+function keyToBytes(base64) {
+    const padded = (base64 + '='.repeat((4 - (base64.length % 4)) % 4))
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+
+    const raw = atob(padded);
+
+    return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+/** Something a person will recognise in a list of devices. */
+function describeDevice() {
+    const ua = navigator.userAgent;
+
+    const kind = /iPad/.test(ua)
+        ? 'iPad'
+        : /iPhone/.test(ua)
+          ? 'iPhone'
+          : /Android/.test(ua)
+            ? 'Android phone'
+            : /Macintosh/.test(ua)
+              ? 'Mac'
+              : 'Browser';
+
+    return window.matchMedia('(display-mode: standalone)').matches ? `${kind} (installed)` : kind;
+}
+
+document.addEventListener('alpine:init', () => {
+    window.Alpine.data('pushSetup', (publicKey, subscribeUrl, unsubscribeUrl) => ({
+        supported: false,
+        subscribed: false,
+        explanation: 'Checking…',
+
+        async init() {
+            this.supported =
+                'serviceWorker' in navigator &&
+                'PushManager' in window &&
+                'Notification' in window &&
+                Boolean(publicKey);
+
+            if (!this.supported) {
+                this.explanation = publicKey
+                    ? 'This browser cannot receive notifications.'
+                    : 'No key is set on the server yet.';
+
+                return;
+            }
+
+            const registration = await navigator.serviceWorker.ready;
+            const existing = await registration.pushManager.getSubscription();
+
+            this.subscribed = Boolean(existing);
+            this.describe();
+        },
+
+        describe() {
+            this.explanation = this.subscribed
+                ? 'This device will be notified.'
+                : 'Notifications are off on this device.';
+        },
+
+        async toggle() {
+            const registration = await navigator.serviceWorker.ready;
+
+            if (this.subscribed) {
+                const existing = await registration.pushManager.getSubscription();
+
+                if (existing) {
+                    await this.post(unsubscribeUrl, { endpoint: existing.endpoint }, 'DELETE');
+                    await existing.unsubscribe();
+                }
+
+                this.subscribed = false;
+                this.describe();
+
+                return;
+            }
+
+            if ((await Notification.requestPermission()) !== 'granted') {
+                // Denied permission cannot be asked for again from script; say
+                // so rather than leaving a button that does nothing.
+                this.explanation = 'Blocked in this browser’s settings. Allow notifications there first.';
+
+                return;
+            }
+
+            const subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: keyToBytes(publicKey),
+            });
+
+            const json = subscription.toJSON();
+
+            await this.post(subscribeUrl, {
+                endpoint: json.endpoint,
+                keys: json.keys,
+                label: describeDevice(),
+            });
+
+            this.subscribed = true;
+            this.describe();
+        },
+
+        post(url, body, method = 'POST') {
+            return fetch(url, {
+                method,
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '',
+                },
+                body: JSON.stringify(body),
+            });
+        },
+    }));
+});
+
+/* -------------------------------------------------------------------------
  * Overnight screen off
  *
  * The kiosk monitor cannot be power-cycled remotely, so "off" is a full-black

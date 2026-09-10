@@ -181,6 +181,25 @@ return [
         'max_upload_kb' => (int) env('OPENAI_MAX_UPLOAD_KB', 2048),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Notifications
+    |--------------------------------------------------------------------------
+    | Web Push, signed with a VAPID key pair. Generate one with:
+    |   php artisan familyhub:push-keys
+    |
+    | Without a pair nothing is sent and nothing breaks: every trigger still
+    | records what it would have told you, and the digest carries it instead.
+    */
+
+    'push' => [
+        'public_key' => env('VAPID_PUBLIC_KEY'),
+        'private_key' => env('VAPID_PRIVATE_KEY'),
+
+        // Who to contact about a misbehaving sender. A mailto: or the site.
+        'subject' => env('VAPID_SUBJECT'),
+    ],
+
     'postmark' => [
         'inbound_secret' => env('POSTMARK_INBOUND_SECRET'),
     ],

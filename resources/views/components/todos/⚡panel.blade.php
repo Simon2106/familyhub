@@ -152,13 +152,38 @@ new class extends Component
         if ($this->editingId) {
             $this->findItem($this->editingId)->update($attributes);
         } else {
-            ChecklistItem::create($attributes + ['checklist_id' => $this->list()->id]);
+            $added = ChecklistItem::create($attributes + ['checklist_id' => $this->list()->id]);
+
+            $this->tellTheOthers($added);
         }
 
         $this->reset(['adding', 'title', 'dueOn', 'surfaceFrom', 'memberId', 'editingId']);
         unset($this->todos, $this->upcomingCount);
 
         $this->dispatch('todos-changed');
+    }
+
+    /**
+     * "Milk went on the shopping list", at the moment it happens.
+     *
+     * Told rather than polled, because it is only useful while somebody is
+     * still near a shop — and never to the person who just typed it, who
+     * knows.
+     */
+    protected function tellTheOthers(ChecklistItem $item): void
+    {
+        if ($this->list()->type !== 'shopping') {
+            return;
+        }
+
+        $notice = app(\App\Services\Notifications\NoticeTriggers::class)->listAdded($item->load('checklist', 'member'));
+        $notifier = app(\App\Services\Notifications\Notifier::class);
+
+        foreach (\App\Models\User::where('household_id', Household::current()->id)->get() as $user) {
+            if ($user->id !== auth()->id()) {
+                $notifier->tell($user, $notice);
+            }
+        }
     }
 
     public function deleteItem(int $itemId): void

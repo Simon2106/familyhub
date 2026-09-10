@@ -31,6 +31,26 @@ Schedule::command('familyhub:switch-schedules')
     ->everyMinute()
     ->withoutOverlapping();
 
+/*
+| Notifications.
+|
+| Every minute, because an event reminder is only useful at the minute it is
+| due. Everything else in here is guarded by its own hour, so the cost of the
+| frequency is one cheap query most of the time.
+*/
+Schedule::command('familyhub:notify')
+    ->everyMinute()
+    ->withoutOverlapping();
+
+/*
+| The morning's catch-up: anything nobody was told at the time, by email.
+| After the quiet hours end, so a night's worth arrives in one message rather
+| than trickling in from six o'clock.
+*/
+Schedule::command('familyhub:notice-digest')
+    ->dailyAt('07:30')
+    ->withoutOverlapping();
+
 Schedule::command('familyhub:prune-done')
     ->dailyAt('04:00')
     ->withoutOverlapping();
