@@ -21,7 +21,7 @@
                 </div>
 
                 <button type="button" wire:click="toggleFavourite({{ $idea->id }})"
-                        class="grid touch-target shrink-0 place-items-center rounded-xl text-2xl {{ $idea->is_favourite ? 'text-rose-500' : 'text-slate-300 dark:text-slate-600' }}"
+                        class="grid touch-target shrink-0 place-items-center rounded-xl text-2xl {{ $idea->is_favourite ? 'text-rose-500' : 'text-slate-300 dark:text-slate-400' }}"
                         aria-label="{{ $idea->is_favourite ? 'Remove from favourites' : 'Add to favourites' }}">
                     {!! $idea->is_favourite ? '&#10084;' : '&#9825;' !!}
                 </button>
@@ -44,7 +44,7 @@
                     <div class="mt-1 flex gap-1">
                         @for ($star = 1; $star <= 5; $star++)
                             <button type="button" wire:click="rate({{ $idea->id }}, {{ $star }})"
-                                    class="grid size-11 place-items-center text-2xl {{ ($this->myStars ?? 0) >= $star ? 'text-amber-400' : 'text-slate-300 dark:text-slate-600' }}"
+                                    class="grid size-11 place-items-center text-2xl {{ ($this->myStars ?? 0) >= $star ? 'text-amber-400' : 'text-slate-300 dark:text-slate-400' }}"
                                     aria-label="{{ $star }} {{ Str::plural('star', $star) }}">
                                 {!! ($this->myStars ?? 0) >= $star ? '&#9733;' : '&#9734;' !!}
                             </button>

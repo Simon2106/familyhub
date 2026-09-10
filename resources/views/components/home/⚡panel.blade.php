@@ -721,7 +721,7 @@ new class extends Component
         <div class="grid h-full place-items-center">
             <div class="max-w-sm text-center">
                 <p class="text-xl font-semibold text-slate-400">Home Assistant is not connected</p>
-                <p class="mt-1 text-sm text-slate-400 dark:text-slate-600">
+                <p class="mt-1 text-sm text-slate-400 dark:text-slate-400">
                     Set HA_URL and HA_TOKEN, then choose what belongs on the wall in Settings → Home.
                 </p>
             </div>
@@ -730,7 +730,7 @@ new class extends Component
         <div class="grid h-full place-items-center">
             <div class="max-w-sm text-center">
                 <p class="text-xl font-semibold text-slate-400">Nothing on the wall yet</p>
-                <p class="mt-1 text-sm text-slate-400 dark:text-slate-600">
+                <p class="mt-1 text-sm text-slate-400 dark:text-slate-400">
                     Pick the lights, switches and scenes worth a tile in Settings → Home.
                 </p>
             </div>

@@ -134,7 +134,7 @@ new class extends Component
         </label>
 
         <button type="submit"
-                class="grid touch-target shrink-0 place-items-center rounded-xl bg-sky-600 px-4 font-semibold text-white disabled:opacity-40"
+                class="grid touch-target shrink-0 place-items-center rounded-xl bg-sky-700 px-4 font-semibold text-white disabled:opacity-40"
                 wire:loading.attr="disabled" wire:target="ask">
             <span wire:loading.remove wire:target="ask">Ask</span>
             <span wire:loading wire:target="ask" class="sr-only">Thinking</span>

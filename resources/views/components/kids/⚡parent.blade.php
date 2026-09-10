@@ -554,7 +554,11 @@ new #[Layout('layouts::app')] class extends Component
                                 @endif
                             </span>
                             <span class="shrink-0 text-right">
-                                <span class="block text-lg font-bold tabular-nums" style="color: {{ $row['member']->colour }};">
+                                {{-- text-xl rather than text-lg: this is drawn in the
+                                     member's own colour, which is theirs to choose and
+                                     not ours to darken, and 20px bold is the size at
+                                     which a mid-tone reads cleanly. --}}
+                                <span class="block text-xl font-bold tabular-nums" style="color: {{ $row['member']->colour }};">
                                     {{ $row['earned'] >= 0 ? '+' : '' }}{{ $row['earned'] }}
                                 </span>
                                 @if ($this->household()->allowanceEnabled())

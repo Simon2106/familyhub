@@ -362,7 +362,7 @@ new #[Layout('layouts::app')] class extends Component
                             <svg class="size-4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
                         </button>
                         <button type="button" wire:click="deleteItem({{ $item->id }})"
-                                class="grid size-11 shrink-0 place-items-center rounded-xl text-slate-300 dark:text-slate-600" aria-label="Remove">
+                                class="grid size-11 shrink-0 place-items-center rounded-xl text-slate-300 dark:text-slate-400" aria-label="Remove">
                             <svg class="size-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
                         </button>
                     </li>

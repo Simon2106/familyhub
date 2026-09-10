@@ -316,7 +316,7 @@ new class extends Component
                             </button>
 
                             <button type="button" wire:click="toggleFavourite({{ $recipe->id }})"
-                                    class="grid touch-target shrink-0 place-items-center rounded-lg {{ $recipe->is_favourite ? 'text-amber-500' : 'text-slate-300 dark:text-slate-600' }}"
+                                    class="grid touch-target shrink-0 place-items-center rounded-lg {{ $recipe->is_favourite ? 'text-amber-500' : 'text-slate-300 dark:text-slate-400' }}"
                                     aria-label="{{ $recipe->is_favourite ? 'Remove from favourites' : 'Add to favourites' }}"
                                     aria-pressed="{{ $recipe->is_favourite ? 'true' : 'false' }}">
                                 <svg class="size-6" fill="{{ $recipe->is_favourite ? 'currentColor' : 'none' }}" stroke="currentColor" stroke-width="2" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">

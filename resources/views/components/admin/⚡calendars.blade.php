@@ -518,7 +518,7 @@ new #[Layout('layouts::app')] class extends Component
                         <p class="truncate text-sm text-slate-500 dark:text-slate-400">
                             {{ $calendar?->member?->name ?? 'Everyone' }}
                             · {{ CalendarAccount::REFRESH_CHOICES[$account->refreshMinutes()] }}
-                            · {{ $account->last_synced_at ? 'read '.$account->last_synced_at->diffForHumans() : 'not read yet' }}
+                            · {{ $account->last_synced_at ? 'read '.$account->last_synced_at->diffForHumans(['parts' => 1, 'short' => false]) : 'not read yet' }}
                         </p>
                         @if ($account->last_error)
                             <p class="mt-1 text-sm font-medium text-rose-600 dark:text-rose-400">{{ $account->last_error }}</p>

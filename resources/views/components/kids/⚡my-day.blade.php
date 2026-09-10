@@ -391,7 +391,7 @@ new class extends Component
                                         @if ($step->icon)
                                             <span class="text-3xl leading-none" aria-hidden="true">{{ $step->icon }}</span>
                                         @else
-                                            <x-icon :name="$entry['done'] ? 'ticked' : 'unticked'" class="size-8 {{ $entry['done'] ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600' }}" />
+                                            <x-icon :name="$entry['done'] ? 'ticked' : 'unticked'" class="size-8 {{ $entry['done'] ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-400' }}" />
                                         @endif
                                         <span class="text-center text-sm leading-tight font-semibold {{ $entry['done'] ? '' : 'text-slate-700 dark:text-slate-200' }}">
                                             {{ $step->title }}

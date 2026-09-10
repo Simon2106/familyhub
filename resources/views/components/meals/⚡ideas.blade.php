@@ -433,7 +433,7 @@ new class extends Component
                     @if ($idea->tags)
                         <span class="mt-1 flex flex-wrap gap-1">
                             @foreach (array_slice($idea->tags, 0, 4) as $tag)
-                                <span class="rounded-md bg-slate-100 px-1.5 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ $tag }}</span>
+                                <span class="rounded-lg bg-slate-100 px-1.5 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ $tag }}</span>
                             @endforeach
                         </span>
                     @endif

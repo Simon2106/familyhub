@@ -90,6 +90,66 @@ if (window.visualViewport) {
 
 // Livewire swaps DOM around; the tab bar may not have existed on first run.
 document.addEventListener('livewire:navigated', syncVisualViewport);
+
+/* -------------------------------------------------------------------------
+ * "Something is happening"
+ *
+ * Most actions in this app are a local write and finish before a spinner
+ * would have faded in. A handful are not: asking the assistant, reading a
+ * recipe off a web page, subscribing to a calendar, syncing iCloud. Those
+ * used to give no sign at all beyond a screen that sat still, which on a
+ * wall panel reads as a tap that missed.
+ *
+ * One bar for all of them, rather than a spinner on each. It only appears
+ * after a delay, so the ninety per cent that finish instantly never flicker,
+ * and it says nothing about what is happening — the thing being waited on is
+ * already on screen.
+ * ---------------------------------------------------------------------- */
+
+document.addEventListener('livewire:init', () => {
+    const bar = document.createElement('div');
+
+    bar.className = 'livewire-progress';
+    bar.hidden = true;
+    bar.setAttribute('aria-hidden', 'true');
+
+    // Re-attached after every wire:navigate: navigation swaps the body, and
+    // a bar that was appended once is gone from the second page onwards.
+    const attach = () => document.body.append(bar);
+
+    attach();
+    document.addEventListener('livewire:navigated', attach);
+
+    let inFlight = 0;
+    let timer = null;
+
+    /** Long enough that an ordinary tick never shows a bar. */
+    const DELAY = 400;
+
+    function start() {
+        if (inFlight++ > 0) return;
+
+        timer = setTimeout(() => bar.hidden = false, DELAY);
+    }
+
+    function stop() {
+        inFlight = Math.max(0, inFlight - 1);
+
+        if (inFlight > 0) return;
+
+        clearTimeout(timer);
+        bar.hidden = true;
+    }
+
+    Livewire.hook('request', ({ fail, succeed }) => {
+        start();
+
+        // Both, because a request that fails leaves the bar up forever
+        // otherwise — and a stuck progress bar is worse than none.
+        succeed(stop);
+        fail(stop);
+    });
+});
 document.addEventListener('DOMContentLoaded', syncVisualViewport);
 
 /* -------------------------------------------------------------------------

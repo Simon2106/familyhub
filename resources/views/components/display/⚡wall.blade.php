@@ -747,7 +747,7 @@ new #[Layout('layouts::display')] class extends Component
                  three days either side and silence the rest of the year. --}}
             @foreach ($this->schoolTurningPoints as $point)
                 <div class="hidden min-w-0 items-baseline gap-2 rounded-xl px-3 py-1 sm:flex" wire:key="turn-{{ $point['code'] }}-{{ $point['on']->toDateString() }}">
-                    <span class="rounded-md px-1.5 text-sm font-bold text-white" style="background-color: #0d9488;">{{ $point['code'] }}</span>
+                    <span class="rounded-lg px-1.5 text-sm font-bold text-white" style="background-color: #0d9488;">{{ $point['code'] }}</span>
                     <span class="truncate text-lg font-semibold">{{ $point['label'] }}</span>
                     @if ($point['finishes'])
                         {{-- The half day nobody remembers until they are still
@@ -1248,7 +1248,10 @@ new #[Layout('layouts::display')] class extends Component
                                             <button
                                                 type="button"
                                                 wire:click="$dispatch('show-my-day', { member: {{ $member->id }}, date: '{{ $day['date'] }}' })"
-                                                class="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full"
+                                                {{-- The avatar stays 36px; the button around it is a
+                                                     touch target, because this is a wall nobody has a
+                                                     mouse for. --}}
+                                                class="grid touch-target shrink-0 place-items-center rounded-full"
                                                 aria-label="{{ $member->name }}'s day"
                                             >
                                                 @if ($member->avatarUrl())
@@ -1299,7 +1302,7 @@ new #[Layout('layouts::display')] class extends Component
                                             </div>
                                         @empty
                                             @if ($memberTodos->isEmpty() && ($this->choresByDate[$day['date']][$member->id] ?? collect())->isEmpty())
-                                                <p class="px-1 py-4 text-sm text-slate-400 dark:text-slate-600">Nothing on</p>
+                                                <p class="px-1 py-4 text-sm text-slate-400 dark:text-slate-400">Nothing on</p>
                                             @endif
                                         @endforelse
 
@@ -1312,7 +1315,7 @@ new #[Layout('layouts::display')] class extends Component
                                         @foreach ($memberChores as $slot)
                                             <div class="flex items-center gap-2 rounded-xl px-2 py-1.5 {{ $slot->isDone() ? 'opacity-50' : '' }}"
                                                  style="background-color: {{ $member->colour }}0f;">
-                                                <span class="grid size-5 shrink-0 place-items-center rounded-md border-2 {{ $slot->isDone() ? 'border-transparent text-white' : 'border-slate-300 dark:border-slate-600' }}"
+                                                <span class="grid size-5 shrink-0 place-items-center rounded-lg border-2 {{ $slot->isDone() ? 'border-transparent text-white' : 'border-slate-300 dark:border-slate-600' }}"
                                                       style="{{ $slot->isDone() ? 'background-color: '.$member->colour.';' : '' }}">
                                                     @if ($slot->isDone())
                                                         <svg class="size-3.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L20 7" /></svg>
@@ -1373,7 +1376,7 @@ new #[Layout('layouts::display')] class extends Component
                                             </div>
                                         @empty
                                             @if ($dayHouseholdTodos->isEmpty())
-                                                <p class="px-1 py-4 text-sm text-slate-400 dark:text-slate-600">Nothing on</p>
+                                                <p class="px-1 py-4 text-sm text-slate-400 dark:text-slate-400">Nothing on</p>
                                             @endif
                                         @endforelse
 
@@ -1598,7 +1601,7 @@ new #[Layout('layouts::display')] class extends Component
             <div x-show="tab === '{{ $key }}'" x-cloak class="grid h-full place-items-center">
                 <div class="text-center">
                     <p class="text-xl font-semibold text-slate-400">{{ $label }}</p>
-                    <p class="mt-1 text-sm text-slate-400 dark:text-slate-600">Arrives in a later phase.</p>
+                    <p class="mt-1 text-sm text-slate-400 dark:text-slate-400">Arrives in a later phase.</p>
                 </div>
             </div>
         @endforeach

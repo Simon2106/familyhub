@@ -16,6 +16,38 @@
     --spacing-touch: 2.75rem; /* 44px */
 }
 
+/*
+ * The two muted greys, made legible.
+ *
+ * Nearly every piece of secondary text in the app is text-slate-400 or
+ * text-slate-500, and measured against the white cards they sit on, the
+ * default palette put them at 2.4:1 and 4.35:1 — both under the 4.5:1 a
+ * kitchen wall read from six feet away needs, never mind a phone outdoors.
+ *
+ * Fixed here rather than across six hundred templates, and scoped by mode:
+ * the same greys are the *light* end of the scale on a dark background and
+ * already have plenty of contrast there, so .dark puts them back. Only text
+ * uses these two steps — slate-600 borders, which are everywhere in dark
+ * mode, are deliberately left alone.
+ */
+:root {
+    --color-slate-400: #5b6879; /* 5.7:1 on white, 5.2:1 on slate-100 */
+    --color-slate-500: #56637a; /* 6.4:1 on white, 5.8:1 on slate-100 */
+}
+
+/* .dark, not :where(.dark): :where() has no specificity at all, so :root
+   would win the tie and dark mode would inherit the light values. */
+.dark {
+    --color-slate-400: #94a3b8; /* the stock value: 7:1 on slate-900 */
+    --color-slate-500: #8290a5; /* lifted from 3.8:1 to 5.5:1 on slate-900 */
+
+    /* Destructive text — "Delete", "Remove", every validation message — is
+       red-600 in about seventy places and had no dark variant anywhere, so
+       it sat at 3.0:1 on a dark card. Safe to lift wholesale: nothing in the
+       app uses red-600 as a background, border or ring. */
+    --color-red-600: #f87171; /* 6.5:1 on slate-900, 5.3:1 on slate-800 */
+}
+
 @layer base {
     html {
         -webkit-text-size-adjust: 100%;
@@ -212,6 +244,77 @@
     input[type='search']::-webkit-search-decoration {
         -webkit-appearance: none;
         appearance: none;
+    }
+
+    /*
+     * The one "something is happening" in the app. Raised by app.js after a
+     * short delay, so the many actions that finish instantly never flash it.
+     */
+    .livewire-progress {
+        position: fixed;
+        inset-block-start: 0;
+        inset-inline: 0;
+        z-index: 100;
+        height: 3px;
+        background: linear-gradient(90deg, transparent, var(--color-blue-500), transparent);
+        background-size: 40% 100%;
+        background-repeat: no-repeat;
+        animation: livewire-progress 1.1s ease-in-out infinite;
+        pointer-events: none;
+    }
+
+    @keyframes livewire-progress {
+        from {
+            background-position: -40% 0;
+        }
+        to {
+            background-position: 140% 0;
+        }
+    }
+
+    /* Somebody who has asked for less movement gets a still bar, not none:
+       the point is to say the tap landed. */
+    @media (prefers-reduced-motion: reduce) {
+        .livewire-progress {
+            animation: none;
+            background: var(--color-blue-500);
+            opacity: 0.6;
+        }
+    }
+
+    /*
+     * Press feedback.
+     *
+     * The wall switches off the browser's tap highlight — a blue flash is
+     * wrong on a kitchen panel — which left taps there with no acknowledgement
+     * of any kind. Combined with the fact that almost nothing in the app uses
+     * :hover (correctly, on a touch device), a tap on something slow looked
+     * exactly like a tap that missed.
+     *
+     * Deliberately tiny, and only where nothing more specific is already
+     * saying it: this is an acknowledgement, not an animation.
+     */
+    button:active,
+    a:active,
+    [role='button']:active,
+    label:active {
+        transform: scale(0.985);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        button:active,
+        a:active,
+        [role='button']:active,
+        label:active {
+            transform: none;
+            opacity: 0.75;
+        }
+    }
+
+    /* A disabled control has nothing to acknowledge. */
+    button:disabled:active,
+    [aria-disabled='true']:active {
+        transform: none;
     }
 
     .touch-target {

@@ -205,7 +205,7 @@ new class extends Component
             @endforeach
 
             <button type="button" wire:click="compose"
-                    class="grid w-28 shrink-0 place-items-center rounded-2xl border-2 border-dashed border-slate-300 text-slate-400 dark:border-slate-700"
+                    class="grid min-h-touch w-28 shrink-0 place-items-center rounded-2xl border-2 border-dashed border-slate-300 text-slate-400 dark:border-slate-700"
                     aria-label="Add a note">
                 <span class="text-4xl leading-none">+</span>
             </button>

@@ -544,7 +544,7 @@ new class extends Component
         <div class="grid h-full place-items-center">
             <div class="text-center">
                 <p class="text-slate-400">Nothing waiting to be reviewed.</p>
-                <p class="mt-1 text-sm text-slate-400 dark:text-slate-600">
+                <p class="mt-1 text-sm text-slate-400 dark:text-slate-400">
                     Forward a school email, or add a photo from your phone.
                 </p>
             </div>

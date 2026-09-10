@@ -78,7 +78,7 @@ new class extends Component
                         @if ($idea?->stars())
                             <span class="shrink-0 font-semibold text-amber-500">{{ number_format($idea->stars(), 1) }}&#9733;</span>
                         @elseif ($meal->feedback_at === null)
-                            <span class="shrink-0 text-sm text-slate-300 dark:text-slate-600">not rated</span>
+                            <span class="shrink-0 text-sm text-slate-300 dark:text-slate-400">not rated</span>
                         @endif
                     </li>
                 @endforeach

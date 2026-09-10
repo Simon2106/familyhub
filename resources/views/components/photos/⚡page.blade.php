@@ -198,7 +198,7 @@ new #[Layout('layouts::app')] class extends Component
                                     class="mt-1 touch-target w-full rounded-lg bg-blue-600 text-sm font-semibold text-white">Save</button>
                         @else
                             <button type="button" wire:click="editCaption({{ $photo->id }})"
-                                    class="block w-full truncate text-left text-sm {{ $photo->caption ? '' : 'text-slate-400' }}">
+                                    class="flex touch-target w-full items-center truncate text-left text-sm {{ $photo->caption ? '' : 'text-slate-400' }}">
                                 {{ $photo->caption ?: 'Add a caption' }}
                             </button>
                         @endif
