@@ -96,12 +96,20 @@ class IcalFeed
 
         $summary = trim((string) ($event->SUMMARY ?? ''));
 
+        // A DATE value has no T in it; a DATE-TIME does. That is the whole
+        // distinction, and it is the feed's own rather than a guess.
+        $allDay = ! str_contains((string) ($event->DTSTART ?? ''), 'T');
+
         return new IcalEntry(
             uid: trim((string) ($event->UID ?? '')) ?: sha1($summary.$start->toDateString()),
             summary: $summary !== '' ? $summary : 'Untitled',
             startsOn: $start,
             endsOn: $end->lessThan($start) ? $start : $end,
             description: trim((string) ($event->DESCRIPTION ?? '')) ?: null,
+            startsAt: $allDay ? null : $this->momentOf($event->DTSTART ?? null),
+            endsAt: $allDay ? null : $this->momentOf($event->DTEND ?? null),
+            allDay: $allDay,
+            location: trim((string) ($event->LOCATION ?? '')) ?: null,
         );
     }
 
@@ -110,6 +118,20 @@ class IcalFeed
         $isAllDay = ! str_contains((string) ($event->DTSTART ?? ''), 'T');
 
         return $isAllDay && $end->greaterThan($start) ? $end->subDay() : $end;
+    }
+
+    /** The moment, in UTC, as events are stored everywhere else in the app. */
+    protected function momentOf(mixed $property): ?CarbonImmutable
+    {
+        if ($property === null) {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::instance($property->getDateTime())->utc();
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     protected function dateOf(mixed $property): ?CarbonImmutable

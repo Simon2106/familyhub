@@ -52,6 +52,17 @@ Schedule::command('familyhub:notice-digest')
     ->withoutOverlapping();
 
 /*
+| Subscribed calendars — a school's fixtures, a club's season.
+|
+| Every ten minutes, but each subscription carries its own interval and one
+| that is not due is skipped without a request being made at all.
+*/
+Schedule::command('familyhub:sync-feeds')
+    ->everyTenMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
+
+/*
 | Photographs. Nightly, because a shared album is added to at the pace of a
 | family holiday rather than a news feed.
 */

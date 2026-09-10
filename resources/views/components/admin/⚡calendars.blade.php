@@ -1,12 +1,14 @@
 <?php
 
 use App\Exceptions\CalDavException;
+use App\Exceptions\IcalException;
 use App\Jobs\SyncCalendarAccountJob;
 use App\Models\Calendar;
 use App\Models\CalendarAccount;
 use App\Models\Household;
 use App\Services\Attribution\EventAttributor;
 use App\Services\CalDav\AccountService;
+use App\Services\Ical\FeedSubscription;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -36,6 +38,24 @@ new #[Layout('layouts::app')] class extends Component
 
     public bool $connecting = false;
 
+    /* ------------------------- subscribed calendars ---------------------- */
+
+    public bool $subscribing = false;
+
+    public ?int $editingFeedId = null;
+
+    public string $feedUrl = '';
+
+    public string $feedName = '';
+
+    public string $feedColour = '#0ea5e9';
+
+    public string $feedMember = '';
+
+    public int $feedRefresh = CalendarAccount::DEFAULT_REFRESH_MINUTES;
+
+    public ?string $feedError = null;
+
     /** Real iCloud accounts — the only kind that can be synced. */
     #[Computed]
     public function accounts(): Collection
@@ -46,6 +66,113 @@ new #[Layout('layouts::app')] class extends Component
             ->with(['calendars' => fn ($q) => $q->orderBy('name'), 'calendars.member'])
             ->orderBy('label')
             ->get();
+    }
+
+    /**
+     * Calendars somebody else keeps, read read-only.
+     *
+     * Kept apart from the iCloud list because almost nothing about them is
+     * the same: no credentials, no writing, and an address rather than an
+     * Apple ID.
+     */
+    #[Computed]
+    public function feeds(): Collection
+    {
+        return app(FeedSubscription::class)->all(Household::current());
+    }
+
+    public function startSubscribing(): void
+    {
+        $this->reset(['feedUrl', 'feedName', 'feedMember', 'feedError', 'editingFeedId']);
+
+        $this->feedColour = '#0ea5e9';
+        $this->feedRefresh = CalendarAccount::DEFAULT_REFRESH_MINUTES;
+        $this->subscribing = true;
+    }
+
+    public function editFeed(int $accountId): void
+    {
+        $account = $this->feed($accountId);
+
+        if (! $account) {
+            return;
+        }
+
+        $calendar = $account->calendars->first();
+
+        $this->editingFeedId = $account->id;
+        $this->feedUrl = (string) $account->feed_url;
+        $this->feedName = $account->label;
+        $this->feedColour = $calendar?->colour ?: '#0ea5e9';
+        $this->feedMember = (string) ($calendar?->member_id ?? '');
+        $this->feedRefresh = $account->refreshMinutes();
+        $this->feedError = null;
+        $this->subscribing = true;
+    }
+
+    public function subscribe(): void
+    {
+        $this->feedError = null;
+
+        if (trim($this->feedUrl) === '') {
+            $this->feedError = 'Paste the calendar address first.';
+
+            return;
+        }
+
+        try {
+            app(FeedSubscription::class)->save(
+                household: Household::current(),
+                url: $this->feedUrl,
+                name: $this->feedName,
+                colour: $this->feedColour,
+                member: $this->feedMember !== '' ? $this->members->firstWhere('id', (int) $this->feedMember) : null,
+                refreshMinutes: $this->feedRefresh,
+                existing: $this->editingFeedId ? $this->feed($this->editingFeedId) : null,
+            );
+        } catch (IcalException $e) {
+            // Said on the form rather than stored: a subscription that turns
+            // out to be a login page should never become a row.
+            $this->feedError = $e->getMessage();
+
+            return;
+        }
+
+        $this->subscribing = false;
+
+        unset($this->feeds);
+
+        $this->dispatch('saved', message: 'Calendar subscribed.');
+    }
+
+    public function refreshFeed(int $accountId): void
+    {
+        if ($account = $this->feed($accountId)) {
+            app(FeedSubscription::class)->refresh($account);
+        }
+
+        unset($this->feeds);
+    }
+
+    public function unsubscribe(int $accountId): void
+    {
+        if ($account = $this->feed($accountId)) {
+            app(FeedSubscription::class)->forget($account);
+        }
+
+        unset($this->feeds);
+
+        $this->dispatch('saved', message: 'Subscription removed.');
+    }
+
+    /** Scoped to the household, because the id arrives from the browser. */
+    protected function feed(int $accountId): ?CalendarAccount
+    {
+        return Household::current()
+            ->calendarAccounts()
+            ->where('provider', CalendarAccount::PROVIDER_ICS)
+            ->with('calendars')
+            ->find($accountId);
     }
 
     /**
@@ -360,6 +487,125 @@ new #[Layout('layouts::app')] class extends Component
                 Add an iCloud account
             </button>
         @endif
+
+        {{-- ------------------- Subscribed calendars ---------------------- --}}
+        <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
+            <div class="flex items-center gap-2">
+                <h2 class="flex-1 font-semibold">Subscribed calendars</h2>
+                @unless ($subscribing)
+                    <button type="button" wire:click="startSubscribing"
+                            class="touch-target rounded-xl bg-slate-100 px-4 text-sm font-semibold dark:bg-slate-800">
+                        Subscribe
+                    </button>
+                @endunless
+            </div>
+
+            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                A school's fixtures, a club's season, anything published as an .ics or webcal link.
+                Read-only: these are never written to, and nothing here reaches iCloud.
+            </p>
+
+            @forelse ($this->feeds as $account)
+                @php $calendar = $account->calendars->first(); @endphp
+
+                <div class="mt-3 flex items-start gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60"
+                     wire:key="feed-{{ $account->id }}">
+                    <span class="mt-1 size-3 shrink-0 rounded-full"
+                          style="background: {{ $calendar?->colour ?? '#0ea5e9' }}" aria-hidden="true"></span>
+
+                    <div class="min-w-0 flex-1">
+                        <p class="truncate font-semibold">{{ $account->label }}</p>
+                        <p class="truncate text-sm text-slate-500 dark:text-slate-400">
+                            {{ $calendar?->member?->name ?? 'Everyone' }}
+                            · {{ CalendarAccount::REFRESH_CHOICES[$account->refreshMinutes()] }}
+                            · {{ $account->last_synced_at ? 'read '.$account->last_synced_at->diffForHumans() : 'not read yet' }}
+                        </p>
+                        @if ($account->last_error)
+                            <p class="mt-1 text-sm font-medium text-rose-600 dark:text-rose-400">{{ $account->last_error }}</p>
+                        @endif
+                    </div>
+
+                    <div class="flex shrink-0 items-center gap-1">
+                        <button type="button" wire:click="refreshFeed({{ $account->id }})"
+                                class="touch-target rounded-xl px-3 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                            <span wire:loading.remove wire:target="refreshFeed({{ $account->id }})">Read now</span>
+                            <span wire:loading wire:target="refreshFeed({{ $account->id }})">Reading…</span>
+                        </button>
+                        <button type="button" wire:click="editFeed({{ $account->id }})"
+                                class="touch-target rounded-xl px-3 text-sm font-semibold text-slate-600 dark:text-slate-300">Edit</button>
+                        <button type="button" wire:click="unsubscribe({{ $account->id }})"
+                                wire:confirm="Remove this subscription and everything it put on the calendar?"
+                                class="touch-target rounded-xl px-3 text-sm font-semibold text-rose-600 dark:text-rose-400">Remove</button>
+                    </div>
+                </div>
+            @empty
+                @unless ($subscribing)
+                    <p class="mt-3 text-sm text-slate-400">Nothing subscribed yet.</p>
+                @endunless
+            @endforelse
+
+            @if ($subscribing)
+                <div class="mt-3 space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                    <label class="block">
+                        <span class="text-sm font-semibold text-slate-500 dark:text-slate-400">Calendar address</span>
+                        <input type="url" wire:model="feedUrl" placeholder="https://… .ics"
+                               class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800" />
+                        <span class="mt-1 block text-xs text-slate-400">
+                            The subscription link, not the web page. webcal:// links work too.
+                        </span>
+                    </label>
+
+                    <label class="block">
+                        <span class="text-sm font-semibold text-slate-500 dark:text-slate-400">Name</span>
+                        <input type="text" wire:model="feedName" maxlength="60" placeholder="School fixtures"
+                               class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800" />
+                    </label>
+
+                    <div class="flex flex-wrap items-end gap-4">
+                        <label class="block">
+                            <span class="text-sm font-semibold text-slate-500 dark:text-slate-400">Colour</span>
+                            <input type="color" wire:model="feedColour"
+                                   class="mt-1 h-11 w-20 rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800" />
+                        </label>
+
+                        <label class="block min-w-40 flex-1">
+                            <span class="text-sm font-semibold text-slate-500 dark:text-slate-400">Whose is it?</span>
+                            <select wire:model="feedMember"
+                                    class="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 dark:border-slate-700 dark:bg-slate-800">
+                                <option value="">Everyone</option>
+                                @foreach ($this->members as $member)
+                                    <option value="{{ $member->id }}">{{ $member->name }}</option>
+                                @endforeach
+                            </select>
+                        </label>
+
+                        <label class="block min-w-40 flex-1">
+                            <span class="text-sm font-semibold text-slate-500 dark:text-slate-400">Check for changes</span>
+                            <select wire:model="feedRefresh"
+                                    class="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 dark:border-slate-700 dark:bg-slate-800">
+                                @foreach (CalendarAccount::REFRESH_CHOICES as $minutes => $label)
+                                    <option value="{{ $minutes }}">{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </label>
+                    </div>
+
+                    @if ($feedError)
+                        <p class="text-sm font-medium text-rose-600 dark:text-rose-400">{{ $feedError }}</p>
+                    @endif
+
+                    <div class="flex gap-2">
+                        <button type="button" wire:click="subscribe"
+                                class="touch-target rounded-xl bg-blue-600 px-5 font-semibold text-white">
+                            <span wire:loading.remove wire:target="subscribe">{{ $editingFeedId ? 'Save' : 'Subscribe' }}</span>
+                            <span wire:loading wire:target="subscribe">Reading the calendar…</span>
+                        </button>
+                        <button type="button" wire:click="$set('subscribing', false)"
+                                class="touch-target rounded-xl px-4 font-semibold text-slate-500">Cancel</button>
+                    </div>
+                </div>
+            @endif
+        </section>
 
         {{-- Attribution --}}
         <section class="rounded-2xl bg-white p-4 dark:bg-slate-900">
