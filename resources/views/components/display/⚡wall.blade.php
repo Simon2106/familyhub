@@ -514,13 +514,16 @@ new #[Layout('layouts::display')] class extends Component
     }
 
     /**
-     * How much of the screen a drifting block may wander across.
+     * How far a block wanders from where it is pinned, each way.
      *
-     * Small on purpose. Each block keeps to its own corner, and the reason
-     * they cannot collide is that their rooms do not overlap — not that
-     * anything checks.
+     * The blocks are laid out inset by this plus the edge margin, so the
+     * whole range is real room they can move into — the first attempt at
+     * this pinned them flush in their corners and then clamped the drift to
+     * the frame, which silently deleted the half of the motion that would
+     * have taken them outwards. Each block then slid one way on one axis and
+     * sat still on the other.
      */
-    public const SAVER_DRIFT_SHARE = 0.06;
+    public const SAVER_DRIFT_PX = 48;
 
     /**
      * How close to the glass a drifting block may come.
@@ -529,6 +532,16 @@ new #[Layout('layouts::display')] class extends Component
      * the edge of the screen is one whose letters get half-eaten by the bezel.
      */
     public const SAVER_EDGE_MARGIN = 40;
+
+    /**
+     * One there-and-back, in milliseconds.
+     *
+     * Half of it is one traverse of the range, so a minute each way. At 96px
+     * of range that is about two and a half pixels a second at its quickest
+     * and nothing at all at the turns — movement somebody notices only if
+     * they look for it, which is the whole idea.
+     */
+    public const SAVER_DRIFT_PERIOD = 120_000;
 
     /** As many as fit on a wall and still read from the other side of a room. */
     public const SAVER_LINES = 6;
@@ -878,17 +891,21 @@ new #[Layout('layouts::display')] class extends Component
             if (this.saverStyle === 'photos') {
                 this.drift = { x: 0, y: 0 };
 
+                const beat = @js(self::SAVER_DRIFT_PERIOD);
+
                 this.driftClock = this.driftWithin(
-                    frame, this.$refs.saverClock, elapsed, {}, this.driftClock,
+                    frame, this.$refs.saverClock, elapsed,
+                    { periodX: beat, periodY: beat * 1.3 },
+                    this.driftClock,
                 );
                 this.driftEvents = this.driftWithin(
                     frame, this.$refs.saverEvents, elapsed,
-                    { periodX: 690_000, periodY: 870_000, phase: Math.PI },
+                    { periodX: beat * 1.15, periodY: beat * 1.45, phase: Math.PI },
                     this.driftEvents,
                 );
                 this.driftWeather = this.driftWithin(
                     frame, this.$refs.saverWeather, elapsed,
-                    { periodX: 810_000, periodY: 960_000, phase: Math.PI / 4 },
+                    { periodX: beat * 1.35, periodY: beat * 1.6, phase: Math.PI / 4 },
                     this.driftWeather,
                 );
 
@@ -925,11 +942,20 @@ new #[Layout('layouts::display')] class extends Component
         driftWithin(frame, element, elapsed, options, current) {
             if (!element) return { x: 0, y: 0 };
 
-            const box = element.getBoundingClientRect();
+            const range = @js(self::SAVER_DRIFT_PX);
+            const inset = @js(self::SAVER_EDGE_MARGIN);
 
-            /* Where the block sits with no transform on it. The rect we just
-               measured has the current offset baked in, so it has to come
-               back out or each step would compound the last. */
+            /* driftAt returns 0..room; centring it on the pinned position is
+               what lets a block move both ways rather than only inwards. */
+            const at = window.familyhubDrift.driftAt(elapsed, { x: range * 2, y: range * 2 }, options);
+
+            const offset = { x: at.x - range, y: at.y - range };
+
+            /* A safety net rather than the mechanism: the layout already
+               insets each block by the margin plus the range, so on a screen
+               of the expected size this clamp never has anything to do. On a
+               smaller one it keeps the block off the glass. */
+            const box = element.getBoundingClientRect();
             const pinned = {
                 left: box.left - current.x,
                 right: box.right - current.x,
@@ -937,29 +963,7 @@ new #[Layout('layouts::display')] class extends Component
                 bottom: box.bottom - current.y,
             };
 
-            const share = @js(self::SAVER_DRIFT_SHARE);
-
-            const wanted = window.familyhubDrift.driftAt(
-                elapsed,
-                { x: frame.width * share, y: frame.height * share },
-                options,
-            );
-
-            /* Centred on where it is pinned, so it wanders both ways out of
-               its corner rather than only inwards — then clamped to the frame,
-               because a block pinned against an edge has nowhere to go that
-               way and must not be pushed off it. */
-            const offset = {
-                x: wanted.x - (frame.width * share) / 2,
-                y: wanted.y - (frame.height * share) / 2,
-            };
-
-            const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
-
-            /* Against the padded area rather than the glass. Clamping to the
-               frame lets a block drift until it is flush with the edge of the
-               screen, which on a panel in a bezel means letters half-eaten. */
-            const inset = @js(self::SAVER_EDGE_MARGIN);
+            const clamp = (value, low, high) => (low > high ? 0 : Math.max(low, Math.min(high, value)));
 
             return {
                 x: clamp(offset.x, frame.left + inset - pinned.left, frame.right - inset - pinned.right),
@@ -1965,7 +1969,7 @@ new #[Layout('layouts::display')] class extends Component
 
             {{-- Weather, top right. --}}
             @if ($this->weather)
-                <div class="absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent p-10 text-white">
+                <div class="absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent p-[5.5rem] pb-10 text-white">
                     <p x-ref="saverWeather"
                        class="display-face ml-auto flex w-fit items-center gap-3 text-3xl drop-shadow will-change-transform"
                        :style="`transform: translate3d(${driftWeather.x}px, ${driftWeather.y}px, 0)`"
@@ -1981,7 +1985,7 @@ new #[Layout('layouts::display')] class extends Component
                 {{-- items-end, and the clock is the tall one: the events sit
                      on the same baseline and are pushed out of its way by the
                      flex rather than by anything having to know its height. --}}
-                <div class="flex items-end justify-between gap-12 p-10">
+                <div class="flex items-end justify-between gap-12 p-[5.5rem] pt-10">
                     {{-- Clock, bottom left. --}}
                     <div x-ref="saverClock"
                          class="shrink-0 text-white drop-shadow will-change-transform"

@@ -113,3 +113,51 @@ test('peak speed stays slow enough that nobody watches it move', () => {
     // The widest room a block is given, over the shortest period used.
     assert.ok(peakSpeed(1920 * 0.06, 600_000) < 1, 'under a pixel a second');
 });
+
+/* ------------------------- a minute each way --------------------------- */
+
+/**
+ * The drift was there but nobody could see it: a ten-minute period across a
+ * hundred-pixel range is half a pixel a second, which reads as a still image.
+ */
+test('a block crosses its range in about a minute', () => {
+    const period = 120_000;
+    const range = 96;
+
+    // The extremes are at the quarter points, not at 0 and half: the curve
+    // is (1 + sin)/2, so it starts in the middle travelling at full speed.
+    const lowEnd = driftAt(period * 0.75, { x: range, y: range }, { periodX: period });
+    const highEnd = driftAt(period * 0.25, { x: range, y: range }, { periodX: period });
+
+    assert.ok(Math.abs(highEnd.x - lowEnd.x) > range - 1, 'the whole range, end to end');
+
+    // And that end-to-end trip is half a period — a minute, at two minutes.
+    assert.equal(period / 2, 60_000);
+
+    // And gently: a couple of pixels a second at the quickest.
+    const peak = peakSpeed(range, period);
+
+    assert.ok(peak > 1 && peak < 4, `peak speed ${peak.toFixed(2)}px/s is gentle but visible`);
+});
+
+/**
+ * Centring the sine on the pinned position is what lets a block move both
+ * ways. Without it every block slid one way and sat against its stop — which
+ * is exactly what the corners did.
+ */
+test('a centred range moves both ways from where it is pinned', () => {
+    const range = 48;
+
+    let lowest = Infinity;
+    let highest = -Infinity;
+
+    for (let ms = 0; ms <= 240_000; ms += 1000) {
+        const offset = driftAt(ms, { x: range * 2, y: range * 2 }, { periodX: 120_000 }).x - range;
+
+        lowest = Math.min(lowest, offset);
+        highest = Math.max(highest, offset);
+    }
+
+    assert.ok(lowest < -range + 1, 'it goes properly negative');
+    assert.ok(highest > range - 1, 'and properly positive');
+});
