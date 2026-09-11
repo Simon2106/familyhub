@@ -31,6 +31,9 @@ class PhotoLibrary
     /** The closest two showings of the same favourite are ever allowed to be. */
     public const FAVOURITE_EVERY = 4;
 
+    /** How many times a favourite appears in one pass of the library. */
+    public const FAVOURITE_SHOWINGS = 2;
+
     /**
      * @return list<string> public URLs, shuffled so the wall does not open on
      *                      the same photograph every time it goes idle
@@ -103,17 +106,67 @@ class PhotoLibrary
 
         $out = $showing->all();
 
-        // Every few, so one comes round at a predictable sort of interval
-        // without ever landing next to itself.
-        $every = max(self::FAVOURITE_EVERY, (int) ceil(count($out) / max(1, $favourites->count() * 2)));
-
-        foreach ($favourites->shuffle()->values() as $index => $favourite) {
-            $at = min(count($out), ($index + 1) * $every);
-
-            array_splice($out, $at, 0, [$favourite]);
+        foreach ($favourites->shuffle()->values() as $favourite) {
+            // A favourite that did not make the shuffle at all still has to
+            // appear more often than the rest, so it is topped up to the same
+            // number of showings as one that did. Otherwise "favourite" would
+            // mean "slightly more likely", which is not what a heart says.
+            while ($this->timesIn($out, $favourite) < self::FAVOURITE_SHOWINGS) {
+                array_splice($out, $this->widestGapIn($out, $favourite), 0, [$favourite]);
+            }
         }
 
-        return collect($out)->take($limit + $favourites->count())->values();
+        return collect($out)
+            ->take($limit + $favourites->count() * self::FAVOURITE_SHOWINGS)
+            ->values();
+    }
+
+    /** @param list<Photo> $showing */
+    protected function timesIn(array $showing, Photo $photo): int
+    {
+        return count(array_filter($showing, fn (Photo $each) => $each->id === $photo->id));
+    }
+
+    /**
+     * The point furthest from every showing this photograph already has.
+     *
+     * Inserting at a fixed offset is how two copies end up side by side: the
+     * ones already in the running order are wherever the shuffle put them.
+     * The middle of the widest gap is the only placement that cannot be
+     * adjacent to one unless there is nowhere else to go.
+     *
+     * @param  list<Photo>  $showing
+     */
+    protected function widestGapIn(array $showing, Photo $photo): int
+    {
+        $at = [];
+
+        foreach ($showing as $index => $each) {
+            if ($each->id === $photo->id) {
+                $at[] = $index;
+            }
+        }
+
+        if ($at === []) {
+            return intdiv(count($showing), 2);
+        }
+
+        // The ends count as edges of a gap, so a lone copy at the front puts
+        // its second half-way down the rest rather than immediately after.
+        $edges = [-1, ...$at, count($showing)];
+        $best = 0;
+        $widest = -1;
+
+        for ($i = 0; $i < count($edges) - 1; $i++) {
+            $gap = $edges[$i + 1] - $edges[$i];
+
+            if ($gap > $widest) {
+                $widest = $gap;
+                $best = $edges[$i] + intdiv($gap, 2);
+            }
+        }
+
+        return max(0, min(count($showing), $best));
     }
 
     /**

@@ -95,6 +95,13 @@ new #[Layout('layouts::app')] class extends Component
         return $this->household()->photoAlbumName() ?? 'the shared album';
     }
 
+    /** Whether a shared album has been set up at all. */
+    #[Computed]
+    public function hasAlbum(): bool
+    {
+        return filled($this->household()->photoAlbumUrl());
+    }
+
     #[Computed]
     public function syncedAt(): ?string
     {
@@ -366,20 +373,25 @@ new #[Layout('layouts::app')] class extends Component
         <section class="rounded-2xl bg-white p-3 dark:bg-slate-900">
             <div class="flex flex-wrap items-center gap-2">
                 <div class="min-w-0 flex-1">
-                    <p class="truncate font-semibold">{{ $this->albumName }}</p>
+                    <p class="truncate font-semibold">
+                        {{ $this->hasAlbum ? $this->albumName : 'No shared album yet' }}
+                    </p>
                     <p class="truncate text-sm text-slate-500 dark:text-slate-400">
-                        @if ($this->syncError)
+                        @if (! $this->hasAlbum)
+                            Photographs uploaded here still show on the wall.
+                        @elseif ($this->syncError)
                             <span class="font-medium text-rose-600 dark:text-rose-400">{{ $this->syncError }}</span>
                         @elseif ($this->syncedAt)
                             Last read {{ $this->syncedAt }} · read hourly
                         @else
-                            Not read yet
+                            Set up, but not read yet — tap Sync now
                         @endif
                     </p>
                 </div>
 
                 <button type="button" wire:click="syncNow" wire:loading.attr="disabled" wire:target="syncNow"
-                        class="touch-target rounded-xl bg-slate-100 px-4 text-sm font-semibold disabled:opacity-50 dark:bg-slate-800">
+                        @disabled(! $this->hasAlbum)
+                        class="touch-target rounded-xl bg-slate-100 px-4 text-sm font-semibold disabled:opacity-40 dark:bg-slate-800">
                     <span wire:loading.remove wire:target="syncNow">Sync now</span>
                     <span wire:loading wire:target="syncNow">Reading…</span>
                 </button>
@@ -499,22 +511,42 @@ new #[Layout('layouts::app')] class extends Component
                     </div>
                 </div>
             @empty
-                {{-- The empty state's job is to say where photographs come
-                     from, because the answer is somewhere else entirely. --}}
+                {{-- Two different empties, and they were saying the same
+                     thing: an album that is set up but has not been read yet
+                     was being told to go and set up an album, which reads as
+                     "it did not save". --}}
                 <div class="col-span-full rounded-2xl border-2 border-dashed border-slate-200 p-8 text-center dark:border-slate-700">
-                    <p class="text-lg font-semibold">No photographs yet</p>
-                    <p class="mx-auto mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">
-                        The wall shows photographs from an iCloud shared album. Make one on your phone,
-                        copy its public link, and paste it into <strong>Settings → Wall display →
-                        Photo album</strong>. It is read hourly from then on.
-                    </p>
-                    <a href="{{ route('admin') }}" wire:navigate
-                       class="mt-4 inline-grid touch-target place-items-center rounded-xl bg-blue-600 px-5 font-semibold text-white">
-                        Open Settings
-                    </a>
-                    @unless ($onWall)
-                        <p class="mt-3 text-sm text-slate-400 lg:hidden">Or upload a few from this phone, above.</p>
-                    @endunless
+                    @if ($this->hasAlbum)
+                        <p class="text-lg font-semibold">Nothing from the album yet</p>
+                        <p class="mx-auto mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">
+                            The shared album is set up and is read hourly. Tap <strong>Sync now</strong>
+                            above to read it this minute.
+                        </p>
+                    @else
+                        <p class="text-lg font-semibold">No photographs yet</p>
+                        <p class="mx-auto mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">
+                            The wall shows photographs from an iCloud shared album. Make one on your
+                            phone, copy its public link, and paste it into
+                            <strong>Settings → Wall display → Photo album</strong>.
+                        </p>
+
+                        {{-- Words on the wall, a link on a phone. The kiosk has
+                             no address bar and no way back: a tap that leaves
+                             /display strands it on a login screen until
+                             somebody restarts the browser. --}}
+                        @if ($onWall)
+                            <p class="mx-auto mt-3 max-w-md text-sm text-slate-400">
+                                Settings live on a phone or a computer, at
+                                <span class="font-semibold">{{ parse_url(config('app.url'), PHP_URL_HOST) }}/admin</span>.
+                            </p>
+                        @else
+                            <a href="{{ route('admin') }}" wire:navigate
+                               class="mt-4 inline-grid touch-target place-items-center rounded-xl bg-blue-600 px-5 font-semibold text-white">
+                                Open Settings
+                            </a>
+                            <p class="mt-3 text-sm text-slate-400 lg:hidden">Or upload a few from this phone, above.</p>
+                        @endif
+                    @endif
                 </div>
             @endforelse
         </div>

@@ -12,6 +12,8 @@
     @endphp
     {{-- Seeded here so the schedule is right before Livewire boots; the wall
          component keeps them in step from then on. --}}
+    {{-- Where the wall belongs, for the guard in app.js that puts it back. --}}
+    data-display-url="{{ $displayToken ? route('display', ['token' => $displayToken]) : route('display') }}"
     data-dark-start="{{ $dark['start'] }}"
     data-dark-end="{{ $dark['end'] }}"
     @if ($screenOff['enabled'])

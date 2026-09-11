@@ -285,6 +285,66 @@ document.addEventListener('alpine:init', () => {
  * leaves the screen in a state nobody standing in a kitchen can get out of.
  * ---------------------------------------------------------------------- */
 
+/* -------------------------------------------------------------------------
+ * The wall does not go anywhere
+ *
+ * A kiosk has no address bar, no back button and no keyboard to type a URL
+ * with. A single tap on a link to /admin strands it on a login screen with no
+ * way out but an SSH session and a pkill — which is exactly what happened.
+ *
+ * Nothing rendered inside /display should link out in the first place, and a
+ * test asserts that. This is the second line: it refuses the navigation
+ * whatever produced the link, and if the wall is somehow already elsewhere it
+ * puts itself back.
+ * ---------------------------------------------------------------------- */
+
+if (document.documentElement.hasAttribute('data-kiosk')) {
+    const home = document.documentElement.getAttribute('data-display-url') || '/display';
+
+    /** Whether a URL is somewhere the wall is allowed to be. */
+    const allowed = (url) => {
+        try {
+            const target = new URL(url, window.location.href);
+
+            // Another origin is never the wall, whatever the path says.
+            if (target.origin !== window.location.origin) return false;
+
+            return target.pathname === '/display' || target.pathname.startsWith('/display/');
+        } catch {
+            return false;
+        }
+    };
+
+    document.addEventListener(
+        'click',
+        (event) => {
+            const link = event.target.closest('a[href]');
+
+            if (!link) return;
+
+            const href = link.getAttribute('href');
+
+            // In-page anchors and javascript: are not navigation.
+            if (!href || href.startsWith('#') || href.toLowerCase().startsWith('javascript:')) return;
+
+            if (allowed(href)) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            console.warn('The wall refused to navigate to', href);
+        },
+        true,
+    );
+
+    // If it has somehow ended up somewhere else — a redirect, a restored
+    // session, a link that got through — send it back rather than leaving a
+    // wall nobody in the house can operate.
+    if (!allowed(window.location.href)) {
+        window.location.replace(home);
+    }
+}
+
 if (document.documentElement.hasAttribute('data-kiosk')) {
     document.addEventListener('contextmenu', (event) => event.preventDefault());
 
