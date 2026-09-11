@@ -186,9 +186,14 @@
     /*
      * With the keyboard up the page is measured against a shorter viewport, so
      * anything pinned to the bottom has to come up with it.
+     *
+     * !important because the tab bar carries a `grid` utility, and utilities
+     * sit in a later cascade layer than components — so without it this rule
+     * quietly did nothing at all. It only showed up as a bug once the bar was
+     * made tall enough to matter.
      */
     :root.kb-up [data-tab-bar] {
-        display: none;
+        display: none !important;
     }
 
     /*

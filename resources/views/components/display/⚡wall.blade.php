@@ -1698,7 +1698,7 @@ new #[Layout('layouts::display')] class extends Component
     <livewire:kids.pin />
 
     {{-- ============================ TAB BAR ============================= --}}
-    <nav data-tab-bar class="grid shrink-0 grid-cols-6 gap-1 border-t border-slate-200 px-4 py-1.5 dark:border-slate-800">
+    <nav data-tab-bar class="grid shrink-0 grid-cols-6 gap-1 border-t border-slate-200 px-4 py-1 dark:border-slate-800">
         @foreach ([
             ['home', 'Home', 'M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z'],
             ['review', 'Review', 'M4 4h16v12H8l-4 4z'],
@@ -1710,26 +1710,28 @@ new #[Layout('layouts::display')] class extends Component
             <button
                 type="button"
                 x-on:click="tab = '{{ $key }}'"
-                class="flex touch-target flex-col items-center justify-center gap-0.5 rounded-xl py-1"
+                {{-- Taller than the 44px minimum: this is a 15.6" panel on a
+                     wall, tapped in passing rather than looked at first. --}}
+                class="flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl"
                 :class="tab === '{{ $key }}' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'"
                 @if ($key === 'review' && $this->reviewCount > 0)
                     aria-label="{{ $label }}, {{ $this->reviewCount }} waiting"
                 @endif
             >
                 <span class="relative">
-                    <svg class="size-6" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                    <svg class="size-[1.875rem]" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
                         <path d="{{ $path }}" />
                     </svg>
                     @if ($key === 'review' && $this->reviewCount > 0)
                         {{-- Hidden from the accessible name: the button already
                              says "Review, N waiting". --}}
                         <span aria-hidden="true"
-                              class="absolute -top-1 -right-2 grid min-w-4 place-items-center rounded-full bg-blue-600 px-1 text-[0.6rem] font-bold text-white">
+                              class="absolute -top-1 -right-2.5 grid min-w-5 place-items-center rounded-full bg-blue-600 px-1.5 text-xs font-bold text-white">
                             {{ $this->reviewCount }}
                         </span>
                     @endif
                 </span>
-                <span class="text-xs font-medium">{{ $label }}</span>
+                <span class="text-[0.9375rem] font-medium">{{ $label }}</span>
             </button>
         @endforeach
     </nav>
