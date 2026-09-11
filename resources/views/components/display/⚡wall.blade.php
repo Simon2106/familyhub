@@ -513,21 +513,95 @@ new #[Layout('layouts::display')] class extends Component
         ];
     }
 
+    /** As many as fit on a wall and still read from the other side of a room. */
+    public const SAVER_LINES = 6;
+
+    /** Fewer for tomorrow: it is a look-ahead, not the day's agenda. */
+    public const SAVER_TOMORROW_LINES = 4;
+
     /**
-     * The next thing on today, for the screensaver that shows one.
+     * What is left today, for the screensaver that shows the day.
      *
-     * Only what is still to come: a screensaver announcing this morning's
-     * dentist appointment at nine in the evening is worse than a blank screen.
+     * Everyone's, not one person's, and everything left rather than the next
+     * thing — a family walking past at six wants to know what is still to
+     * come, and "one event" makes a five o'clock pick-up invisible the moment
+     * a four o'clock one exists.
+     *
+     * Falls forward to tomorrow once the day is done, because an empty panel
+     * at nine in the evening tells nobody anything.
+     *
+     * @return array{label: ?string, events: list<array<string, mixed>>, more: int}
      */
     #[Computed]
-    public function nextUp(): ?Event
+    public function saverAgenda(): array
     {
         $now = $this->household()->nowLocal();
 
+        $today = $this->saverLines($now, $now->endOfDay())
+            // Only what is still to come. An all-day thing counts all day.
+            ->filter(fn (array $line) => $line['all_day'] || $line['ends_at']->greaterThanOrEqualTo($now))
+            ->values();
+
+        if ($today->isNotEmpty()) {
+            return $this->saverPanel(null, $today, self::SAVER_LINES);
+        }
+
+        $tomorrow = $now->addDay();
+
+        return $this->saverPanel(
+            'Tomorrow',
+            $this->saverLines($tomorrow->startOfDay(), $tomorrow->endOfDay()),
+            self::SAVER_TOMORROW_LINES,
+        );
+    }
+
+    /**
+     * One line per event: whose it is, when, and what.
+     *
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    protected function saverLines(CarbonImmutable $from, CarbonImmutable $to): Collection
+    {
+        $tz = $this->household()->displayTimezone();
+
         return app(EventWindow::class)
-            ->between($this->household(), $now, $now->endOfDay())
-            ->sortBy('start_at')
-            ->first(fn ($event) => $event->start_at->greaterThanOrEqualTo($now));
+            ->between($this->household(), $from, $to)
+            ->map(function (Event $event) use ($tz) {
+                $members = $event->members;
+
+                return [
+                    'key' => $event->occurrence_id ?? $event->id,
+                    'title' => $event->title,
+                    'all_day' => (bool) $event->all_day,
+                    'starts_at' => $event->start_at->timezone($tz),
+                    'ends_at' => $event->end_at->timezone($tz),
+                    'when' => $event->all_day ? 'All day' : $event->start_at->timezone($tz)->format('H:i'),
+                    // Two at most: a household outing belongs to everybody and
+                    // four sets of initials is a line nobody reads.
+                    'who' => $members->take(2)->map(fn ($m) => [
+                        'initials' => $m->initials(),
+                        'colour' => $m->colour,
+                    ])->values()->toBase()->all(),
+                    'extra_people' => max(0, $members->count() - 2),
+                ];
+            })
+            // All-day things first, then by the clock, which is how the rest
+            // of the wall orders a day.
+            ->sortBy([['all_day', 'desc'], ['starts_at', 'asc']])
+            ->values();
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, array<string, mixed>>  $lines
+     * @return array{label: ?string, events: list<array<string, mixed>>, more: int}
+     */
+    protected function saverPanel(?string $label, Collection $lines, int $limit): array
+    {
+        return [
+            'label' => $label,
+            'events' => $lines->take($limit)->values()->toBase()->all(),
+            'more' => max(0, $lines->count() - $limit),
+        ];
     }
 
     #[Computed]
@@ -1705,26 +1779,60 @@ new #[Layout('layouts::display')] class extends Component
                    x-text="now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz })"></p>
 
                 @if ($wall['style'] === 'today')
-                    @php $next = $this->nextUp; @endphp
+                    @php $agenda = $this->saverAgenda; @endphp
 
-                    <div class="mt-6 space-y-2 text-2xl text-white/70">
-                        @if ($next)
-                            <p>
-                                <span class="tabular-nums">{{ $next->all_day ? 'All day' : $next->start_at->timezone($tz)->format('H:i') }}</span>
-                                <span class="ml-3 font-semibold text-white/90">{{ $next->title }}</span>
-                                @if ($next->calendar?->member?->name)
-                                    <span class="ml-2 text-white/50">{{ $next->calendar->member->name }}</span>
-                                @endif
+                    <div class="mt-8 max-w-4xl">
+                        @if ($agenda['label'])
+                            <p class="mb-2 text-2xl font-semibold tracking-wide text-white/45 uppercase">
+                                {{ $agenda['label'] }}
                             </p>
-                        @else
-                            <p class="text-white/40">Nothing else on today.</p>
+                        @endif
+
+                        @forelse ($agenda['events'] as $line)
+                            {{-- Colour dot, initials, time, title. Sized to be
+                                 read from the other side of a kitchen, which
+                                 is the only place anybody reads this from. --}}
+                            <p class="flex items-baseline gap-4 py-1 text-3xl leading-snug"
+                               wire:key="saver-{{ $line['key'] }}">
+                                {{-- Fixed width: "PT" and "All" are different
+                                     lengths, and a ragged left edge makes six
+                                     lines read as six separate things. --}}
+                                <span class="flex w-28 shrink-0 items-baseline gap-2">
+                                    @forelse ($line['who'] as $person)
+                                        <span class="flex items-baseline gap-1.5">
+                                            <span class="inline-block size-3 shrink-0 translate-y-[-0.15em] rounded-full"
+                                                  style="background-color: {{ $person['colour'] ?: '#94a3b8' }};"
+                                                  aria-hidden="true"></span>
+                                            <span class="text-white/60">{{ $person['initials'] }}</span>
+                                        </span>
+                                    @empty
+                                        <span class="flex items-baseline gap-1.5">
+                                            <span class="inline-block size-3 shrink-0 translate-y-[-0.15em] rounded-full bg-white/35"
+                                                  aria-hidden="true"></span>
+                                            <span class="text-white/45">All</span>
+                                        </span>
+                                    @endforelse
+                                    @if ($line['extra_people'] > 0)
+                                        <span class="text-white/40">+{{ $line['extra_people'] }}</span>
+                                    @endif
+                                </span>
+
+                                <span class="w-28 shrink-0 tabular-nums text-white/60">{{ $line['when'] }}</span>
+                                <span class="min-w-0 flex-1 truncate font-semibold text-white/90">{{ $line['title'] }}</span>
+                            </p>
+                        @empty
+                            <p class="text-3xl text-white/40">Nothing on tomorrow either.</p>
+                        @endforelse
+
+                        @if ($agenda['more'] > 0)
+                            <p class="pt-1 text-2xl text-white/40">+{{ $agenda['more'] }} more</p>
                         @endif
 
                         @if ($this->weather)
-                            <p>
-                                <x-icon :name="$this->weather->icon()" class="mr-2 inline-block size-8 align-[-0.2em]" />
-                                {{ $this->weather->description() }}
-                                <span class="ml-2 tabular-nums">{{ $this->weather->round($this->weather->temperature) }}&deg;</span>
+                            <p class="mt-5 flex items-center gap-3 text-3xl text-white/60">
+                                <x-icon :name="$this->weather->icon()" class="size-9 shrink-0" />
+                                <span>{{ $this->weather->description() }}</span>
+                                <span class="tabular-nums">{{ $this->weather->round($this->weather->temperature) }}&deg;</span>
                             </p>
                         @endif
                     </div>
