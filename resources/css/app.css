@@ -14,6 +14,19 @@
     /* Smallest comfortable touch target. Every interactive element on the wall
        and on phones must be at least this in both axes. */
     --spacing-touch: 2.75rem; /* 44px */
+
+    /*
+     * A note looks handwritten, or as close as a stack of system faces gets.
+     *
+     * No web font is downloaded anywhere in this app, and a wall panel that
+     * may boot without a network is not the place to start. So: whatever
+     * handwriting face the device happens to have, then a rounded one, then
+     * the ordinary sans — legible on every device, and genuinely handwritten
+     * on most of them. Self-hosting a face is the way to guarantee it on the
+     * Pi, and that is a licence decision rather than a code one.
+     */
+    --font-note: 'Bradley Hand', 'Segoe Print', 'Chalkboard SE', 'Comic Neue', 'Comic Sans MS',
+        ui-rounded, 'SF Pro Rounded', var(--font-sans);
 }
 
 /*
@@ -320,6 +333,48 @@
     button:disabled:active,
     [aria-disabled='true']:active {
         transform: none;
+    }
+
+    /*
+     * The notes board: a row of post-its that scrolls sideways.
+     *
+     * Touch only — no scrollbar, momentum, and each note snaps under the
+     * finger so a swipe never leaves half of one showing.
+     */
+    .note-rail {
+        overflow-x: auto;
+        overflow-y: hidden;
+        overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x mandatory;
+        scrollbar-width: none;
+    }
+
+    .note-rail::-webkit-scrollbar {
+        display: none;
+    }
+
+    .note-rail > * {
+        scroll-snap-align: start;
+    }
+
+    /*
+     * The hint that there is more to the right.
+     *
+     * A mask rather than a gradient overlay, so it fades whatever is actually
+     * behind it — the board sits on the wall's own background and a painted
+     * gradient would only match it by luck.
+     */
+    .note-rail-fade {
+        mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 4rem), transparent 100%);
+    }
+
+    /* Nothing on this board should be draggable or selectable by a stray hold. */
+    .note-paper {
+        font-family: var(--font-note);
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
     }
 
     .touch-target {

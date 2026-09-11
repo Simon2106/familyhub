@@ -59,7 +59,8 @@ class NotesBoardTest extends TestCase
             ->set('author', $this->member->id)
             ->call('save')
             ->assertSee('PE kit in the wash')
-            ->assertSee('Jenna');
+            // Initials in the corner: a post-it has no room for a full name.
+            ->assertSee($this->member->initials());
 
         $note = Note::first();
 
@@ -117,17 +118,30 @@ class NotesBoardTest extends TestCase
         $this->assertSame(['Still current'], Note::pluck('body')->all());
     }
 
+    /**
+     * Four fit across; the rest are a finger-swipe away rather than hidden,
+     * so the wall no longer has to apologise for what it is not showing.
+     */
     #[Test]
-    public function the_wall_shows_six_and_says_how_many_it_is_not_showing(): void
+    public function the_wall_rails_everything_and_hints_when_it_runs_off_the_edge(): void
     {
         for ($i = 1; $i <= 8; $i++) {
             $this->note(['body' => 'Note number '.$i]);
         }
 
         Livewire::test('notes.board', ['onWall' => true])
-            ->assertSee('Note number 6')
-            ->assertDontSee('Note number 7')
-            ->assertSee('and 2 more on the phone');
+            ->assertSet('overflows', true)
+            ->assertSee('Note number 8')
+            ->assertDontSee('more on the phone');
+    }
+
+    #[Test]
+    public function a_board_that_fits_gets_no_edge_hint(): void
+    {
+        $this->note();
+        $this->note(['body' => 'Second']);
+
+        Livewire::test('notes.board', ['onWall' => true])->assertSet('overflows', false);
     }
 
     #[Test]
@@ -194,7 +208,121 @@ class NotesBoardTest extends TestCase
 
         Livewire::test('notes.board')->assertSee('Everyone');
 
-        $this->assertSame('#64748b', Note::first()->colour());
+        // Classic post-it yellow, rather than somebody's colour.
+        $this->assertSame(Note::PLAIN_PAPER, Note::first()->paper());
+    }
+
+    /* ----------------------------- the paper --------------------------- */
+
+    /**
+     * The author's colour, most of the way into a warm white: enough to say
+     * whose it is at a glance, not enough to fight the words on it.
+     */
+    #[Test]
+    public function a_notes_paper_is_its_authors_colour_tinted_right_down(): void
+    {
+        $note = $this->note(['member_id' => $this->member->id])->fresh();
+
+        $paper = $note->paper();
+
+        $this->assertNotSame(Note::PLAIN_PAPER, $paper);
+        $this->assertNotSame($this->member->colour, $paper, 'Tinted, not the raw colour.');
+
+        // Far lighter than the member colour it came from.
+        $this->assertGreaterThan(
+            hexdec(substr(ltrim($this->member->colour, '#'), 2, 2)),
+            hexdec(substr(ltrim($paper, '#'), 2, 2)),
+        );
+    }
+
+    #[Test]
+    public function a_broken_colour_falls_back_to_plain_paper(): void
+    {
+        $odd = Member::factory()->create([
+            'household_id' => $this->household->id, 'name' => 'Odd', 'colour' => 'not-a-colour',
+        ]);
+
+        $note = $this->note(['member_id' => $odd->id])->fresh();
+
+        $this->assertSame(Note::PLAIN_PAPER, $note->paper());
+    }
+
+    /** Alternating, so a row does not all lean the same way. */
+    #[Test]
+    public function the_tilt_alternates_and_stays_small(): void
+    {
+        $note = $this->note();
+
+        foreach ([0, 1, 2, 3] as $position) {
+            $degrees = $note->tilt($position);
+
+            $this->assertGreaterThanOrEqual(1, abs($degrees));
+            $this->assertLessThanOrEqual(3, abs($degrees));
+            $this->assertSame($position % 2 === 0, $degrees < 0, 'Even positions lean left.');
+        }
+    }
+
+    /** A note keeps its own angle rather than jumping when the board redraws. */
+    #[Test]
+    public function a_notes_tilt_does_not_change_between_renders(): void
+    {
+        $note = $this->note();
+
+        $this->assertSame($note->tilt(0), $note->fresh()->tilt(0));
+    }
+
+    /* ---------------------------- taking one down ---------------------- */
+
+    /**
+     * A long press asks. Reaching past the board and catching a note is easy,
+     * and one that vanished under somebody's hand would be gone with nothing
+     * to undo it with.
+     */
+    #[Test]
+    public function a_long_press_asks_before_it_takes_a_note_down(): void
+    {
+        $note = $this->note();
+
+        Livewire::test('notes.board', ['onWall' => true])
+            ->call('askToRemove', $note->id)
+            ->assertSet('removing', $note->id)
+            ->assertSee('Take this note down?');
+
+        $this->assertSame(1, Note::count(), 'Asked, not done.');
+    }
+
+    #[Test]
+    public function the_confirm_takes_it_down_and_cancel_leaves_it(): void
+    {
+        $note = $this->note();
+
+        Livewire::test('notes.board', ['onWall' => true])
+            ->call('askToRemove', $note->id)
+            ->call('cancelRemove')
+            ->assertSet('removing', null);
+
+        $this->assertSame(1, Note::count());
+
+        Livewire::test('notes.board', ['onWall' => true])
+            ->call('askToRemove', $note->id)
+            ->call('remove', $note->id);
+
+        $this->assertSame(0, Note::count());
+    }
+
+    #[Test]
+    public function another_households_note_cannot_be_long_pressed_away(): void
+    {
+        $theirs = Note::create([
+            'household_id' => Household::factory()->create()->id,
+            'body' => 'Not ours at all',
+        ]);
+
+        Livewire::test('notes.board', ['onWall' => true])
+            ->call('askToRemove', $theirs->id)
+            ->assertSet('removing', null);
+
+        $this->assertNotNull($theirs->fresh());
     }
 
     /* --------------------------- finding it ---------------------------- */

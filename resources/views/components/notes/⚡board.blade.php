@@ -39,6 +39,11 @@ new class extends Component
 
     public ?string $problem = null;
 
+    /** The note a long press has asked about taking down. */
+    public ?int $removing = null;
+
+    public string $removingBody = '';
+
     public function mount(bool $onWall = false): void
     {
         $this->onWall = $onWall;
@@ -75,20 +80,18 @@ new class extends Component
             ->get();
     }
 
-    /** How many are not being shown, so the wall can say so honestly. */
+    /**
+     * Whether the rail runs off the edge, so it can say so.
+     *
+     * Four fit across; a fifth is reachable with a finger rather than hidden,
+     * which is why this is a hint and no longer a count of what is missing.
+     * The add control takes a place in the row, so four notes already
+     * overflow.
+     */
     #[Computed]
-    public function hidden(): int
+    public function overflows(): bool
     {
-        if (! $this->onWall) {
-            return 0;
-        }
-
-        $total = Note::query()
-            ->where('household_id', $this->household()->id)
-            ->live($this->household()->todayLocal()->toDateString())
-            ->count();
-
-        return max(0, $total - Note::ON_THE_WALL);
+        return $this->onWall && $this->notes->count() >= Note::ACROSS_THE_WALL;
     }
 
     /** @return Collection<int, Member> */
@@ -155,9 +158,35 @@ new class extends Component
         $this->close();
     }
 
+    /**
+     * A long press asks; it does not take the note down.
+     *
+     * Long-pressing by accident while reaching past the board is easy, and a
+     * note that vanished under somebody's hand would be gone with nothing to
+     * undo it with.
+     */
+    public function askToRemove(int $id): void
+    {
+        $note = $this->find($id);
+
+        if (! $note) {
+            return;
+        }
+
+        $this->removing = $note->id;
+        $this->removingBody = $note->body;
+    }
+
+    public function cancelRemove(): void
+    {
+        $this->reset(['removing', 'removingBody']);
+    }
+
     public function remove(int $id): void
     {
         $this->find($id)?->delete();
+
+        $this->reset(['removing', 'removingBody']);
 
         $this->close();
     }
@@ -168,7 +197,7 @@ new class extends Component
 
         $this->days = Note::DEFAULT_DAYS;
 
-        unset($this->notes, $this->hidden);
+        unset($this->notes, $this->overflows);
 
         $this->dispatch('notes-changed');
     }
@@ -176,7 +205,7 @@ new class extends Component
     #[On('notes-changed')]
     public function refresh(): void
     {
-        unset($this->notes, $this->hidden);
+        unset($this->notes, $this->overflows);
     }
 
     /** Scoped to the household, because the id arrives from the browser. */
@@ -189,48 +218,59 @@ new class extends Component
 <div class="min-h-0">
     @if ($onWall)
         {{-- ------------------------------- WALL ------------------------- --}}
-        {{-- A row of stickies. Nothing here scrolls: six is the most a wall
-             can carry and still be read from the other side of a kitchen,
-             and a seventh hiding off-screen is a note nobody sees. --}}
-        <div class="flex items-stretch gap-3">
-            @foreach ($this->notes as $note)
-                <button type="button" wire:click="edit({{ $note->id }})" wire:key="note-{{ $note->id }}"
-                        class="flex min-w-0 flex-1 flex-col rounded-2xl px-4 py-3 text-left"
-                        style="background-color: {{ $note->colour() }}1a; border-left: 6px solid {{ $note->colour() }};">
-                    <span class="line-clamp-3 text-xl leading-snug font-medium">{{ $note->body }}</span>
-                    <span class="mt-auto pt-2 truncate text-sm text-slate-500 dark:text-slate-400">
-                        {{ $note->member?->name ?? 'Everyone' }}@if ($note->until($this->household()->todayLocal())) · {{ $note->until($this->household()->todayLocal()) }}@endif
-                    </span>
-                </button>
+        {{-- Post-its on a rail. Four fit across; more than four scroll
+             sideways under a finger, snapping so a swipe never leaves half
+             a note showing. --}}
+        <div class="note-rail flex items-start gap-4 px-1 pb-1 {{ $this->overflows ? 'note-rail-fade' : '' }}">
+            @foreach ($this->notes as $index => $note)
+                <div class="shrink-0 basis-[22%]" wire:key="note-{{ $note->id }}">
+                    <button type="button"
+                            x-data="{ held: false, spent: false, timer: null }"
+                            x-on:pointerdown="held = false; spent = false;
+                                timer = setTimeout(() => { held = true; $wire.askToRemove({{ $note->id }}) }, 550)"
+                            x-on:pointerup="clearTimeout(timer);
+                                if (! held && ! spent) { spent = true; $wire.edit({{ $note->id }}) }"
+                            x-on:pointercancel="clearTimeout(timer); spent = true"
+                            x-on:pointerleave="clearTimeout(timer); spent = true"
+                            class="note-paper flex aspect-[4/3] w-full flex-col rounded-sm p-5 text-left shadow-lg transition-transform"
+                            style="background-color: {{ $note->paper() }};
+                                   transform: rotate({{ $note->tilt($index) }}deg);
+                                   box-shadow: 0 10px 18px -8px rgb(15 23 42 / 0.45);"
+                            aria-label="{{ $note->body }} — tap to edit, press and hold to take down">
+                        {{-- The fold along the top, so the paper reads as
+                             paper rather than as a coloured box. --}}
+                        <span class="-mx-5 -mt-5 mb-3 h-3 rounded-t-sm"
+                              style="background-color: {{ $note->paperEdge() }};" aria-hidden="true"></span>
+
+                        <span class="line-clamp-5 text-[1.75rem] leading-tight font-semibold text-slate-900">
+                            {{ $note->body }}
+                        </span>
+
+                        {{-- Whose it is and when it goes, in the corner, out
+                             of the way of the words. --}}
+                        <span class="mt-auto flex items-baseline gap-2 pt-3 text-base text-slate-900/45">
+                            <span class="font-bold">{{ $note->member?->initials() ?? 'Everyone' }}</span>
+                            <span class="min-w-0 flex-1 truncate text-right">
+                                {{ $note->until($this->household()->todayLocal()) }}
+                            </span>
+                        </span>
+                    </button>
+                </div>
             @endforeach
 
-            {{-- The empty board is the add control: a lone + on an otherwise
-                 bare strip says nothing about what it makes, and a wall has
-                 no hover to explain it with. --}}
-            @if ($this->notes->isEmpty())
+            {{-- The same size as a note, and sitting in the row with them. --}}
+            <div class="shrink-0 basis-[22%]">
                 <button type="button" wire:click="compose"
-                        class="flex min-h-touch flex-1 items-center gap-3 rounded-2xl border-2 border-dashed border-slate-300 px-4 py-3 text-left dark:border-slate-700">
-                    <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-2xl leading-none text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-                          aria-hidden="true">+</span>
-                    <span class="min-w-0">
-                        <span class="block text-xl font-medium">Add a note</span>
-                        <span class="block truncate text-sm text-slate-500 dark:text-slate-400">
-                            e.g. Gran’s here at 4
-                        </span>
-                    </span>
+                        class="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 rounded-sm border-2 border-dashed border-slate-300 text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                    <span class="text-5xl leading-none" aria-hidden="true">+</span>
+                    <span class="text-xl font-medium">Add a note</span>
+                    @if ($this->notes->isEmpty())
+                        <span class="px-4 text-center text-base text-slate-400">e.g. Gran’s here at 4</span>
+                    @endif
                 </button>
-            @else
-                <button type="button" wire:click="compose"
-                        class="flex min-h-touch w-40 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-slate-300 px-3 py-3 text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                    <span class="text-3xl leading-none" aria-hidden="true">+</span>
-                    <span class="text-base font-medium">Add a note</span>
-                </button>
-            @endif
+            </div>
         </div>
 
-        @if ($this->hidden > 0)
-            <p class="pt-1 text-xs text-slate-400">and {{ $this->hidden }} more on the phone</p>
-        @endif
     @else
         {{-- ------------------------------- PHONE ------------------------ --}}
         <section class="rounded-2xl bg-white p-3 dark:bg-slate-900">
@@ -257,16 +297,33 @@ new class extends Component
                     </span>
                 </button>
             @else
-                <ul class="mt-1 space-y-2">
-                    @foreach ($this->notes as $note)
+                {{-- Stacked rather than railed: a phone has one column and a
+                     thumb, and the same paper reads fine lying flat. --}}
+                <ul class="mt-2 space-y-3">
+                    @foreach ($this->notes as $index => $note)
                         <li wire:key="pnote-{{ $note->id }}">
-                            <button type="button" wire:click="edit({{ $note->id }})"
-                                    class="flex w-full items-start gap-3 rounded-xl px-3 py-2 text-left"
-                                    style="background-color: {{ $note->colour() }}14; border-left: 4px solid {{ $note->colour() }};">
-                                <span class="min-w-0 flex-1">
-                                    <span class="block font-medium">{{ $note->body }}</span>
-                                    <span class="block truncate text-xs text-slate-500 dark:text-slate-400">
-                                        {{ $note->member?->name ?? 'Everyone' }}@if ($note->until($this->household()->todayLocal())) · {{ $note->until($this->household()->todayLocal()) }}@endif
+                            <button type="button"
+                                    x-data="{ held: false, spent: false, timer: null }"
+                                    x-on:pointerdown="held = false; spent = false;
+                                        timer = setTimeout(() => { held = true; $wire.askToRemove({{ $note->id }}) }, 550)"
+                                    x-on:pointerup="clearTimeout(timer);
+                                        if (! held && ! spent) { spent = true; $wire.edit({{ $note->id }}) }"
+                                    x-on:pointercancel="clearTimeout(timer); spent = true"
+                                    x-on:pointerleave="clearTimeout(timer); spent = true"
+                                    class="note-paper flex w-full flex-col rounded-sm p-4 text-left shadow-md"
+                                    style="background-color: {{ $note->paper() }};
+                                           transform: rotate({{ $note->tilt($index) / 2 }}deg);
+                                           box-shadow: 0 6px 12px -6px rgb(15 23 42 / 0.4);"
+                                    aria-label="{{ $note->body }} — tap to edit, press and hold to take down">
+                                <span class="-mx-4 -mt-4 mb-2 h-2 rounded-t-sm"
+                                      style="background-color: {{ $note->paperEdge() }};" aria-hidden="true"></span>
+
+                                <span class="text-lg leading-snug font-semibold text-slate-900">{{ $note->body }}</span>
+
+                                <span class="mt-2 flex items-baseline gap-2 text-xs text-slate-900/45">
+                                    <span class="font-bold">{{ $note->member?->initials() ?? 'Everyone' }}</span>
+                                    <span class="min-w-0 flex-1 truncate text-right">
+                                        {{ $note->until($this->household()->todayLocal()) }}
                                     </span>
                                 </span>
                             </button>
@@ -275,6 +332,26 @@ new class extends Component
                 </ul>
             @endif
         </section>
+    @endif
+
+    {{-- A long press asks before it takes anything down. --}}
+    @if ($removing)
+        <x-modal dismiss="cancelRemove">
+            <x-slot:header>
+                <h2 class="text-lg font-bold">Take this note down?</h2>
+            </x-slot:header>
+
+            <p class="text-base text-slate-600 dark:text-slate-300">{{ $removingBody }}</p>
+
+            <x-slot:footer>
+                <div class="flex gap-2">
+                    <button type="button" wire:click="cancelRemove"
+                            class="touch-target ml-auto rounded-xl px-4 font-semibold text-slate-500">Leave it up</button>
+                    <button type="button" wire:click="remove({{ $removing }})"
+                            class="touch-target rounded-xl bg-rose-600 px-6 font-semibold text-white">Take it down</button>
+                </div>
+            </x-slot:footer>
+        </x-modal>
     @endif
 
     {{-- ------------------------------ the dialog ------------------------ --}}
