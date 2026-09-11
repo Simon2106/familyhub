@@ -641,6 +641,15 @@ new #[Layout('layouts::display')] class extends Component
         idle: false,
         idleSince: 0,
         photoIndex: 0,
+
+        /* Two layers that cross-fade into each other, rather than one whose
+           src is swapped — a swap is a blink, and this is a room people are
+           sitting in. */
+        slotA: null,
+        slotB: null,
+        captionA: null,
+        captionB: null,
+        showA: true,
         photos: @js($this->photos),
         idleMs: @js($wall['idleMs']),
         saverStyle: @js($wall['style']),
@@ -689,11 +698,19 @@ new #[Layout('layouts::display')] class extends Component
                pixel and a half a step, and the panel may only run at 30Hz. */
             setInterval(() => this.stepDrift(), 200);
 
+            this.slotA = this.photos[0]?.url ?? null;
+            this.captionA = this.photos[0]?.caption ?? null;
+
             if (this.photos.length > 1) {
                 setInterval(() => {
-                    if (this.idle) this.photoIndex = (this.photoIndex + 1) % this.photos.length;
+                    if (this.idle) this.nextPhoto();
                 }, @js(config('familyhub.screensaver.interval_seconds') * 1000));
             }
+
+            /* New photographs, without waiting for a reload. The album is
+               polled hourly on the server; this is how the wall finds out,
+               and it only asks while the screensaver is actually up. */
+            setInterval(() => this.refreshPhotos(), @js(config('familyhub.screensaver.refresh_minutes') * 60 * 1000));
         },
 
         /* Tapping the day already showing goes back to today — the tap that
@@ -757,6 +774,59 @@ new #[Layout('layouts::display')] class extends Component
             root.dataset.darkEnd = this.darkEnd;
 
             window.familyhubDarkMode?.();
+        },
+
+        /* The next photograph, faded in behind the one showing. */
+        nextPhoto() {
+            if (this.photos.length < 2) return;
+
+            this.photoIndex = (this.photoIndex + 1) % this.photos.length;
+
+            const next = this.photos[this.photoIndex];
+
+            /* Loaded into whichever layer is currently hidden, then the two
+               are swapped — so the fade is between two images that are both
+               already decoded. */
+            if (this.showA) {
+                this.slotB = next.url;
+                this.captionB = next.caption;
+            } else {
+                this.slotA = next.url;
+                this.captionA = next.caption;
+            }
+
+            this.showA = ! this.showA;
+        },
+
+        /* Whatever the album has now. Quietly: a failure here means the wall
+           keeps showing the photographs it already has, which is right. */
+        async refreshPhotos() {
+            if (! this.idle) return;
+
+            try {
+                const response = await fetch(@js(route('display.photos')), {
+                    credentials: 'same-origin',
+                    headers: { Accept: 'application/json' },
+                });
+
+                if (! response.ok) return;
+
+                const fresh = await response.json();
+
+                if (! Array.isArray(fresh.photos) || fresh.photos.length === 0) return;
+
+                /* Only when something has actually changed, so a poll does
+                   not restart the slideshow every hour. */
+                if (fresh.photos.length === this.photos.length
+                    && fresh.photos[0]?.url === this.photos[0]?.url) {
+                    return;
+                }
+
+                this.photos = fresh.photos;
+                this.photoIndex = 0;
+            } catch (e) {
+                /* Offline, or the server is mid-deploy. Try again next hour. */
+            }
         },
 
         stepDrift() {
@@ -1748,25 +1818,96 @@ new #[Layout('layouts::display')] class extends Component
         x-on:touchstart="wake()"
         class="fixed inset-0 z-50 overflow-hidden bg-black"
     >
+        {{-- The photographs, two layers deep so one fades into the next. --}}
         <template x-if="saverStyle === 'photos' && photos.length">
             <div class="h-full w-full">
-                <img :src="photos[photoIndex].url" alt="" class="h-full w-full object-cover">
-
-                {{-- A caption when there is one, above the gradient the clock
-                     already sits on. --}}
-                <p x-show="photos[photoIndex].caption" x-cloak
-                   x-text="photos[photoIndex].caption"
-                   class="absolute inset-x-0 bottom-32 px-10 text-2xl font-medium text-white drop-shadow"></p>
+                <img :src="slotA" alt="" x-show="slotA" x-cloak
+                     class="absolute inset-0 h-full w-full object-cover transition-opacity duration-[1500ms]"
+                     :class="showA ? 'opacity-100' : 'opacity-0'">
+                <img :src="slotB" alt="" x-show="slotB" x-cloak
+                     class="absolute inset-0 h-full w-full object-cover transition-opacity duration-[1500ms]"
+                     :class="showA ? 'opacity-0' : 'opacity-100'">
             </div>
         </template>
 
         @if ($wall['style'] === 'photos')
-            {{-- Over a photograph the clock stays put and stays small: there
-                 is nothing to burn in behind a picture that changes. --}}
-            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-10 text-white">
-                <p class="text-7xl font-bold tabular-nums" x-text="clock"></p>
-                <p class="mt-1 text-xl text-white/70"
-                   x-text="now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz })"></p>
+            @php $agenda = $this->saverAgenda; @endphp
+
+            {{-- Over a photograph nothing drifts: the picture changes every
+                 twenty seconds, which is all the burn-in protection a panel
+                 needs, and a wandering clock over a face is just restless.
+
+                 Each corner carries its own gradient rather than one over the
+                 whole frame — a photograph should still look like a
+                 photograph in the middle. --}}
+
+            {{-- Weather, top right. --}}
+            @if ($this->weather)
+                <div class="absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent p-10 text-white">
+                    <p class="flex items-center justify-end gap-3 text-3xl drop-shadow">
+                        <x-icon :name="$this->weather->icon()" class="size-9 shrink-0" />
+                        <span>{{ $this->weather->description() }}</span>
+                        <span class="tabular-nums font-semibold">{{ $this->weather->round($this->weather->temperature) }}&deg;</span>
+                    </p>
+                </div>
+            @endif
+
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/60 to-transparent pt-24">
+                <div class="flex items-end justify-between gap-10 p-10">
+                    {{-- Clock, bottom left. --}}
+                    <div class="shrink-0 text-white drop-shadow">
+                        <p class="text-8xl leading-none font-bold tabular-nums" x-text="clock"></p>
+                        <p class="mt-2 text-2xl text-white/85"
+                           x-text="now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz })"></p>
+
+                        {{-- The caption of whichever photograph is showing. --}}
+                        <p x-show="(showA ? captionA : captionB)" x-cloak
+                           x-text="showA ? captionA : captionB"
+                           class="mt-3 max-w-xl text-xl text-white/80"></p>
+                    </div>
+
+                    {{-- Today, bottom right. --}}
+                    <div class="min-w-0 max-w-3xl text-right text-white drop-shadow">
+                        @if ($agenda['label'])
+                            <p class="mb-1 text-xl font-semibold tracking-wide text-white/75 uppercase">
+                                {{ $agenda['label'] }}
+                            </p>
+                        @endif
+
+                        @forelse ($agenda['events'] as $line)
+                            <p class="flex items-baseline justify-end gap-4 py-0.5 text-2xl leading-snug"
+                               wire:key="psaver-{{ $line['key'] }}">
+                                <span class="min-w-0 truncate font-semibold text-white/95">{{ $line['title'] }}</span>
+                                <span class="w-24 shrink-0 tabular-nums text-white/85">{{ $line['when'] }}</span>
+                                <span class="flex w-24 shrink-0 items-baseline justify-end gap-2">
+                                    @forelse ($line['who'] as $person)
+                                        <span class="flex items-baseline gap-1.5">
+                                            <span class="inline-block size-2.5 shrink-0 translate-y-[-0.15em] rounded-full"
+                                                  style="background-color: {{ $person['colour'] ?: '#94a3b8' }};"
+                                                  aria-hidden="true"></span>
+                                            <span class="text-white/85">{{ $person['initials'] }}</span>
+                                        </span>
+                                    @empty
+                                        <span class="flex items-baseline gap-1.5">
+                                            <span class="inline-block size-2.5 shrink-0 translate-y-[-0.15em] rounded-full bg-white/70"
+                                                  aria-hidden="true"></span>
+                                            <span class="text-white/75">All</span>
+                                        </span>
+                                    @endforelse
+                                    @if ($line['extra_people'] > 0)
+                                        <span class="text-white/75">+{{ $line['extra_people'] }}</span>
+                                    @endif
+                                </span>
+                            </p>
+                        @empty
+                            <p class="text-2xl text-white/75">Nothing on tomorrow either.</p>
+                        @endforelse
+
+                        @if ($agenda['more'] > 0)
+                            <p class="pt-0.5 text-xl text-white/75">+{{ $agenda['more'] }} more</p>
+                        @endif
+                    </div>
+                </div>
             </div>
         @else
             {{-- A clock that wanders, so the same numerals never sit in the

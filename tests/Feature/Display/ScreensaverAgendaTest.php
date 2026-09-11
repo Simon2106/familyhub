@@ -7,8 +7,11 @@ use App\Models\CalendarAccount;
 use App\Models\Event;
 use App\Models\Household;
 use App\Models\Member;
+use App\Models\Photo;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Once;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -42,7 +45,7 @@ class ScreensaverAgendaTest extends TestCase
         CarbonImmutable::setTestNow(self::NOON);
 
         $this->household = Household::factory()->create(['timezone' => 'UTC']);
-        $this->household->setScreensaverStyle('today');
+        $this->style('today');
 
         $account = CalendarAccount::factory()->create(['household_id' => $this->household->id]);
         $this->calendar = Calendar::factory()->create([
@@ -78,6 +81,20 @@ class ScreensaverAgendaTest extends TestCase
         }
 
         return $event;
+    }
+
+    /**
+     * Change the style, and make the change visible to the component.
+     *
+     * Household::current() memoises with once(), which is per-request in
+     * production and therefore per-test here — so a style set after anything
+     * has already asked for the household would otherwise be invisible.
+     */
+    protected function style(string $style): void
+    {
+        $this->household->setScreensaverStyle($style);
+
+        Once::flush();
     }
 
     protected function agenda(): array
@@ -246,5 +263,91 @@ class ScreensaverAgendaTest extends TestCase
         ]);
 
         $this->assertSame(['Football training'], array_column($this->agenda()['events'], 'title'));
+    }
+
+    /* --------------------- photographs, with the day ------------------- */
+
+    /**
+     * The two styles were separate and the family wanted both at once: the
+     * photographs are the thing worth looking at, and the day is the thing
+     * worth knowing.
+     */
+    #[Test]
+    public function the_photo_style_carries_the_clock_the_day_and_the_weather(): void
+    {
+        $this->style('photos');
+
+        $this->event('Swimming', '2026-09-11 16:00:00', [$this->sienna]);
+        $this->event('Football', '2026-09-11 17:30:00', [$this->joey]);
+
+        Livewire::test('display.wall', ['token' => 'x'])
+            ->assertSee('Swimming')
+            ->assertSee('Football')
+            ->assertSee('16:00')
+            ->assertSee('SW')
+            // The clock and the date are drawn by Alpine from the browser's
+            // own time, so what is asserted here is that the frame is there.
+            ->assertSee('toLocaleDateString', false);
+    }
+
+    #[Test]
+    public function nothing_drifts_over_a_photograph(): void
+    {
+        $this->style('photos');
+
+        // Against the raw HTML: assertSee strips tags, so an attribute can
+        // never match through it — and the bare word appears in the Alpine
+        // that moves the clock, which is on the page whatever the style.
+        $this->assertStringNotContainsString(
+            'x-ref="driftingClock"',
+            Livewire::test('display.wall', ['token' => 'x'])->html(),
+        );
+
+        $this->style('today');
+
+        $this->assertStringContainsString(
+            'x-ref="driftingClock"',
+            Livewire::test('display.wall', ['token' => 'x'])->html(),
+        );
+    }
+
+    /** The plain clock stays an option, and stays plain. */
+    #[Test]
+    public function the_plain_clock_style_is_a_clock_and_nothing_else(): void
+    {
+        $this->style('clock');
+
+        $this->event('Swimming', '2026-09-11 16:00:00', [$this->sienna]);
+
+        // The event is on the wall itself, of course — what matters is that
+        // the screensaver's own panel is not drawn at all.
+        $html = Livewire::test('display.wall', ['token' => 'x'])->html();
+
+        $this->assertStringContainsString('x-ref="driftingClock"', $html);
+        $this->assertStringNotContainsString('Nothing on tomorrow either.', $html);
+    }
+
+    #[Test]
+    public function photographs_are_the_default_where_there_are_any(): void
+    {
+        // Its own empty photo directory: this asks what a household with no
+        // photographs is given, and the real one has some in it.
+        Storage::fake('public');
+
+        // Never chosen: the household gets whatever suits what it has.
+        $this->household->forceFill(['settings' => []])->save();
+
+        Once::flush();
+
+        $this->assertSame('clock', $this->household->fresh()->screensaverStyle());
+
+        Photo::create([
+            'household_id' => $this->household->id,
+            'source' => 'folder',
+            'disk' => 'public',
+            'path' => 'photos/one.jpg',
+        ]);
+
+        $this->assertSame('photos', $this->household->fresh()->screensaverStyle());
     }
 }

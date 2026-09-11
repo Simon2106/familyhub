@@ -69,7 +69,11 @@ return [
 
     'screensaver' => [
         'idle_minutes' => (int) env('FAMILYHUB_IDLE_MINUTES', 10), // 0 disables
-        'interval_seconds' => (int) env('FAMILYHUB_PHOTO_INTERVAL', 30),
+        'interval_seconds' => (int) env('FAMILYHUB_PHOTO_INTERVAL', 20),
+        // How often the wall asks whether the album has anything new. The
+        // album itself is polled hourly on the server; asking more often
+        // than that only finds the same answer.
+        'refresh_minutes' => (int) env('FAMILYHUB_PHOTO_REFRESH_MINUTES', 60),
     ],
 
     'photos' => [

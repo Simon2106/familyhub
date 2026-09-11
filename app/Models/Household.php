@@ -285,8 +285,8 @@ class Household extends Model
     /** clock | today | photos */
     public const SCREENSAVER_STYLES = [
         'clock' => 'A big drifting clock',
-        'today' => 'Clock, the next thing on, and the weather',
-        'photos' => 'Photographs',
+        'today' => 'Clock, today and the weather',
+        'photos' => 'Photographs, with the clock and today over them',
     ];
 
     /**

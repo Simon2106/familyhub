@@ -73,12 +73,17 @@ Schedule::command('familyhub:sync-feeds')
     ->runInBackground();
 
 /*
-| Photographs. Nightly, because a shared album is added to at the pace of a
-| family holiday rather than a news feed.
+| Photographs, hourly.
+|
+| iCloud offers no push for a shared album — it is a public JSON endpoint and
+| the only way to learn anything is to ask it — so "as soon as it is added"
+| means "within the hour". Cheap: the first call returns a list of ids and
+| only genuinely new ones are downloaded.
 */
 Schedule::command('familyhub:sync-photos')
-    ->dailyAt('03:20')
-    ->withoutOverlapping();
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();
 
 Schedule::command('familyhub:prune-done')
     ->dailyAt('04:00')

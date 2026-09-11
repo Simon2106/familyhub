@@ -3,6 +3,7 @@
 use App\Http\Controllers\App\PushSubscriptionController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Display\ListenController;
+use App\Http\Controllers\Display\PhotoFeedController;
 use App\Http\Controllers\ShareTargetController;
 use App\Http\Controllers\Webhooks\PostmarkInboundController;
 use App\Support\BuildVersion;
@@ -125,6 +126,9 @@ Route::middleware(['display.token', 'throttle:30,1'])->group(function () {
     Route::post('/display/listen', [ListenController::class, 'store'])->name('display.listen');
     Route::get('/display/listen/{id}', [ListenController::class, 'show'])->name('display.listen.show');
     Route::get('/display/speech/{id}', [ListenController::class, 'speech'])->name('display.speech');
+
+    // The screensaver asking whether the album has anything new in it.
+    Route::get('/display/photos', PhotoFeedController::class)->name('display.photos');
 });
 
 Route::middleware('guest')->group(function () {
