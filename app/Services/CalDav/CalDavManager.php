@@ -4,6 +4,7 @@ namespace App\Services\CalDav;
 
 use App\Models\CalendarAccount;
 use App\Services\Attribution\EventAttributor;
+use App\Services\Calendar\OccurrenceStore;
 
 /**
  * Builds CalDAV services for a stored account, decrypting its credentials.
@@ -41,7 +42,12 @@ class CalDavManager
 
     public function sync(CalendarAccount $account): CalendarSync
     {
-        return new CalendarSync($this->clientFor($account), new EventMapper, app(EventAttributor::class));
+        return new CalendarSync(
+            $this->clientFor($account),
+            new EventMapper,
+            app(EventAttributor::class),
+            app(OccurrenceStore::class),
+        );
     }
 
     public function writer(CalendarAccount $account): EventWriter

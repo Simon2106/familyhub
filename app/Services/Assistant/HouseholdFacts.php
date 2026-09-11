@@ -10,6 +10,7 @@ use App\Models\Household;
 use App\Models\Meal;
 use App\Models\Member;
 use App\Models\Recipe;
+use App\Services\Calendar\EventWindow;
 use App\Services\Chores\ChoreBoard;
 use App\Services\Chores\ChoreSlot;
 use App\Services\Meals\MealPlanProposer;
@@ -48,6 +49,7 @@ class HouseholdFacts
         protected PointsLedger $ledger,
         protected SchoolCalendar $schools,
         protected MealPlanProposer $proposer,
+        protected EventWindow $window,
     ) {}
 
     /** Anything, anywhere — the fallback when no other tool fits. */
@@ -87,16 +89,12 @@ class HouseholdFacts
     {
         $tz = $household->displayTimezone();
 
-        $events = Event::query()
-            ->notCancelled()
-            ->overlapping($from->startOfDay(), $to->endOfDay())
-            ->whereHas('calendar', fn ($q) => $q
-                ->where('is_visible', true)
-                ->whereHas('account', fn ($a) => $a->where('household_id', $household->id)))
-            ->with(['calendar.member', 'members'])
-            ->orderBy('start_at')
-            ->limit(self::LIMIT * 3)
-            ->get();
+        // Occurrences, so "what is on next Friday" finds a weekly training
+        // rather than only the week it was first put in the calendar.
+        $events = $this->window
+            ->between($household, $from->startOfDay(), $to->endOfDay(), limit: self::LIMIT * 3)
+            ->sortBy('start_at')
+            ->values();
 
         if ($member !== null) {
             $events = $events->filter(fn (Event $e) => $this->concerns($e, $member))->values();

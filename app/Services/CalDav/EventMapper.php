@@ -4,6 +4,7 @@ namespace App\Services\CalDav;
 
 use App\Models\Event;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
@@ -79,6 +80,10 @@ class EventMapper
             'location' => $this->text($vevent->LOCATION),
             'notes' => $this->text($vevent->DESCRIPTION),
             'rrule' => $this->text($vevent->RRULE),
+            // The dates struck out of a series. iCloud says "delete just this
+            // one" with an EXDATE, so a series without these is a series that
+            // shows a week the family cancelled.
+            'exdate' => $this->exdates($vevent),
             'status' => $this->status($vevent),
             'source_hash' => hash('sha256', $vevent->serialize()),
         ];
@@ -92,12 +97,38 @@ class EventMapper
      */
     public function toIcs(Event $event): string
     {
+        return $this->seriesToIcs($event, collect());
+    }
+
+    /**
+     * A whole recurrence set as one resource.
+     *
+     * This is the shape CalDAV actually wants, and getting it wrong is how a
+     * series loses its exceptions: a .ics holds the master VEVENT *and* every
+     * edited occurrence, all sharing the UID, and a PUT replaces the file. So
+     * writing one VEVENT to a series' href deletes every override it had.
+     *
+     * @param  Collection<int, Event>  $overrides
+     */
+    public function seriesToIcs(Event $master, $overrides): string
+    {
         $calendar = new VCalendar([
             'PRODID' => '-//FamilyHub//EN',
             'VERSION' => '2.0',
             'CALSCALE' => 'GREGORIAN',
         ]);
 
+        $this->addVEvent($calendar, $master);
+
+        foreach ($overrides as $override) {
+            $this->addVEvent($calendar, $override);
+        }
+
+        return $calendar->serialize();
+    }
+
+    protected function addVEvent(VCalendar $calendar, Event $event): void
+    {
         $vevent = $calendar->add('VEVENT', [
             'UID' => $event->external_id,
             'SUMMARY' => $event->title,
@@ -127,9 +158,48 @@ class EventMapper
             $vevent->add('RECURRENCE-ID', $event->recurrence_id);
         }
 
-        $vevent->add('STATUS', strtoupper($event->status ?: 'confirmed'));
+        // The dates struck out of the series. Without these, "delete just
+        // this one" cannot survive a write.
+        foreach ((array) ($event->exdate ?? []) as $excluded) {
+            try {
+                $vevent->add(
+                    'EXDATE',
+                    CarbonImmutable::parse((string) $excluded)->utc()->toDateTime(),
+                );
+            } catch (\Throwable) {
+                // An unreadable stored date is dropped rather than written
+                // back as something the server will reject.
+            }
+        }
 
-        return $calendar->serialize();
+        $vevent->add('STATUS', strtoupper($event->status ?: 'confirmed'));
+    }
+
+    /**
+     * Every EXDATE on a VEVENT, as ISO strings.
+     *
+     * There may be several properties, each holding several comma-separated
+     * dates, in whatever timezone the writing client felt like. They are
+     * normalised to UTC here so the expander can compare them without
+     * knowing any of that.
+     *
+     * @return list<string>
+     */
+    protected function exdates(VEvent $vevent): array
+    {
+        $out = [];
+
+        foreach ($vevent->select('EXDATE') as $property) {
+            try {
+                foreach ($property->getDateTimes() as $moment) {
+                    $out[] = CarbonImmutable::instance($moment)->utc()->toIso8601String();
+                }
+            } catch (\Throwable) {
+                // A date we cannot read must not lose the whole event.
+            }
+        }
+
+        return $out;
     }
 
     /** The filename a new event is stored under inside the calendar collection. */

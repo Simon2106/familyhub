@@ -52,6 +52,16 @@ Schedule::command('familyhub:notice-digest')
     ->withoutOverlapping();
 
 /*
+| Repeating events, expanded into the days they actually happen on.
+|
+| The sync writes these as it goes; this is only about time passing — a series
+| expanded eighteen months out in January is a month shorter every month.
+*/
+Schedule::command('familyhub:rebuild-occurrences')
+    ->dailyAt('03:10')
+    ->withoutOverlapping();
+
+/*
 | Subscribed calendars — a school's fixtures, a club's season.
 |
 | Every ten minutes, but each subscription carries its own interval and one

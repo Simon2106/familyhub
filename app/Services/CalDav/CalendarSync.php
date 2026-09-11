@@ -7,6 +7,7 @@ use App\Models\Calendar;
 use App\Models\Event;
 use App\Services\Attribution\AttributionMatcher;
 use App\Services\Attribution\EventAttributor;
+use App\Services\Calendar\OccurrenceStore;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +26,7 @@ class CalendarSync
         protected CalDavClient $client,
         protected EventMapper $mapper,
         protected EventAttributor $attributor,
+        protected OccurrenceStore $occurrences,
     ) {}
 
     /**
@@ -178,51 +180,63 @@ class CalendarSync
             $applied->push($resource->href);
 
             DB::transaction(function () use ($calendar, $resource, $ics, $result) {
-                $seenUids = [];
+                Event::withoutOccurrenceRebuild(function () use ($calendar, $resource, $ics, $result) {
+                    $seenUids = [];
 
-                foreach ($this->mapper->fromIcs($ics) as $attributes) {
-                    $uidHash = Event::uidHash($attributes['external_id'], $attributes['recurrence_id']);
-                    $seenUids[] = $uidHash;
+                    foreach ($this->mapper->fromIcs($ics) as $attributes) {
+                        $uidHash = Event::uidHash($attributes['external_id'], $attributes['recurrence_id']);
+                        $seenUids[] = $uidHash;
 
-                    $event = Event::firstOrNew([
-                        'calendar_id' => $calendar->id,
-                        'uid_hash' => $uidHash,
-                    ]);
+                        $event = Event::firstOrNew([
+                            'calendar_id' => $calendar->id,
+                            'uid_hash' => $uidHash,
+                        ]);
 
-                    $existed = $event->exists;
+                        $existed = $event->exists;
 
-                    // An unchanged payload is the common case on a full resync;
-                    // skip the write so updated_at stays meaningful.
-                    if ($existed && $event->source_hash === $attributes['source_hash'] && $event->etag === $resource->etag()) {
-                        $result->unchanged++;
+                        // An unchanged payload is the common case on a full resync;
+                        // skip the write so updated_at stays meaningful.
+                        if ($existed && $event->source_hash === $attributes['source_hash'] && $event->etag === $resource->etag()) {
+                            $result->unchanged++;
 
-                        continue;
+                            continue;
+                        }
+
+                        $event->fill($attributes);
+                        $event->calendar_id = $calendar->id;
+                        $event->href = $resource->href;
+                        $event->etag = $resource->etag();
+                        $event->needs_push = false;
+                        $event->save();
+
+                        // Work out who this event is about while it is in hand.
+                        // Already-loaded calendar, so no extra query per event.
+                        $event->setRelation('calendar', $calendar);
+                        $this->attributor->apply($event, $this->matcher($calendar));
+
+                        $existed ? $result->updated++ : $result->created++;
                     }
 
-                    $event->fill($attributes);
-                    $event->calendar_id = $calendar->id;
-                    $event->href = $resource->href;
-                    $event->etag = $resource->etag();
-                    $event->needs_push = false;
-                    $event->save();
+                    // One .ics holds a whole recurrence set. An occurrence override
+                    // that has been reverted disappears from the file, so anything
+                    // at this href we no longer see has gone.
+                    $gone = Event::where('calendar_id', $calendar->id)
+                        ->where('href', $resource->href)
+                        ->whereNotIn('uid_hash', $seenUids)
+                        ->get();
 
-                    // Work out who this event is about while it is in hand.
-                    // Already-loaded calendar, so no extra query per event.
-                    $event->setRelation('calendar', $calendar);
-                    $this->attributor->apply($event, $this->matcher($calendar));
+                    $gone->each->delete();
 
-                    $existed ? $result->updated++ : $result->created++;
-                }
+                    $removed = $gone->count();
 
-                // One .ics holds a whole recurrence set. An occurrence override
-                // that has been reverted disappears from the file, so anything
-                // at this href we no longer see has gone.
-                $removed = Event::where('calendar_id', $calendar->id)
-                    ->where('href', $resource->href)
-                    ->whereNotIn('uid_hash', $seenUids)
-                    ->delete();
+                    $result->deleted += $removed;
 
-                $result->deleted += $removed;
+                });
+
+                // One .ics is one series. Expanding it here, while the whole
+                // set is in hand, is the only moment everything needed —
+                // master, overrides and EXDATEs — is known at once.
+                $this->occurrences->rebuildForResource($calendar, $resource->href);
             });
         }
 
@@ -236,9 +250,15 @@ class CalendarSync
             return 0;
         }
 
-        return Event::where('calendar_id', $calendar->id)
+        $events = Event::where('calendar_id', $calendar->id)
             ->whereIn('href', $hrefs->all())
-            ->delete();
+            ->get();
+
+        // Deleted one by one rather than in bulk so the model hook that
+        // clears occurrences actually fires.
+        $events->each->delete();
+
+        return $events->count();
     }
 
     /** @param Collection<int, string> $seenHrefs */
@@ -255,7 +275,9 @@ class CalendarSync
             ->where('needs_push', false)
             ->where('start_at', '>=', $from)
             ->where('start_at', '<=', $to)
-            ->delete();
+            ->get()
+            ->each->delete()
+            ->count();
     }
 
     /** @return array{0: CarbonImmutable, 1: CarbonImmutable} */

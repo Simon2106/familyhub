@@ -9,6 +9,7 @@ use App\Models\Meal;
 use App\Models\Member;
 use App\Models\PointEntry;
 use App\Models\RecipeRating;
+use App\Services\Calendar\EventWindow;
 use App\Services\Countdowns\CountdownBoard;
 use App\Services\Points\PointsLedger;
 use Carbon\CarbonImmutable;
@@ -187,16 +188,10 @@ class WeeklySummary
         $tz = $household->displayTimezone();
         $end = $weekStart->addDays(6);
 
-        $events = Event::query()
-            ->notCancelled()
-            ->overlapping($weekStart->startOfDay(), $end->endOfDay())
-            ->whereHas('calendar', fn ($q) => $q
-                ->where('is_visible', true)
-                ->whereHas('account', fn ($a) => $a->where('household_id', $household->id)))
-            ->with('calendar.member')
-            ->orderBy('start_at')
-            ->limit(200)
-            ->get();
+        $events = app(EventWindow::class)
+            ->between($household, $weekStart->startOfDay(), $end->endOfDay(), limit: 200)
+            ->sortBy('start_at')
+            ->values();
 
         $planned = Meal::query()
             ->where('household_id', $household->id)

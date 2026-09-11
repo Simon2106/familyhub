@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Event;
+use App\Services\Calendar\EventWindow;
 use App\Models\Household;
 use App\Services\Notifications\NeedsAttention;
 use Illuminate\Support\Carbon;
@@ -147,19 +148,16 @@ new #[Layout('layouts::app')] class extends Component
         $from = $this->household()->todayLocal();
         $to = $from->addDays(self::HORIZON);
 
-        $events = Event::query()
-            ->notCancelled()
-            ->overlapping($from, $to)
-            ->whereHas('calendar', function ($q) {
-                $q->where('is_visible', true);
-
-                if ($this->memberFilter !== '') {
-                    $q->where('member_id', $this->memberFilter);
-                }
-            })
-            ->with('calendar.member')
-            ->orderBy('start_at')
-            ->get();
+        // Occurrences rather than rows: a weekly training belongs on every
+        // week's agenda, not only the first.
+        $events = app(EventWindow::class)->between(
+            $this->household(),
+            $from,
+            $to,
+            fn ($query) => $this->memberFilter !== ''
+                ? $query->whereHas('calendar', fn ($q) => $q->where('member_id', $this->memberFilter))
+                : null,
+        )->sortBy('start_at')->values();
 
         return collect(range(0, self::HORIZON - 1))
             ->mapWithKeys(function (int $i) use ($from, $events) {

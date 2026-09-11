@@ -3,14 +3,13 @@
 namespace App\Services\Notifications;
 
 use App\Models\Event;
+use App\Models\EventOccurrence;
 use App\Models\Household;
 use App\Models\Place;
 use App\Models\ReminderRule;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
-use Sabre\VObject\Recur\RRuleIterator;
-use Throwable;
 
 /**
  * What a set of rules would tell somebody, and when.
@@ -22,6 +21,9 @@ use Throwable;
  */
 class ReminderEngine
 {
+    /** A bound on one series, so a daily rule cannot fill a preview. */
+    public const MAX_OCCURRENCES = 200;
+
     /** How far ahead a preview will look before giving up. */
     public const PREVIEW_DAYS = 120;
 
@@ -128,7 +130,7 @@ class ReminderEngine
         $out = [];
 
         foreach ($events as $event) {
-            $occurrences = $this->occurrences($event, $from->subMinutes(5), $to->addMinutes($lead));
+            $occurrences = $this->occurrencesOf($event, $from->subMinutes(5), $to->addMinutes($lead));
 
             // "This one, not the series." A repeating event picked without
             // ticking "and future repeats" means the next occurrence after
@@ -243,51 +245,24 @@ class ReminderEngine
     /**
      * When this event actually happens, inside the window.
      *
-     * Recurring events are stored as one row carrying an RRULE — the sync does
-     * not expand them — so a weekly training has a single row sitting at its
-     * first occurrence. For reminders that has to be expanded or the family
-     * gets told about football once, in September, forever.
+     * Read from event_occurrences rather than walked from the RRULE here.
+     * This used to expand the rule itself, which worked but meant two pieces
+     * of code deciding what a repeating event does — and only one of them
+     * knew about EXDATEs or edited occurrences.
      *
      * @return list<CarbonImmutable>
      */
-    protected function occurrences(Event $event, CarbonImmutable $from, CarbonImmutable $to): array
+    protected function occurrencesOf(Event $event, CarbonImmutable $from, CarbonImmutable $to): array
     {
-        $start = CarbonImmutable::parse($event->start_at)->utc();
-
-        if (blank($event->rrule)) {
-            return $start->betweenIncluded($from, $to) ? [$start] : [];
-        }
-
-        try {
-            $iterator = new RRuleIterator((string) $event->rrule, $start->toDateTime());
-        } catch (Throwable) {
-            // A rule we cannot read is treated as a single event rather than
-            // as a reason to send nothing at all.
-            return $start->betweenIncluded($from, $to) ? [$start] : [];
-        }
-
-        $out = [];
-
-        try {
-            $iterator->fastForward($from->toDateTime());
-
-            // A bound, not a target: an unbounded daily rule over a long
-            // preview window would otherwise walk forever.
-            while ($iterator->valid() && count($out) < 200) {
-                $moment = CarbonImmutable::instance($iterator->current())->utc();
-
-                if ($moment->greaterThan($to)) {
-                    break;
-                }
-
-                $out[] = $moment;
-                $iterator->next();
-            }
-        } catch (Throwable) {
-            return [];
-        }
-
-        return $out;
+        return EventOccurrence::query()
+            ->where(fn ($q) => $q->where('event_id', $event->id)->orWhere('series_event_id', $event->id))
+            ->where('starts_at', '>=', $from)
+            ->where('starts_at', '<=', $to)
+            ->orderBy('starts_at')
+            ->limit(self::MAX_OCCURRENCES)
+            ->pluck('starts_at')
+            ->map(fn ($m) => CarbonImmutable::parse($m)->utc())
+            ->all();
     }
 
     /** Whether an event happens at a place, by the names that place answers to. */

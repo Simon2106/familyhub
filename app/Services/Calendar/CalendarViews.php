@@ -29,7 +29,10 @@ class CalendarViews
 
     public const DAY_TO = 22;
 
-    public function __construct(protected SchoolCalendar $schools) {}
+    public function __construct(
+        protected SchoolCalendar $schools,
+        protected EventWindow $window,
+    ) {}
 
     /**
      * A month, as rows of seven days.
@@ -181,16 +184,11 @@ class CalendarViews
     /** @return Collection<int, Event> */
     protected function events(Household $household, CarbonImmutable $from, CarbonImmutable $to): Collection
     {
-        return Event::query()
-            ->notCancelled()
-            ->overlapping($from, $to)
-            ->whereHas('calendar', fn ($q) => $q
-                ->where('is_visible', true)
-                ->whereHas('account', fn ($a) => $a->where('household_id', $household->id)))
-            ->with(['calendar.member', 'members'])
-            ->orderBy('all_day', 'desc')
-            ->orderBy('start_at')
-            ->get();
+        // Occurrences, not rows: a weekly training is one row sitting at its
+        // first Friday, and asking events directly showed it once a year.
+        return $this->window->between($household, $from, $to)
+            ->sortBy([['all_day', 'desc'], ['start_at', 'asc']])
+            ->values();
     }
 
     /**

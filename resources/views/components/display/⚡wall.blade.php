@@ -3,6 +3,7 @@
 use App\Models\CaptureItem;
 use App\Models\ChecklistItem;
 use App\Models\Event;
+use App\Services\Calendar\EventWindow;
 use App\Models\Household;
 use App\Models\Meal;
 use App\Services\PhotoLibrary;
@@ -72,15 +73,13 @@ new #[Layout('layouts::display')] class extends Component
         $to = $from->addDays(self::HORIZON);
         $today = $this->household()->todayLocal();
 
-        $events = Event::query()
-            ->notCancelled()
-            ->overlapping($from, $to)
-            ->whereHas('calendar', fn ($q) => $q->where('is_visible', true))
-            // Eager loaded so bucketing below never touches the database again.
-            ->with(['calendar', 'members'])
-            ->orderBy('all_day', 'desc')
-            ->orderBy('start_at')
-            ->get();
+        // Occurrences rather than rows, so a weekly training is on the wall
+        // every week instead of once. Eager loaded by EventWindow, so the
+        // bucketing below never touches the database again.
+        $events = app(EventWindow::class)
+            ->between($this->household(), $from, $to)
+            ->sortBy([['all_day', 'desc'], ['start_at', 'asc']])
+            ->values();
 
         $days = [];
 
@@ -525,14 +524,10 @@ new #[Layout('layouts::display')] class extends Component
     {
         $now = $this->household()->nowLocal();
 
-        return Event::query()
-            ->notCancelled()
-            ->whereHas('calendar', fn ($q) => $q->where('is_visible', true))
-            ->where('start_at', '>=', $now)
-            ->where('start_at', '<=', $now->endOfDay())
-            ->with('calendar.member')
-            ->orderBy('start_at')
-            ->first();
+        return app(EventWindow::class)
+            ->between($this->household(), $now, $now->endOfDay())
+            ->sortBy('start_at')
+            ->first(fn ($event) => $event->start_at->greaterThanOrEqualTo($now));
     }
 
     #[Computed]

@@ -7,6 +7,7 @@ use App\Models\CaptureItem;
 use App\Models\ChecklistItem;
 use App\Models\Chore;
 use App\Models\Event;
+use App\Models\EventOccurrence;
 use App\Models\Household;
 use App\Models\Meal;
 use App\Models\Member;
@@ -14,6 +15,7 @@ use App\Models\Place;
 use App\Models\Recipe;
 use App\Models\Reward;
 use App\Models\Routine;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -106,9 +108,50 @@ class HouseholdSearch
         return $score;
     }
 
+    /**
+     * The date to show against each event found.
+     *
+     * The occurrence a person searching would have in mind: the one inside
+     * the dates they asked about, or failing that the next one from today —
+     * and only failing both, the series' own first, which is the honest
+     * answer for something that has finished.
+     *
+     * @param  Collection<int, Event>  $events
+     * @return array<int, CarbonImmutable>
+     */
+    protected function searchableDates(Collection $events, SearchQuery $query): array
+    {
+        if ($events->isEmpty()) {
+            return [];
+        }
+
+        $rows = EventOccurrence::query()
+            ->whereIn('series_event_id', $events->pluck('id'))
+            ->when($query->hasDates(), fn ($q) => $q
+                ->where('starts_at', '>=', $query->from->startOfDay())
+                ->where('starts_at', '<=', $query->to->endOfDay()))
+            ->orderBy('starts_at')
+            ->get();
+
+        $today = CarbonImmutable::now()->startOfDay();
+        $out = [];
+
+        foreach ($rows->groupBy('series_event_id') as $seriesId => $occurrences) {
+            $next = $occurrences->first(fn (EventOccurrence $o) => $o->starts_at->greaterThanOrEqualTo($today));
+
+            $out[(int) $seriesId] = ($next ?? $occurrences->last())->starts_at;
+        }
+
+        return $out;
+    }
+
     /** @return list<SearchResult> */
     protected function events(SearchQuery $query, Household $household): array
     {
+        // One result per thing, not one per Friday: a search for "football"
+        // should offer the training, once. But the date shown has to be an
+        // occurrence rather than the series' first, or a weekly event answers
+        // every search with a date from whenever it was first put in.
         $events = Event::query()
             ->whereHas('calendar.account', fn ($q) => $q->where('household_id', $household->id))
             ->where(function (Builder $q) use ($query) {
@@ -116,12 +159,15 @@ class HouseholdSearch
                 $q->orWhereHas('members', fn ($m) => $this->anyTerm($m, $query, ['name']));
             })
             ->when($query->hasDates(), fn ($q) => $q
-                ->where('start_at', '>=', $query->from->startOfDay())
-                ->where('start_at', '<=', $query->to->endOfDay()))
+                ->whereHas('occurrences', fn ($o) => $o
+                    ->where('starts_at', '>=', $query->from->startOfDay())
+                    ->where('starts_at', '<=', $query->to->endOfDay())))
             ->with('members')
             ->orderByDesc('start_at')
             ->limit(self::PER_TYPE)
             ->get();
+
+        $dates = $this->searchableDates($events, $query);
 
         return $events->map(fn (Event $event) => new SearchResult(
             type: 'event',
@@ -131,7 +177,7 @@ class HouseholdSearch
                 $event->location,
                 $event->notes,
             ]),
-            date: $event->start_at?->timezone($household->displayTimezone()),
+            date: ($dates[$event->id] ?? $event->start_at)?->timezone($household->displayTimezone()),
             url: route('app', ['event' => $event->id]),
             opens: ['edit-event' => $event->id],
         ))->all();
