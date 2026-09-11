@@ -12,7 +12,7 @@
  * entries.
  */
 
-const CACHE = 'familyhub-static-v4';
+const CACHE = 'familyhub-static-v5';
 
 const SHELL = [
     '/offline.html',
@@ -23,6 +23,10 @@ const SHELL = [
     // nobody wants the wall falling back to a different face.
     '/fonts/caveat-latin.woff2',
     '/fonts/caveat-latin-ext.woff2',
+    // The screensaver's face. The wall shows the screensaver more than it
+    // shows anything else, so this one especially has to survive a bad night
+    // for the router.
+    '/fonts/inter-latin.woff2',
 ];
 
 /** Only these are ever cached. Everything else goes to the network. */

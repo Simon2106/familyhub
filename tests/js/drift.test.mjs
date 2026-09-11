@@ -65,3 +65,51 @@ test('the room is what is left over', () => {
         y: 820,
     });
 });
+
+/* ------------------------- a corner each, no overlap ------------------- */
+
+/**
+ * Three blocks over a photograph, each in its own corner.
+ *
+ * The reason they cannot collide is that the room each is given is a small
+ * fraction of the screen — not that anything checks at paint time. This is
+ * the arithmetic behind that claim.
+ */
+test('a block never wanders more than its share of the screen', () => {
+    const share = 0.06;
+    const room = { x: 1920 * share, y: 1080 * share };
+
+    let furthestX = 0;
+    let furthestY = 0;
+
+    // Two hours, a step every ten seconds.
+    for (let ms = 0; ms <= 7_200_000; ms += 10_000) {
+        const at = driftAt(ms, room);
+
+        furthestX = Math.max(furthestX, Math.abs(at.x - room.x / 2));
+        furthestY = Math.max(furthestY, Math.abs(at.y - room.y / 2));
+    }
+
+    assert.ok(furthestX <= room.x / 2 + 0.001, `x stayed within ${room.x / 2}`);
+    assert.ok(furthestY <= room.y / 2 + 0.001, `y stayed within ${room.y / 2}`);
+
+    // Which is small enough that two blocks half a screen apart cannot meet.
+    assert.ok(room.x < 1920 / 4);
+});
+
+test('the three paths do not travel together', () => {
+    const room = { x: 100, y: 100 };
+
+    const clock = driftAt(300_000, room, {});
+    const events = driftAt(300_000, room, { periodX: 690_000, periodY: 870_000, phase: Math.PI });
+    const weather = driftAt(300_000, room, { periodX: 810_000, periodY: 960_000, phase: Math.PI / 4 });
+
+    // If they shared a path the whole screen would read as sliding.
+    assert.notEqual(Math.round(clock.x), Math.round(events.x));
+    assert.notEqual(Math.round(events.x), Math.round(weather.x));
+});
+
+test('peak speed stays slow enough that nobody watches it move', () => {
+    // The widest room a block is given, over the shortest period used.
+    assert.ok(peakSpeed(1920 * 0.06, 600_000) < 1, 'under a pixel a second');
+});

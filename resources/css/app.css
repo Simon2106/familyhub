@@ -25,6 +25,9 @@
      * device's own handwriting face, then a rounded one, then the ordinary
      * sans, so a note is never illegible while it waits.
      */
+    /* The screensaver and the wall's clock. Everything else keeps the sans. */
+    --font-display: 'Inter', var(--font-sans);
+
     --font-note: 'Caveat', 'Bradley Hand', 'Segoe Print', 'Chalkboard SE', 'Comic Neue',
         'Comic Sans MS', ui-rounded, 'SF Pro Rounded', var(--font-sans);
 }
@@ -71,6 +74,27 @@
  * unicode-range keeps the larger subset off any page that never needs it,
  * and means the browser downloads neither unless a note is actually drawn.
  */
+/*
+ * Inter, for the screensaver and the wall's own clock.
+ *
+ * A display face rather than a body one: it is used where numerals are large
+ * and read at a distance, and nowhere else — the rest of the app keeps the
+ * system stack it has always had, which costs nothing to load and looks right
+ * on every device.
+ *
+ * Latin only. A clock has ten glyphs in it.
+ */
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 300 800;
+    font-display: swap;
+    src: url('/fonts/inter-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+        U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+        U+FEFF, U+FFFD;
+}
+
 @font-face {
     font-family: 'Caveat';
     font-style: normal;
@@ -373,6 +397,24 @@
      * Touch only — no scrollbar, momentum, and each note snaps under the
      * finger so a swipe never leaves half of one showing.
      */
+    /*
+     * The screensaver's face, and the wall's clock.
+     *
+     * tnum on anything that counts: without it a proportional 1 is narrower
+     * than a 0, so the whole clock twitches sideways every time a minute
+     * turns over — on a panel somebody glances at, that movement is the only
+     * thing they see.
+     */
+    .display-face {
+        font-family: var(--font-display);
+    }
+
+    .display-digits {
+        font-family: var(--font-display);
+        font-feature-settings: 'tnum' 1;
+        font-variant-numeric: tabular-nums;
+    }
+
     .note-rail {
         overflow-x: auto;
         overflow-y: hidden;

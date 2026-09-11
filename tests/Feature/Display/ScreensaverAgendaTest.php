@@ -350,4 +350,46 @@ class ScreensaverAgendaTest extends TestCase
 
         $this->assertSame('photos', $this->household->fresh()->screensaverStyle());
     }
+
+    /* ------------------------------ the face --------------------------- */
+
+    /**
+     * The clock is the one thing on this screen that changes while somebody
+     * is looking at it. Without tabular figures a 1 is narrower than a 0, so
+     * the whole clock twitches sideways every minute — which on a panel
+     * nobody is watching is the only movement they ever notice.
+     */
+    #[Test]
+    public function the_clock_is_drawn_in_tabular_figures(): void
+    {
+        $this->style('photos');
+
+        $html = Livewire::test('display.wall', ['token' => 'x'])->html();
+
+        $this->assertStringContainsString('display-digits', $html);
+
+        // And on the wall itself, which is on screen all day.
+        $this->style('clock');
+
+        $this->assertStringContainsString(
+            'display-digits',
+            Livewire::test('display.wall', ['token' => 'x'])->html(),
+        );
+    }
+
+    #[Test]
+    public function every_block_over_a_photograph_has_a_path_of_its_own(): void
+    {
+        $this->style('photos');
+
+        $html = Livewire::test('display.wall', ['token' => 'x'])->html();
+
+        foreach (['saverClock', 'saverEvents', 'saverWeather'] as $ref) {
+            $this->assertStringContainsString('x-ref="'.$ref.'"', $html);
+        }
+
+        foreach (['driftClock', 'driftEvents', 'driftWeather'] as $offset) {
+            $this->assertStringContainsString($offset.'.x', $html);
+        }
+    }
 }

@@ -513,6 +513,23 @@ new #[Layout('layouts::display')] class extends Component
         ];
     }
 
+    /**
+     * How much of the screen a drifting block may wander across.
+     *
+     * Small on purpose. Each block keeps to its own corner, and the reason
+     * they cannot collide is that their rooms do not overlap — not that
+     * anything checks.
+     */
+    public const SAVER_DRIFT_SHARE = 0.06;
+
+    /**
+     * How close to the glass a drifting block may come.
+     *
+     * The same as the padding it is laid out with: a block allowed to reach
+     * the edge of the screen is one whose letters get half-eaten by the bezel.
+     */
+    public const SAVER_EDGE_MARGIN = 40;
+
     /** As many as fit on a wall and still read from the other side of a room. */
     public const SAVER_LINES = 6;
 
@@ -656,6 +673,11 @@ new #[Layout('layouts::display')] class extends Component
         darkStart: @js($wall['darkStart']),
         darkEnd: @js($wall['darkEnd']),
         drift: { x: 0, y: 0 },
+
+        /* One path each, so the three never travel as a block. */
+        driftClock: { x: 0, y: 0 },
+        driftEvents: { x: 0, y: 0 },
+        driftWeather: { x: 0, y: 0 },
         tz: @js($tz),
         weekDates: @js(array_column($week, 'date')),
 
@@ -829,17 +851,120 @@ new #[Layout('layouts::display')] class extends Component
             }
         },
 
+        /*
+         * The wander, one path per block.
+         *
+         * Over a photograph the burn-in argument is already answered by the
+         * picture changing — but a panel showing a still image of anything is
+         * a panel with that image faintly in it by Christmas, and the text is
+         * the brightest thing on the screen. So everything moves.
+         *
+         * Each block is given a corner of the screen to wander inside and
+         * never leaves it, which is what keeps them from colliding: they
+         * cannot overlap if their rooms do not. The periods differ so the
+         * three are never in step, which would read as the whole screen
+         * sliding rather than three things drifting.
+         */
         stepDrift() {
-            if (!this.idle || this.saverStyle === 'photos') return;
+            if (!this.idle) return;
 
-            const clock = this.$refs.driftingClock;
             const screen = this.$refs.screensaver;
 
-            if (!clock || !screen) return;
+            if (!screen) return;
 
-            const room = window.familyhubDrift.roomFor(screen.getBoundingClientRect(), clock.getBoundingClientRect());
+            const frame = screen.getBoundingClientRect();
+            const elapsed = Date.now() - this.idleSince;
 
-            this.drift = window.familyhubDrift.driftAt(Date.now() - this.idleSince, room);
+            if (this.saverStyle === 'photos') {
+                this.drift = { x: 0, y: 0 };
+
+                this.driftClock = this.driftWithin(
+                    frame, this.$refs.saverClock, elapsed, {}, this.driftClock,
+                );
+                this.driftEvents = this.driftWithin(
+                    frame, this.$refs.saverEvents, elapsed,
+                    { periodX: 690_000, periodY: 870_000, phase: Math.PI },
+                    this.driftEvents,
+                );
+                this.driftWeather = this.driftWithin(
+                    frame, this.$refs.saverWeather, elapsed,
+                    { periodX: 810_000, periodY: 960_000, phase: Math.PI / 4 },
+                    this.driftWeather,
+                );
+
+                return;
+            }
+
+            const clock = this.$refs.driftingClock;
+
+            if (!clock) return;
+
+            /* The same margin the blocks over a photograph keep: a clock this
+               size is only a few hundred pixels from the edge to begin with,
+               and one that reaches the glass has its descenders in the bezel. */
+            const inset = @js(self::SAVER_EDGE_MARGIN);
+            const inner = {
+                width: Math.max(0, frame.width - inset * 2),
+                height: Math.max(0, frame.height - inset * 2),
+            };
+
+            const room = window.familyhubDrift.roomFor(inner, clock.getBoundingClientRect());
+            const at = window.familyhubDrift.driftAt(elapsed, room);
+
+            this.drift = { x: at.x + inset, y: at.y + inset };
+        },
+
+        /*
+         * How far one block may wander from where it is pinned.
+         *
+         * A fraction of whatever space its corner has spare, rather than the
+         * whole of it: a block that could cross the screen would meet the
+         * others in the middle, and the point of this is that it never has to
+         * be asked whether they collide.
+         */
+        driftWithin(frame, element, elapsed, options, current) {
+            if (!element) return { x: 0, y: 0 };
+
+            const box = element.getBoundingClientRect();
+
+            /* Where the block sits with no transform on it. The rect we just
+               measured has the current offset baked in, so it has to come
+               back out or each step would compound the last. */
+            const pinned = {
+                left: box.left - current.x,
+                right: box.right - current.x,
+                top: box.top - current.y,
+                bottom: box.bottom - current.y,
+            };
+
+            const share = @js(self::SAVER_DRIFT_SHARE);
+
+            const wanted = window.familyhubDrift.driftAt(
+                elapsed,
+                { x: frame.width * share, y: frame.height * share },
+                options,
+            );
+
+            /* Centred on where it is pinned, so it wanders both ways out of
+               its corner rather than only inwards — then clamped to the frame,
+               because a block pinned against an edge has nowhere to go that
+               way and must not be pushed off it. */
+            const offset = {
+                x: wanted.x - (frame.width * share) / 2,
+                y: wanted.y - (frame.height * share) / 2,
+            };
+
+            const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+
+            /* Against the padded area rather than the glass. Clamping to the
+               frame lets a block drift until it is flush with the edge of the
+               screen, which on a panel in a bezel means letters half-eaten. */
+            const inset = @js(self::SAVER_EDGE_MARGIN);
+
+            return {
+                x: clamp(offset.x, frame.left + inset - pinned.left, frame.right - inset - pinned.right),
+                y: clamp(offset.y, frame.top + inset - pinned.top, frame.bottom - inset - pinned.bottom),
+            };
         },
 
         armIdleTimer() {
@@ -866,7 +991,9 @@ new #[Layout('layouts::display')] class extends Component
     {{-- ============================= HEADER ============================= --}}
     <header class="flex shrink-0 items-baseline justify-between gap-6 px-6 pt-4 pb-3 sm:px-8">
         <div class="flex items-baseline gap-4">
-            <span class="text-4xl font-bold tabular-nums" x-text="clock">&nbsp;</span>
+            {{-- The same face as the screensaver, and tnum for the same
+                 reason: this one is on screen all day. --}}
+            <span class="display-digits text-4xl font-bold" x-text="clock">&nbsp;</span>
 
             <div x-show="view === 'week'">
                 <p class="text-xl font-semibold">This week</p>
@@ -1844,7 +1971,10 @@ new #[Layout('layouts::display')] class extends Component
             {{-- Weather, top right. --}}
             @if ($this->weather)
                 <div class="absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent p-10 text-white">
-                    <p class="flex items-center justify-end gap-3 text-3xl drop-shadow">
+                    <p x-ref="saverWeather"
+                       class="display-face ml-auto flex w-fit items-center gap-3 text-3xl drop-shadow will-change-transform"
+                       :style="`transform: translate3d(${driftWeather.x}px, ${driftWeather.y}px, 0)`"
+                       style="transition: transform 200ms linear;">
                         <x-icon :name="$this->weather->icon()" class="size-9 shrink-0" />
                         <span>{{ $this->weather->description() }}</span>
                         <span class="tabular-nums font-semibold">{{ $this->weather->round($this->weather->temperature) }}&deg;</span>
@@ -1853,11 +1983,17 @@ new #[Layout('layouts::display')] class extends Component
             @endif
 
             <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/60 to-transparent pt-24">
-                <div class="flex items-end justify-between gap-10 p-10">
+                {{-- items-end, and the clock is the tall one: the events sit
+                     on the same baseline and are pushed out of its way by the
+                     flex rather than by anything having to know its height. --}}
+                <div class="flex items-end justify-between gap-12 p-10">
                     {{-- Clock, bottom left. --}}
-                    <div class="shrink-0 text-white drop-shadow">
-                        <p class="text-8xl leading-none font-bold tabular-nums" x-text="clock"></p>
-                        <p class="mt-2 text-2xl text-white/85"
+                    <div x-ref="saverClock"
+                         class="shrink-0 text-white drop-shadow will-change-transform"
+                         :style="`transform: translate3d(${driftClock.x}px, ${driftClock.y}px, 0)`"
+                         style="transition: transform 200ms linear;">
+                        <p class="display-digits text-[18rem] leading-[0.85] font-bold" x-text="clock"></p>
+                        <p class="display-face mt-4 text-3xl text-white/85"
                            x-text="now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz })"></p>
 
                         {{-- The caption of whichever photograph is showing. --}}
@@ -1867,7 +2003,10 @@ new #[Layout('layouts::display')] class extends Component
                     </div>
 
                     {{-- Today, bottom right. --}}
-                    <div class="min-w-0 max-w-3xl text-right text-white drop-shadow">
+                    <div x-ref="saverEvents"
+                         class="display-face min-w-0 max-w-2xl text-right text-white drop-shadow will-change-transform"
+                         :style="`transform: translate3d(${driftEvents.x}px, ${driftEvents.y}px, 0)`"
+                         style="transition: transform 200ms linear;">
                         @if ($agenda['label'])
                             <p class="mb-1 text-xl font-semibold tracking-wide text-white/75 uppercase">
                                 {{ $agenda['label'] }}
@@ -1914,11 +2053,11 @@ new #[Layout('layouts::display')] class extends Component
                  same pixels all night. Positioned rather than centred: the
                  drift is a translate within the room it has. --}}
             <div x-ref="driftingClock"
-                 class="absolute top-0 left-0 p-10 text-white will-change-transform"
+                 class="display-face absolute top-0 left-0 p-10 text-white will-change-transform"
                  :style="`transform: translate3d(${drift.x}px, ${drift.y}px, 0)`"
                  style="transition: transform 200ms linear;">
-                <p class="text-[9rem] leading-none font-bold tabular-nums" x-text="clock"></p>
-                <p class="mt-3 text-3xl text-white/60"
+                <p class="display-digits text-[18rem] leading-[0.85] font-bold" x-text="clock"></p>
+                <p class="display-face mt-4 text-3xl text-white/60"
                    x-text="now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz })"></p>
 
                 @if ($wall['style'] === 'today')
