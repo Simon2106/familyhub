@@ -45,6 +45,11 @@ class SyncPhotos extends Command
         try {
             $photos = $album->photos($url, (int) $this->option('limit'));
         } catch (Throwable $e) {
+            // Recorded rather than only printed: the photos page shows when
+            // the album was last read, and "it has not worked since Tuesday"
+            // is the thing worth being able to see there.
+            $household->recordPhotoSync(error: $e->getMessage());
+
             $this->components->error($e->getMessage());
 
             return self::FAILURE;
@@ -61,6 +66,18 @@ class SyncPhotos extends Command
                 $fetched++;
             }
         }
+
+        // The name is asked for once a sync rather than once a photograph;
+        // a failure to get it is not a failure to sync.
+        $name = null;
+
+        try {
+            $name = $album->name($url);
+        } catch (Throwable) {
+            // An album with no title, or Apple in a mood. Neither matters.
+        }
+
+        $household->recordPhotoSync($name);
 
         $this->components->info($fetched === 0
             ? 'Nothing new in the album.'

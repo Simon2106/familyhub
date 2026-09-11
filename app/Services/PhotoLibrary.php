@@ -28,6 +28,9 @@ class PhotoLibrary
 
     public const RECENT_MONTHS = 6;
 
+    /** The closest two showings of the same favourite are ever allowed to be. */
+    public const FAVOURITE_EVERY = 4;
+
     /**
      * @return list<string> public URLs, shuffled so the wall does not open on
      *                      the same photograph every time it goes idle
@@ -67,11 +70,50 @@ class PhotoLibrary
         // point, not the order within either half.
         $wanted = (int) round($limit * self::RECENT_SHARE);
 
-        return $recent->shuffle()->take($wanted)
+        $showing = $recent->shuffle()->take($wanted)
             ->merge($older->shuffle()->take($limit - min($wanted, $recent->count())))
             ->shuffle()
             ->take($limit)
             ->values();
+
+        return $this->favourEach($showing, $all, $limit);
+    }
+
+    /**
+     * Favourites, more often.
+     *
+     * A second copy of each favourite, spread through the running order
+     * rather than clumped — which is what "more often" means to somebody
+     * watching: it comes round again sooner, not twice in a row.
+     *
+     * Recency already decides most of the mix; this is the family overruling
+     * it for the handful of pictures everybody stops to look at.
+     *
+     * @param  Collection<int, Photo>  $showing
+     * @param  Collection<int, Photo>  $all
+     * @return Collection<int, Photo>
+     */
+    protected function favourEach(Collection $showing, Collection $all, int $limit): Collection
+    {
+        $favourites = $all->filter(fn (Photo $photo) => $photo->is_favourite)->values();
+
+        if ($favourites->isEmpty() || $showing->isEmpty()) {
+            return $showing;
+        }
+
+        $out = $showing->all();
+
+        // Every few, so one comes round at a predictable sort of interval
+        // without ever landing next to itself.
+        $every = max(self::FAVOURITE_EVERY, (int) ceil(count($out) / max(1, $favourites->count() * 2)));
+
+        foreach ($favourites->shuffle()->values() as $index => $favourite) {
+            $at = min(count($out), ($index + 1) * $every);
+
+            array_splice($out, $at, 0, [$favourite]);
+        }
+
+        return collect($out)->take($limit + $favourites->count())->values();
     }
 
     /**

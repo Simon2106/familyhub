@@ -314,6 +314,38 @@ class Household extends Model
         ]);
     }
 
+    /** What the shared album is called, as Apple reports it. */
+    public function photoAlbumName(): ?string
+    {
+        return filled($this->settings['photo_album_name'] ?? null)
+            ? (string) $this->settings['photo_album_name']
+            : null;
+    }
+
+    /** When the album was last read. Null means never. */
+    public function photosSyncedAt(): ?CarbonImmutable
+    {
+        $at = $this->settings['photos_synced_at'] ?? null;
+
+        return filled($at) ? CarbonImmutable::parse((string) $at) : null;
+    }
+
+    public function recordPhotoSync(?string $name = null, ?string $error = null): void
+    {
+        $this->putSettings([
+            'photos_synced_at' => now()->toIso8601String(),
+            'photo_album_name' => $name ?? $this->photoAlbumName(),
+            'photos_sync_error' => $error,
+        ]);
+    }
+
+    public function photoSyncError(): ?string
+    {
+        return filled($this->settings['photos_sync_error'] ?? null)
+            ? (string) $this->settings['photos_sync_error']
+            : null;
+    }
+
     /** A public iCloud shared album the screensaver pulls from. */
     public function photoAlbumUrl(): ?string
     {

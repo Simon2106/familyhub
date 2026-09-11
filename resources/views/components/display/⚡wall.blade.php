@@ -1862,15 +1862,10 @@ new #[Layout('layouts::display')] class extends Component
             <livewire:home.panel />
         </div>
 
-        {{-- ------------------- PLACEHOLDERS FOR LATER PHASES ------------ --}}
-        @foreach (['photos' => 'Photo library'] as $key => $label)
-            <div x-show="tab === '{{ $key }}'" x-cloak class="grid h-full place-items-center">
-                <div class="text-center">
-                    <p class="text-xl font-semibold text-slate-400">{{ $label }}</p>
-                    <p class="mt-1 text-sm text-slate-400 dark:text-slate-400">Arrives in a later phase.</p>
-                </div>
-            </div>
-        @endforeach
+        {{-- --------------------------- PHOTOS --------------------------- --}}
+        <div x-show="tab === 'photos'" x-cloak class="h-full min-h-0">
+            <livewire:photos.page :on-wall="true" />
+        </div>
     </div>
 
     {{-- Search, as an overlay rather than a permanent field: the header has

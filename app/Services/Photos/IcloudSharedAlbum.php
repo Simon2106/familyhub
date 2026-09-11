@@ -93,6 +93,28 @@ class IcloudSharedAlbum
     }
 
     /**
+     * What the album is called, as far as Apple will say.
+     *
+     * The stream carries the owner's name for it. Not always — a shared album
+     * made in a hurry has no title — so this is something to show when it is
+     * there rather than something to rely on.
+     */
+    public function name(string $albumUrl): ?string
+    {
+        $token = $this->token($albumUrl);
+
+        if ($token === null) {
+            return null;
+        }
+
+        [, $stream] = $this->stream($token);
+
+        $name = trim((string) ($stream['streamName'] ?? ''));
+
+        return $name !== '' ? $name : null;
+    }
+
+    /**
      * The album's own listing, following Apple's partition redirect.
      *
      * @return array{0: string, 1: array<string, mixed>}
