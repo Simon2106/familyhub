@@ -17,7 +17,7 @@ use RuntimeException;
  * afternoon would otherwise start showing broken images an hour in, and a
  * household with no internet would show none at all.
  */
-class IcloudSharedAlbum
+class IcloudSharedAlbum implements SharedAlbum
 {
     /** Apple hands albums out across numbered partitions. */
     public const BASE = 'https://p%02d-sharedstreams.icloud.com/%s/sharedstreams/';

@@ -49,6 +49,12 @@ new #[Layout('layouts::app')] class extends Component
     /** A public iCloud shared album the screensaver pulls from. */
     public string $photoAlbumUrl = '';
 
+    /** Set while the album is being read from this page. */
+    public bool $syncingPhotos = false;
+
+    /** What went wrong reading it just now, as opposed to overnight. */
+    public string $photoProblem = '';
+
     public string $darkStart = '21:00';
 
     public string $darkEnd = '06:30';
@@ -342,6 +348,7 @@ new #[Layout('layouts::app')] class extends Component
             'doneRetentionDays' => 'required|integer|min:1|max:3650',
             'todoLeadDays' => 'required|integer|min:0|max:365',
             'binCalendarUrl' => 'nullable|string|max:2000',
+            'photoAlbumUrl' => 'nullable|string|max:2000',
             'screenOffStart' => 'required|date_format:H:i',
             'screenOffEnd' => 'required|date_format:H:i',
             'darkStart' => 'required|date_format:H:i',
@@ -350,6 +357,17 @@ new #[Layout('layouts::app')] class extends Component
             'screensaverStyle' => 'required|in:'.implode(',', array_keys(Household::SCREENSAVER_STYLES)),
             'mirrorCalendarId' => 'nullable|integer',
         ]);
+
+        // Both shapes of shared-album link are accepted: Apple moved the
+        // sharing pages to photos.icloud.com, and a household that copied
+        // theirs before that should not have to go and copy it again.
+        $this->photoAlbumUrl = trim($this->photoAlbumUrl);
+
+        if ($this->photoAlbumUrl !== '' && ! \App\Services\Photos\SharedAlbumLink::parse($this->photoAlbumUrl)) {
+            $this->addError('photoAlbumUrl', 'That is not a shared album link. It should look like https://photos.icloud.com/shared/album/… or https://www.icloud.com/sharedalbum/#B0…');
+
+            return;
+        }
 
         $household = Household::current();
 
@@ -370,6 +388,83 @@ new #[Layout('layouts::app')] class extends Component
         $household->setBinCalendarUrl($this->binCalendarUrl);
 
         $this->dispatch('saved', message: 'Household saved.');
+    }
+
+    /**
+     * Read the album now, without waiting for the hourly run.
+     *
+     * Inline rather than queued: somebody has just pasted a link and wants to
+     * know whether it works, and an answer now beats one in a minute.
+     */
+    public function syncPhotosNow(): void
+    {
+        $this->syncingPhotos = true;
+        $this->photoProblem = '';
+
+        $household = Household::current();
+
+        if (blank($household->photoAlbumUrl())) {
+            $this->photoProblem = 'Paste the album link and save it first.';
+            $this->syncingPhotos = false;
+
+            return;
+        }
+
+        try {
+            \Illuminate\Support\Facades\Artisan::call('familyhub:sync-photos');
+        } catch (\Throwable $e) {
+            report($e);
+
+            $this->photoProblem = 'That did not work: '.$e->getMessage();
+        }
+
+        $this->syncingPhotos = false;
+
+        // Both are memoised for the request, and the sync has just changed
+        // what they would say.
+        unset($this->photoSyncSummary, $this->photoSyncFailed);
+
+        $this->dispatch('saved', message: 'Album read.');
+    }
+
+    /**
+     * What the last run of the sync has to say for itself.
+     *
+     * One sentence rather than a row of fields: the only question being asked
+     * here is whether the wall is getting the photographs.
+     */
+    #[Computed]
+    public function photoSyncSummary(): string
+    {
+        $household = Household::current();
+
+        if (blank($household->photoAlbumUrl())) {
+            return 'No album saved yet.';
+        }
+
+        if ($error = $household->photoSyncError()) {
+            return 'Last try failed: '.$error;
+        }
+
+        $at = $household->photosSyncedAt();
+
+        if ($at === null) {
+            return 'Saved, but not read yet — tap Sync now.';
+        }
+
+        $count = $household->photoAlbumCount();
+
+        return 'Last read '.$at->diffForHumans(['parts' => 1])
+            .($count === null
+                ? ''
+                : ' · '.trans_choice('{0}no photographs|{1}:count photograph|[2,*]:count photographs', $count, ['count' => $count]))
+            .' · read hourly.';
+    }
+
+    #[Computed]
+    public function photoSyncFailed(): bool
+    {
+        return filled(Household::current()->photoSyncError());
     }
 
     public function edit(int $id): void
@@ -984,14 +1079,39 @@ new #[Layout('layouts::app')] class extends Component
                     @if ($screensaverStyle === 'photos')
                         <label class="mt-3 block">
                             <span class="block text-sm font-medium">iCloud shared album</span>
-                            <input wire:model="photoAlbumUrl" type="url" placeholder="https://www.icloud.com/sharedalbum/#B0…"
+                            <input wire:model="photoAlbumUrl" type="text" inputmode="url"
+                                   placeholder="https://photos.icloud.com/shared/album/…"
                                    class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
                             <span class="mt-1 block text-sm text-slate-500 dark:text-slate-400">
                                 Optional. Share an album publicly in Photos, paste the link here, and it is
-                                fetched overnight. Photographs are downloaded rather than linked, so the wall
-                                keeps showing them when the internet is out.
+                                read every hour. Photographs are downloaded rather than linked, so the wall
+                                keeps showing them when the internet is out. Older
+                                <span class="whitespace-nowrap">www.icloud.com/sharedalbum</span> links work too.
                             </span>
                         </label>
+                        @error('photoAlbumUrl') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+
+                        {{-- Whether it is actually working, which is the whole question. --}}
+                        <div class="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-slate-100 p-3 dark:bg-slate-800">
+                            <p @class([
+                                'min-w-0 flex-1 text-sm',
+                                'font-medium text-rose-600 dark:text-rose-400' => $this->photoSyncFailed,
+                                'text-slate-600 dark:text-slate-300' => ! $this->photoSyncFailed,
+                            ])>
+                                {{ $this->photoSyncSummary }}
+                            </p>
+
+                            <button type="button" wire:click="syncPhotosNow"
+                                    wire:loading.attr="disabled" wire:target="syncPhotosNow"
+                                    class="touch-target rounded-xl bg-white px-4 text-sm font-semibold disabled:opacity-40 dark:bg-slate-900">
+                                <span wire:loading.remove wire:target="syncPhotosNow">Sync now</span>
+                                <span wire:loading wire:target="syncPhotosNow">Reading…</span>
+                            </button>
+                        </div>
+
+                        @if ($photoProblem !== '')
+                            <p class="mt-2 text-sm font-medium text-rose-600 dark:text-rose-400">{{ $photoProblem }}</p>
+                        @endif
 
                         <a href="{{ route('photos') }}" wire:navigate
                            class="mt-2 inline-flex touch-target items-center font-semibold text-blue-600 dark:text-blue-400">

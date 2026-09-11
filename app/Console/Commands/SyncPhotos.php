@@ -5,7 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Household;
 use App\Models\Photo;
 use App\Services\PhotoLibrary;
-use App\Services\Photos\IcloudSharedAlbum;
+use App\Services\Photos\SharedAlbums;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
@@ -19,14 +19,24 @@ use Throwable;
  * Downloads rather than links. iCloud's asset URLs expire in about an hour, so
  * a wall left idle all afternoon would start showing broken images — and a
  * household whose internet is down would show none at all.
+ *
+ * The album is the master copy: a photograph taken out of it on somebody's
+ * phone comes off the wall on the next run. Uploads are left alone — those
+ * were put here deliberately and no album is going to vouch for them.
  */
 class SyncPhotos extends Command
 {
-    protected $signature = 'familyhub:sync-photos {--limit=200}';
+    /**
+     * The ceiling is high on purpose: a read that stops at the limit cannot
+     * tell what has been taken out of the album, so it prunes nothing, and a
+     * family album of a few hundred photographs should not quietly opt out of
+     * that.
+     */
+    protected $signature = 'familyhub:sync-photos {--limit=1000}';
 
     protected $description = 'Pull the iCloud shared album and register any loose photographs';
 
-    public function handle(IcloudSharedAlbum $album, PhotoLibrary $library): int
+    public function handle(SharedAlbums $albums, PhotoLibrary $library): int
     {
         $household = Household::current();
 
@@ -42,8 +52,20 @@ class SyncPhotos extends Command
             return self::SUCCESS;
         }
 
+        $album = $albums->for($url);
+
+        if ($album === null) {
+            $household->recordPhotoSync(error: 'That album link is not one iCloud recognises.');
+
+            $this->components->error('That album link is not one iCloud recognises.');
+
+            return self::FAILURE;
+        }
+
+        $limit = (int) $this->option('limit');
+
         try {
-            $photos = $album->photos($url, (int) $this->option('limit'));
+            $photos = $album->photos($url, $limit);
         } catch (Throwable $e) {
             // Recorded rather than only printed: the photos page shows when
             // the album was last read, and "it has not worked since Tuesday"
@@ -67,6 +89,8 @@ class SyncPhotos extends Command
             }
         }
 
+        $removed = $this->prune($household, $photos, $limit);
+
         // The name is asked for once a sync rather than once a photograph;
         // a failure to get it is not a failure to sync.
         $name = null;
@@ -77,13 +101,54 @@ class SyncPhotos extends Command
             // An album with no title, or Apple in a mood. Neither matters.
         }
 
-        $household->recordPhotoSync($name);
+        $household->recordPhotoSync($name, count: count($photos));
 
-        $this->components->info($fetched === 0
-            ? 'Nothing new in the album.'
-            : "Fetched {$fetched} from the album.");
+        $this->components->info(trim(sprintf(
+            '%s %s',
+            $fetched === 0 ? 'Nothing new in the album.' : "Fetched {$fetched} from the album.",
+            $removed === 0 ? '' : "Removed {$removed} no longer in it.",
+        )));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Forget photographs the album no longer holds.
+     *
+     * Two things are deliberately not pruned. A short read — one that came
+     * back at the limit — may only be the first page of a larger album, and
+     * an album that answers with nothing at all is far more likely to be a
+     * bad afternoon at Apple than a family deleting every photograph they
+     * own. Either would otherwise empty the wall.
+     *
+     * @param  list<array{id: string, url: string, caption: ?string, taken_at: ?string}>  $photos
+     */
+    protected function prune(Household $household, array $photos, int $limit): int
+    {
+        if ($photos === [] || count($photos) >= $limit) {
+            return 0;
+        }
+
+        $keep = array_column($photos, 'id');
+
+        $gone = Photo::where('household_id', $household->id)
+            ->where('source', 'icloud')
+            ->whereNotIn('external_id', $keep)
+            ->get();
+
+        foreach ($gone as $photo) {
+            try {
+                Storage::disk($photo->disk)->delete($photo->path);
+            } catch (Throwable $e) {
+                // The row is what the wall reads; a file left behind is
+                // untidy, not broken.
+                report($e);
+            }
+
+            $photo->delete();
+        }
+
+        return $gone->count();
     }
 
     protected function alreadyHave(Household $household, string $id): bool

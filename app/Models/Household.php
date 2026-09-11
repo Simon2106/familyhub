@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Exceptions\HouseholdNotProvisioned;
 use App\Services\PhotoLibrary;
+use App\Services\Photos\SharedAlbumLink;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -330,13 +331,29 @@ class Household extends Model
         return filled($at) ? CarbonImmutable::parse((string) $at) : null;
     }
 
-    public function recordPhotoSync(?string $name = null, ?string $error = null): void
+    /**
+     * What the last run of the sync found.
+     *
+     * The count is the album's, not the library's: it is the number that
+     * answers "is the wall seeing all of them?", which is the question
+     * somebody standing in /admin is actually asking.
+     */
+    public function recordPhotoSync(?string $name = null, ?string $error = null, ?int $count = null): void
     {
         $this->putSettings([
             'photos_synced_at' => now()->toIso8601String(),
             'photo_album_name' => $name ?? $this->photoAlbumName(),
             'photos_sync_error' => $error,
+            'photo_album_count' => $count ?? $this->photoAlbumCount(),
         ]);
+    }
+
+    /** How many photographs the album held when it was last read. */
+    public function photoAlbumCount(): ?int
+    {
+        $count = $this->settings['photo_album_count'] ?? null;
+
+        return is_numeric($count) ? (int) $count : null;
     }
 
     public function photoSyncError(): ?string
@@ -354,9 +371,38 @@ class Household extends Model
             : null;
     }
 
+    /**
+     * The album key, as parsed out of whichever link shape was saved.
+     *
+     * Kept alongside the raw link so that what the household pasted survives
+     * exactly as they pasted it, and the part the API needs is never re-derived
+     * from a link somebody has since half-edited.
+     */
+    public function photoAlbumKey(): ?string
+    {
+        return filled($this->settings['photo_album_key'] ?? null)
+            ? (string) $this->settings['photo_album_key']
+            : null;
+    }
+
     public function setPhotoAlbumUrl(?string $url): void
     {
-        $this->putSettings(['photo_album_url' => filled($url) ? trim($url) : null]);
+        $url = filled($url) ? trim($url) : null;
+
+        if ($url === $this->photoAlbumUrl()) {
+            return;
+        }
+
+        // A different album means everything remembered about the last one —
+        // its name, when it was read, why it failed — is about somewhere else.
+        $this->putSettings([
+            'photo_album_url' => $url,
+            'photo_album_key' => SharedAlbumLink::parse($url)?->key,
+            'photo_album_name' => null,
+            'photos_synced_at' => null,
+            'photos_sync_error' => null,
+            'photo_album_count' => null,
+        ]);
     }
 
     public function hasPhotos(): bool

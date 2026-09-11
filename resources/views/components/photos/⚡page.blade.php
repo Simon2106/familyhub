@@ -117,6 +117,19 @@ new #[Layout('layouts::app')] class extends Component
     }
 
     /**
+     * How many photographs the album held when it was last read.
+     *
+     * The album's number, not the library's: with uploads in the grid too,
+     * the two differ, and this is the one that says whether the wall is
+     * seeing everything that was shared with it.
+     */
+    #[Computed]
+    public function albumCount(): ?int
+    {
+        return $this->household()->photoAlbumCount();
+    }
+
+    /**
      * Read the album now.
      *
      * Run inline rather than queued: somebody has tapped a button and is
@@ -145,7 +158,7 @@ new #[Layout('layouts::app')] class extends Component
 
         $this->syncing = false;
 
-        unset($this->photos, $this->hiddenCount, $this->syncedAt, $this->albumName, $this->syncError);
+        unset($this->photos, $this->hiddenCount, $this->syncedAt, $this->albumName, $this->syncError, $this->albumCount);
 
         $this->dispatch('saved', message: 'Album read.');
     }
@@ -382,7 +395,7 @@ new #[Layout('layouts::app')] class extends Component
                         @elseif ($this->syncError)
                             <span class="font-medium text-rose-600 dark:text-rose-400">{{ $this->syncError }}</span>
                         @elseif ($this->syncedAt)
-                            Last read {{ $this->syncedAt }} · read hourly
+                            Last read {{ $this->syncedAt }}@if ($this->albumCount !== null) · {{ trans_choice('{0}no photographs|{1}:count photograph|[2,*]:count photographs', $this->albumCount, ['count' => $this->albumCount]) }}@endif · read hourly
                         @else
                             Set up, but not read yet — tap Sync now
                         @endif
