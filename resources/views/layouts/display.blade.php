@@ -32,6 +32,16 @@
             'manifestCredentials' => true,
         ])
 
+        {{-- Caveat, preloaded only here.
+             The notes board is on the wall's Home tab, so this is the one page
+             that is certain to draw a note the moment it paints — and the one
+             page nobody is standing in front of waiting for a reload. The
+             phone downloads the same file, but on demand, when it first draws
+             one. Latin only: latin-ext is for the occasional accented name
+             and is not worth a blocking fetch on a kiosk boot. --}}
+        <link rel="preload" as="font" type="font/woff2" crossorigin
+              href="{{ asset('fonts/caveat-latin.woff2') }}">
+
         {{-- The display keeps its own copy of the pairing token so it can
              re-authorise itself if this context ever loses its cookie. Note
              that iOS scopes localStorage per context too, so this recovers

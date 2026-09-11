@@ -12,13 +12,28 @@
  * entries.
  */
 
-const CACHE = 'familyhub-static-v3';
+const CACHE = 'familyhub-static-v4';
 
-const SHELL = ['/offline.html', '/icons/icon-192.png', '/icons/icon-512.png'];
+const SHELL = [
+    '/offline.html',
+    '/icons/icon-192.png',
+    '/icons/icon-512.png',
+    // The notes board's handwriting. Cached on install rather than on first
+    // use, because the morning the internet is down is exactly the morning
+    // nobody wants the wall falling back to a different face.
+    '/fonts/caveat-latin.woff2',
+    '/fonts/caveat-latin-ext.woff2',
+];
 
 /** Only these are ever cached. Everything else goes to the network. */
 function isCacheable(url) {
-    return url.pathname.startsWith('/build/') || url.pathname.startsWith('/icons/');
+    return (
+        url.pathname.startsWith('/build/') ||
+        url.pathname.startsWith('/icons/') ||
+        // Fonts are versioned by filename and never change under one, so
+        // cache-first is safe and means no network on a second boot.
+        url.pathname.startsWith('/fonts/')
+    );
 }
 
 /** Livewire 4 serves from a hashed prefix (/livewire-<hash>/update). */

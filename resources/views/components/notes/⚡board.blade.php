@@ -242,7 +242,7 @@ new class extends Component
                         <span class="-mx-5 -mt-5 mb-3 h-3 rounded-t-sm"
                               style="background-color: {{ $note->paperEdge() }};" aria-hidden="true"></span>
 
-                        <span class="line-clamp-5 text-[1.75rem] leading-tight font-semibold text-slate-900">
+                        <span class="note-writing line-clamp-4 text-[2.5rem] text-slate-900">
                             {{ $note->body }}
                         </span>
 
@@ -318,7 +318,7 @@ new class extends Component
                                 <span class="-mx-4 -mt-4 mb-2 h-2 rounded-t-sm"
                                       style="background-color: {{ $note->paperEdge() }};" aria-hidden="true"></span>
 
-                                <span class="text-lg leading-snug font-semibold text-slate-900">{{ $note->body }}</span>
+                                <span class="note-writing text-2xl text-slate-900">{{ $note->body }}</span>
 
                                 <span class="mt-2 flex items-baseline gap-2 text-xs text-slate-900/45">
                                     <span class="font-bold">{{ $note->member?->initials() ?? 'Everyone' }}</span>
