@@ -204,11 +204,28 @@ new class extends Component
                 </button>
             @endforeach
 
-            <button type="button" wire:click="compose"
-                    class="grid min-h-touch w-28 shrink-0 place-items-center rounded-2xl border-2 border-dashed border-slate-300 text-slate-400 dark:border-slate-700"
-                    aria-label="Add a note">
-                <span class="text-4xl leading-none">+</span>
-            </button>
+            {{-- The empty board is the add control: a lone + on an otherwise
+                 bare strip says nothing about what it makes, and a wall has
+                 no hover to explain it with. --}}
+            @if ($this->notes->isEmpty())
+                <button type="button" wire:click="compose"
+                        class="flex min-h-touch flex-1 items-center gap-3 rounded-2xl border-2 border-dashed border-slate-300 px-4 py-3 text-left dark:border-slate-700">
+                    <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-2xl leading-none text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                          aria-hidden="true">+</span>
+                    <span class="min-w-0">
+                        <span class="block text-xl font-medium">Add a note</span>
+                        <span class="block truncate text-sm text-slate-500 dark:text-slate-400">
+                            e.g. Gran’s here at 4
+                        </span>
+                    </span>
+                </button>
+            @else
+                <button type="button" wire:click="compose"
+                        class="flex min-h-touch w-40 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-slate-300 px-3 py-3 text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                    <span class="text-3xl leading-none" aria-hidden="true">+</span>
+                    <span class="text-base font-medium">Add a note</span>
+                </button>
+            @endif
         </div>
 
         @if ($this->hidden > 0)
@@ -220,11 +237,25 @@ new class extends Component
             <div class="flex items-center gap-2">
                 <h2 class="flex-1 text-sm font-semibold tracking-wide text-slate-400 uppercase">Notes</h2>
                 <button type="button" wire:click="compose"
-                        class="touch-target rounded-xl px-3 text-sm font-semibold text-blue-600 dark:text-blue-400">Add</button>
+                        class="flex touch-target items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-blue-600 dark:text-blue-400">
+                    <span class="text-lg leading-none" aria-hidden="true">+</span>
+                    Add a note
+                </button>
             </div>
 
             @if ($this->notes->isEmpty())
-                <p class="py-3 text-sm text-slate-400">Nothing on the fridge door.</p>
+                {{-- The same offer as the wall, in the same words. --}}
+                <button type="button" wire:click="compose"
+                        class="mt-1 flex w-full touch-target items-center gap-3 rounded-xl border-2 border-dashed border-slate-300 px-3 py-3 text-left dark:border-slate-700">
+                    <span class="grid size-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-lg leading-none text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                          aria-hidden="true">+</span>
+                    <span class="min-w-0">
+                        <span class="block font-medium">Add a note</span>
+                        <span class="block truncate text-sm text-slate-500 dark:text-slate-400">
+                            e.g. Gran’s here at 4
+                        </span>
+                    </span>
+                </button>
             @else
                 <ul class="mt-1 space-y-2">
                     @foreach ($this->notes as $note)

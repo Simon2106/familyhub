@@ -196,4 +196,47 @@ class NotesBoardTest extends TestCase
 
         $this->assertSame('#64748b', Note::first()->colour());
     }
+
+    /* --------------------------- finding it ---------------------------- */
+
+    /**
+     * A lone + on a bare strip says nothing about what it makes, and a wall
+     * has no hover to explain it with.
+     */
+    #[Test]
+    public function the_empty_wall_board_says_what_the_control_is_for(): void
+    {
+        Livewire::test('notes.board', ['onWall' => true])
+            ->assertSee('Add a note')
+            ->assertSee('Gran’s here at 4', false);
+    }
+
+    #[Test]
+    public function the_empty_phone_board_says_the_same_thing(): void
+    {
+        Livewire::test('notes.board')
+            ->assertSee('Add a note')
+            ->assertSee('Gran’s here at 4', false);
+    }
+
+    #[Test]
+    public function the_add_control_keeps_its_label_once_there_are_notes(): void
+    {
+        $this->note();
+
+        Livewire::test('notes.board', ['onWall' => true])
+            ->assertSee('Add a note')
+            // The example is only offered when there is nothing to copy from.
+            ->assertDontSee('Gran’s here at 4', false);
+
+        Livewire::test('notes.board')->assertSee('Add a note');
+    }
+
+    #[Test]
+    public function the_empty_state_is_the_add_control(): void
+    {
+        Livewire::test('notes.board', ['onWall' => true])
+            ->call('compose')
+            ->assertSet('composing', true);
+    }
 }
