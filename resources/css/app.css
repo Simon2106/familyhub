@@ -573,6 +573,24 @@
     }
 
     /*
+     * A tile: what goes inside a panel.
+     *
+     * Not glass. Glass inside glass is two blurs over the same pixels, and
+     * on a Pi it is the difference between sixty frames and twenty — the
+     * first sweep put .glass on every recipe card, photograph and review
+     * item and took the Home face to eighty-one panels at 20fps. A tile is
+     * a flat tint at the inner radius, and that is all a list row needs.
+     */
+    .tile {
+        border-radius: var(--radius-inner, var(--radius-tile));
+        background: rgb(15 23 42 / 0.05);
+    }
+
+    .dark .tile {
+        background: rgb(255 255 255 / 0.08);
+    }
+
+    /*
      * Over a bright photograph the tint has to carry more of the load.
      *
      * Set by the wall after sampling the backdrop once per photograph —
@@ -614,6 +632,13 @@
     .lite-glass .glass::before,
     .glass--plain::before {
         display: none;
+    }
+
+    /* The second thing, and the last worth losing before glass stops being
+       glass. Set by the wall itself when the ring was not enough. */
+    .plain-glass .glass {
+        -webkit-backdrop-filter: blur(var(--glass-blur));
+        backdrop-filter: blur(var(--glass-blur));
     }
 
     @media (prefers-reduced-motion: reduce) {

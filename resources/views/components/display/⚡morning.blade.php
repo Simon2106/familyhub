@@ -213,10 +213,10 @@ new class extends Component
             <div class="flex items-center gap-4">
                 <x-icon :name="$this->weather->icon()" class="size-14 shrink-0" />
                 <div>
-                    <p class="text-[2.75rem] font-semibold leading-none tabular-nums">
+                    <p class="t-face t-num">
                         {{ $this->weather->round($this->weather->temperature) }}&deg;
                     </p>
-                    <p class="text-[1.0625rem] font-medium uppercase tracking-[0.06em] opacity-70">Now</p>
+                    <p class="t-label">Now</p>
                 </div>
             </div>
         @endif
@@ -225,10 +225,10 @@ new class extends Component
             <div class="flex items-center gap-4">
                 <x-icon :name="$this->pickupWeather->icon()" class="size-14 shrink-0 opacity-80" />
                 <div>
-                    <p class="text-[2.75rem] font-semibold leading-none tabular-nums">
+                    <p class="t-face t-num">
                         {{ $this->pickupWeather->round($this->pickupWeather->temperature) }}&deg;
                     </p>
-                    <p class="text-[1.0625rem] font-medium uppercase tracking-[0.06em] opacity-70">
+                    <p class="t-label">
                         Pick-up {{ $this->pickupLabel }}@if ($this->pickupWeather->mentionsRain()) · take a coat @endif
                     </p>
                 </div>
@@ -237,7 +237,7 @@ new class extends Component
     </div>
 
     {{-- A column each, in the order the household is listed. --}}
-    <div class="grid min-h-0 flex-1 gap-4" style="grid-template-columns: repeat({{ max(1, $members->count()) }}, minmax(0, 1fr));">
+    <div class="grid min-h-0 flex-1 gap-6" style="grid-template-columns: repeat({{ max(1, $members->count()) }}, minmax(0, 1fr));">
         @foreach ($members as $member)
             @php
                 $events = $this->eventsByMember->get($member->id, collect());
@@ -246,11 +246,10 @@ new class extends Component
                 $needs = $this->needed->get($member->id, []);
             @endphp
 
-            <section class="flex min-h-0 flex-col rounded-[2rem] bg-white/70 p-5 dark:bg-slate-900/70"
-                     wire:key="morning-member-{{ $member->id }}">
+            <x-glass class="flex min-h-0 flex-col p-6" wire:key="morning-member-{{ $member->id }}">
                 <header class="flex shrink-0 items-center gap-3">
                     <span class="size-5 shrink-0 rounded-full" style="background-color: {{ $member->colour }};" aria-hidden="true"></span>
-                    <h2 class="truncate text-[1.75rem] font-semibold">{{ $member->name }}</h2>
+                    <h2 class="t-title truncate">{{ $member->name }}</h2>
                 </header>
 
                 <div class="pane-scroll mt-3 min-h-0 flex-1 space-y-5">
@@ -258,10 +257,10 @@ new class extends Component
                          cannot be done once the door has shut. --}}
                     @if ($needs !== [])
                         <div>
-                            <p class="text-[1.0625rem] font-medium uppercase tracking-[0.06em] opacity-70">Needed today</p>
+                            <p class="t-label">Needed today</p>
                             <ul class="mt-2 flex flex-wrap gap-2">
                                 @foreach ($needs as $item)
-                                    <li class="flex items-center gap-2 rounded-full bg-amber-100 px-4 py-2 text-[1.375rem] font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
+                                    <li class="flex items-center gap-2 rounded-full bg-amber-100 px-4 py-2 t-body font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
                                         <x-icon name="bag" class="size-6 shrink-0" />
                                         {{ $item }}
                                     </li>
@@ -273,7 +272,7 @@ new class extends Component
                     {{-- The routine, if one is running. Tap to tick. --}}
                     @if ($routine)
                         <div>
-                            <p class="flex items-baseline justify-between gap-2 text-[1.0625rem] font-medium uppercase tracking-[0.06em] opacity-70">
+                            <p class="t-label flex items-baseline justify-between gap-2">
                                 <span class="truncate">{{ $routine->routine->name }}</span>
                                 <span class="shrink-0 tabular-nums">{{ $routine->summary() }}</span>
                             </p>
@@ -281,7 +280,7 @@ new class extends Component
                                 @foreach ($routine->steps as $entry)
                                     <li wire:key="step-{{ $entry['step']->id }}">
                                         <button type="button" wire:click="tickStep({{ $entry['step']->id }})"
-                                                class="flex w-full touch-target items-center gap-3 rounded-2xl px-4 text-left text-[1.375rem] {{ $entry['done'] ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100' : 'bg-slate-100 dark:bg-slate-800' }}">
+                                                class="press flex w-full touch-target items-center gap-3 rounded-[var(--radius-inner)] px-4 text-left t-body {{ $entry['done'] ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100' : 'bg-slate-100 dark:bg-slate-800' }}">
                                             <x-icon :name="$entry['done'] ? 'ticked' : 'unticked'" class="size-7 shrink-0" />
                                             <span class="min-w-0 flex-1 truncate {{ $entry['done'] ? 'line-through opacity-70' : '' }}">{{ $entry['step']->title }}</span>
                                         </button>
@@ -294,12 +293,12 @@ new class extends Component
                     {{-- Chores due today. --}}
                     @if ($chores->isNotEmpty())
                         <div>
-                            <p class="text-[1.0625rem] font-medium uppercase tracking-[0.06em] opacity-70">Jobs</p>
+                            <p class="t-label">Jobs</p>
                             <ul class="mt-2 space-y-1.5">
                                 @foreach ($chores as $slot)
                                     <li wire:key="chore-{{ $slot->chore->id }}">
                                         <button type="button" wire:click="tickChore({{ $slot->chore->id }})"
-                                                class="flex w-full touch-target items-center gap-3 rounded-2xl px-4 text-left text-[1.375rem] {{ $slot->isDone() ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100' : 'bg-slate-100 dark:bg-slate-800' }}">
+                                                class="press flex w-full touch-target items-center gap-3 rounded-[var(--radius-inner)] px-4 text-left t-body {{ $slot->isDone() ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100' : 'bg-slate-100 dark:bg-slate-800' }}">
                                             <x-icon :name="$slot->isDone() ? 'ticked' : 'unticked'" class="size-7 shrink-0" />
                                             <span class="min-w-0 flex-1 truncate {{ $slot->isDone() ? 'line-through opacity-70' : '' }}">{{ $slot->chore->title }}</span>
                                         </button>
@@ -311,20 +310,20 @@ new class extends Component
 
                     {{-- What is on. --}}
                     <div>
-                        <p class="text-[1.0625rem] font-medium uppercase tracking-[0.06em] opacity-70">Today</p>
+                        <p class="t-label">Today</p>
                         @forelse ($events as $event)
-                            <p class="flex items-baseline gap-3 py-1 text-[1.375rem]" wire:key="ev-{{ $event->occurrence_id ?? $event->id }}">
-                                <span class="w-16 shrink-0 tabular-nums opacity-70">
+                            <p class="t-body flex items-baseline gap-3 py-1" wire:key="ev-{{ $event->occurrence_id ?? $event->id }}">
+                                <span class="w-16 shrink-0 t-num opacity-70">
                                     {{ $event->all_day ? 'All' : $event->start_at->timezone($tz)->format('H:i') }}
                                 </span>
                                 <span class="min-w-0 flex-1 truncate font-medium">{{ $event->title }}</span>
                             </p>
                         @empty
-                            <p class="py-1 text-[1.375rem] opacity-70">Nothing on.</p>
+                            <p class="t-body py-1 opacity-70">Nothing on.</p>
                         @endforelse
                     </div>
                 </div>
-            </section>
+            </x-glass>
         @endforeach
     </div>
 </div>

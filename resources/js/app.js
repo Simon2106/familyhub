@@ -17,6 +17,7 @@ import { createScreenOff } from './screen-off';
 import { createUpdater } from './updater';
 import { chime } from './chime';
 import { sampler, tintPanels } from './glass';
+import { watchOnce } from './framerate';
 import { RESYNC_MS, adopt, bannerFor, formatted as formattedTime, newlyFinished, secondsLeft } from './timers';
 
 /* -------------------------------------------------------------------------
@@ -1025,6 +1026,28 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 });
+
+/*
+ * The wall keeping itself above the frame budget.
+ *
+ * Only on the kiosk, and only once. A browser somebody is sitting at can
+ * afford the full glass; a Pi driving a 4K panel may not, and nobody is
+ * going to stand in a kitchen with a profiler to find out.
+ */
+if (document.documentElement.hasAttribute('data-kiosk')) {
+    watchOnce({
+        root: document.documentElement,
+        now: () => performance.now(),
+        raf: (fn) => requestAnimationFrame(fn),
+        wait: (ms) => new Promise((done) => setTimeout(done, ms)),
+    }).then(({ fps, remedy }) => {
+        if (remedy !== 'none') {
+            // Logged rather than silent: "why does the kitchen screen look
+            // flatter than the style guide" deserves an answer.
+            console.info(`FamilyHub: ${fps}fps on this panel — dropped to ${remedy} glass.`);
+        }
+    });
+}
 
 /* -------------------------------------------------------------------------
  * The travelling blob behind the active tab

@@ -89,7 +89,7 @@ new class extends Component
 
 <div>
     @if ($this->meal && $this->children->isNotEmpty())
-        <section class="mb-3 rounded-2xl bg-white p-3 dark:bg-slate-900">
+        <section class="glass mb-6 p-4">
             <div class="flex items-baseline gap-3">
                 <h3 class="text-sm font-semibold tracking-wide text-slate-400 uppercase">Tonight</h3>
                 <p class="min-w-0 flex-1 truncate text-xl font-semibold">{{ $this->meal->title }}</p>

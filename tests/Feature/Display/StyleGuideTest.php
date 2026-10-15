@@ -95,6 +95,29 @@ class StyleGuideTest extends TestCase
         $this->assertSame([], $offWall, 'These would strand the kiosk: '.implode(', ', $offWall));
     }
 
+    /**
+     * Nothing on the wall falls through to the blank circle.
+     *
+     * The source scan in NoEmojiOnTheWallTest only sees a literal name. The
+     * tab bar passes its icons through a variable, so `label` — a name with
+     * no drawing behind it, taken from the component's own prop list rather
+     * than from the icon set — sailed past it and shipped an empty circle on
+     * the Review tab. This looks at what is actually painted.
+     */
+    #[Test]
+    public function nothing_on_the_wall_falls_through_to_the_blank_circle(): void
+    {
+        foreach (['/display?token=wall-token', '/display/style?token=wall-token'] as $url) {
+            $html = $this->withoutVite()->get($url)->assertOk()->getContent();
+
+            $this->assertStringNotContainsString(
+                '<circle cx="12" cy="12" r="8.5"/>',
+                $html,
+                "{$url} is drawing the unknown-icon fallback, which looks like a design decision.",
+            );
+        }
+    }
+
     /* --------------------------- lighter glass -------------------------- */
 
     #[Test]

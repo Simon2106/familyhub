@@ -76,6 +76,13 @@
         'close' => '<path d="M6 6l12 12M18 6 6 18"/>',
         'plus' => '<path d="M12 5v14M5 12h14"/>',
 
+        /* ------------------------------ the tabs -------------------------- */
+        /* Drawn here because the tab bar asks for them through a variable,
+           which the source scan cannot see — "label" was a name with no
+           drawing and shipped an empty circle on the Review tab. */
+        'inbox' => '<path d="M3.5 13h4l1.5 2.5h6L16.5 13h4"/><path d="M5.2 5.5h13.6l1.7 7.5v4a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2v-4z"/>',
+        'list' => '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>',
+
         /* ---------------------------- the faces --------------------------- */
         'sunrise' => '<path d="M12 3v5M5.6 10.6 4.2 9.2M18.4 10.6l1.4-1.4M2.5 17h3M18.5 17h3"/><path d="M8 17a4 4 0 0 1 8 0"/><path d="M3 21h18"/>',
         'sunset' => '<path d="M12 8V3M5.6 10.6 4.2 9.2M18.4 10.6l1.4-1.4M2.5 17h3M18.5 17h3"/><path d="M8 17a4 4 0 0 1 8 0"/><path d="M3 21h18M9.5 5.5 12 8l2.5-2.5"/>',

@@ -298,7 +298,7 @@ new class extends Component
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             @foreach ($this->recipes as $recipe)
                 <article wire:key="recipe-{{ $recipe->id }}"
-                         class="flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-slate-900">
+                         class="tile flex flex-col overflow-hidden">
 
                     @if ($recipe->imageUrl())
                         <img src="{{ $recipe->imageUrl() }}" alt="" loading="lazy"

@@ -288,7 +288,7 @@ new class extends Component
     @endif
 
     @forelse ($this->captures as $capture)
-        <section class="mb-4 rounded-2xl bg-white p-4 last:mb-0 dark:bg-slate-900" wire:key="capture-{{ $capture->id }}">
+        <section class="tile mb-4 p-5 last:mb-0" wire:key="capture-{{ $capture->id }}">
             <header class="flex items-start gap-3">
                 <div class="min-w-0 flex-1">
                     <h2 class="truncate font-semibold">{{ $capture->label() }}</h2>

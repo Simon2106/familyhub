@@ -383,7 +383,7 @@ new #[Layout('layouts::app')] class extends Component
 
     <div class="pane-scroll min-h-0 flex-1 px-4 pb-8">
         {{-- Where the photographs come from, and when they last came. --}}
-        <section class="rounded-2xl bg-white p-3 dark:bg-slate-900">
+        <section class="glass p-4">
             <div class="flex flex-wrap items-center gap-2">
                 <div class="min-w-0 flex-1">
                     <p class="truncate font-semibold">
@@ -418,7 +418,7 @@ new #[Layout('layouts::app')] class extends Component
         {{-- Uploading is a phone job: it is where the photographs are, and a
              kiosk has no file picker worth the name. --}}
         @unless ($onWall)
-        <form wire:submit="save" class="mt-3 rounded-2xl bg-white p-3 lg:hidden dark:bg-slate-900">
+        <form wire:submit="save" class="glass mt-6 p-4 lg:hidden">
             <label class="block">
                 <span class="block text-sm font-medium">Add photographs</span>
                 <input wire:model="uploads" type="file" accept="image/*" multiple
@@ -463,7 +463,7 @@ new #[Layout('layouts::app')] class extends Component
                  cancel() { clearTimeout(this.timer); this.held = true; },
              }">
             @forelse ($this->photos as $photo)
-                <div class="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900"
+                <div class="tile group relative overflow-hidden"
                      wire:key="photo-{{ $photo->id }}">
                     {{-- Tap opens it; press and hold takes it off the wall.
                          The same gesture the notes board uses, and the same

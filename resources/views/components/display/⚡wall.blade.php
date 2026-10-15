@@ -1109,25 +1109,22 @@ new #[Layout('layouts::display')] class extends Component
     x-on:cooking-ended.window="cooking = false; wake()"
 >
     {{-- ============================= HEADER ============================= --}}
-    <header class="flex shrink-0 items-baseline justify-between gap-6 px-6 pt-4 pb-3 sm:px-8">
-        <div class="flex items-baseline gap-4">
-            {{-- The same face as the screensaver, and tnum for the same
-                 reason: this one is on screen all day. --}}
-            <span class="display-digits text-4xl font-bold" x-text="clock">&nbsp;</span>
+    <header class="flex shrink-0 items-center justify-between gap-6 px-10 pt-6 pb-4">
+        <div class="flex items-center gap-4">
 
-            {{-- The face's own greeting, and the way to change it by hand.
-                 Small: it is a thing somebody uses once to see what the
-                 evening face looks like, not a control anybody needs. --}}
+            {{-- The headline the face leads with — "Good morning",
+                 "Tonight" — and the way to change the face by hand. Top
+                 left, which is where a screen is read from. --}}
             <button type="button" x-on:click="facePicker = ! facePicker"
-                    class="flex shrink-0 items-center gap-2 rounded-full px-3 py-1 text-left"
-                    :class="faceOverride ? 'bg-blue-600/15 text-blue-700 dark:text-blue-300' : ''"
+                    class="press flex shrink-0 items-center gap-3 rounded-full px-4 py-1 text-left"
+                    :class="faceOverride ? 'bg-blue-600/15' : ''"
                     aria-label="Change what the wall is showing">
-                <span class="text-xl font-semibold" x-text="@js($this->faceGreetings)[face]"></span>
-                <span x-show="faceOverride" x-cloak class="text-sm font-medium opacity-70">held</span>
+                <span class="t-face" x-text="@js($this->faceGreetings)[face]"></span>
+                <span x-show="faceOverride" x-cloak class="t-label">held</span>
             </button>
 
             <div x-show="facePicker" x-cloak class="relative">
-                <div class="absolute top-8 left-0 z-40 flex flex-col gap-1 rounded-2xl bg-white p-2 shadow-xl dark:bg-slate-900"
+                <div class="glass absolute top-8 left-0 z-40 flex flex-col gap-1 p-2"
                      x-on:click.outside="facePicker = false">
                     @foreach (\App\Services\Display\WallFace::LABELS as $key => $label)
                         <button type="button" x-on:click="pickFace('{{ $key }}')"
@@ -1228,15 +1225,22 @@ new #[Layout('layouts::display')] class extends Component
             @php $tonight = $this->dinners[$this->todayDate] ?? null; @endphp
 
             @if ($tonight)
-                <button type="button" x-on:click="tab = 'meals'"
-                        class="hidden min-w-0 items-baseline gap-2 rounded-xl px-3 py-1 text-left sm:flex">
+                {{-- Not on the evening face: that face's whole left column is
+                     this, and the same words twice on one screen reads as a
+                     mistake. --}}
+                <button type="button" x-on:click="tab = 'meals'" x-show="face !== 'evening'"
+                        class="press hidden min-w-0 items-baseline gap-2 rounded-full px-4 py-1 text-left sm:flex">
                     <span class="text-sm font-semibold tracking-wide text-slate-400 uppercase">Tonight</span>
                     <span class="truncate text-lg font-semibold">{{ $tonight->title }}</span>
                 </button>
             @endif
         </div>
 
-        <div class="flex items-center gap-5">
+        <div class="flex items-center gap-6">
+            {{-- Clock and weather, top right, together: the two things
+                 somebody checks without breaking stride. --}}
+            <span class="t-clock text-[2.75rem] leading-none" x-text="clock">&nbsp;</span>
+
             <x-weather-tile :forecast="$this->weather" class="hidden sm:flex" />
 
             {{-- Ask out loud. Only where there is something to listen with:
@@ -1356,7 +1360,7 @@ new #[Layout('layouts::display')] class extends Component
     <livewire:display.timers />
 
     {{-- ============================== BODY ============================== --}}
-    <div class="min-h-0 flex-1 px-6 pb-3 sm:px-8">
+    <div class="min-h-0 flex-1 px-10 pb-3">
 
         {{-- ------------------------ MORNING FACE ------------------------ --}}
         <div x-show="tab === 'home' && face === 'morning'" x-cloak
@@ -1377,7 +1381,7 @@ new #[Layout('layouts::display')] class extends Component
         {{-- ---------------------------- HOME ---------------------------- --}}
         {{-- The day face, and what sits behind the night one. --}}
         <div x-show="tab === 'home' && (face === 'day' || face === 'night')" class="flex h-full min-h-0 flex-col gap-3">
-          <div class="grid min-h-0 flex-1 gap-4 lg:grid-cols-5">
+          <div class="grid min-h-0 flex-1 gap-6 lg:grid-cols-5">
 
             <section
                 class="min-h-0 lg:col-span-3"
@@ -1446,12 +1450,12 @@ new #[Layout('layouts::display')] class extends Component
 
                     {{-- Landscape: a member-by-day grid. Sized to fit five
                          columns without sideways scrolling on an iPad. --}}
-                    <div class="pane-scroll hidden h-full min-h-0 rounded-2xl bg-white p-2 lg:block dark:bg-slate-900">
+                    <div class="glass pane-scroll hidden h-full min-h-0 p-3 lg:block">
                         <div class="grid gap-x-1"
                              style="grid-template-columns: 3.5rem repeat({{ max($weekColumns, 1) }}, minmax(0, 1fr));">
 
                             {{-- Header row --}}
-                            <div class="sticky top-0 z-10 bg-white dark:bg-slate-900"></div>
+                            <div class="sticky top-0 z-10"></div>
                             @foreach ($members as $member)
                                 {{-- The dot stays the cue; the whole heading is
                                      the target. A child's opens their own day,
@@ -1548,7 +1552,7 @@ new #[Layout('layouts::display')] class extends Component
                     {{-- Portrait: the same information stacked, day by day, with
                          each member as a sub-group. A seven-column grid on a
                          narrow screen would be unreadable. --}}
-                    <div class="pane-scroll h-full min-h-0 rounded-2xl bg-white p-3 lg:hidden dark:bg-slate-900">
+                    <div class="glass pane-scroll h-full min-h-0 p-3 lg:hidden">
                         @foreach ($week as $day)
                             @php $dayIsEmpty = $day['count'] === 0; @endphp
 
@@ -1556,7 +1560,7 @@ new #[Layout('layouts::display')] class extends Component
                                 <button
                                     type="button"
                                     x-on:click="pickDay(@js($day['date']))"
-                                    class="sticky top-0 z-10 flex w-full touch-target items-center gap-2 rounded-lg px-2 text-left {{ $day['is_today'] ? 'bg-blue-50 dark:bg-blue-950/40' : 'bg-white dark:bg-slate-900' }}"
+                                    class="sticky top-0 z-10 flex w-full touch-target items-center gap-2 rounded-lg px-2 text-left {{ $day['is_today'] ? 'bg-blue-600/10' : '' }}"
                                 >
                                     <span class="text-sm font-semibold tracking-wide uppercase {{ $day['is_today'] ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400' }}">
                                         {{ $day['is_today'] ? 'Today' : $day['carbon']->format('l') }}
@@ -1667,7 +1671,7 @@ new #[Layout('layouts::display')] class extends Component
                                      that does its own thing still does it:
                                      the guard lets a chore tile, a link or a
                                      checkbox have the tap first. --}}
-                                <div class="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-slate-900"
+                                <div class="tile flex min-h-0 flex-col overflow-hidden"
                                      @if ($member->is_child)
                                          role="button"
                                          tabindex="0"
@@ -1789,7 +1793,7 @@ new #[Layout('layouts::display')] class extends Component
                             {{-- Events nobody in particular owns still need somewhere to live. --}}
                             @if ($dayNeedsHousehold)
                                 @php $householdEvents = $dayHouseholdEvents; @endphp
-                                <div class="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-slate-900">
+                                <div class="tile flex min-h-0 flex-col overflow-hidden">
                                     <div class="flex items-center gap-2 bg-slate-100 px-3 py-2 dark:bg-slate-800">
                                         <span class="size-3 shrink-0 rounded-full bg-slate-400"></span>
                                         <span class="truncate text-base font-semibold">Household</span>
@@ -1902,7 +1906,7 @@ new #[Layout('layouts::display')] class extends Component
                     </div>
                 </div>
 
-                <div class="pane-scroll min-h-0 flex-1 rounded-2xl bg-white p-3 dark:bg-slate-900">
+                <div class="glass pane-scroll min-h-0 flex-1 p-4">
 
                     {{-- ------------------- ONE DAY PICKED ------------------- --}}
                     {{-- The rail follows the picked day rather than always
@@ -1987,7 +1991,7 @@ new #[Layout('layouts::display')] class extends Component
                 </div>
 
                 {{-- Household to-dos, under "Coming up" in both views. --}}
-                <div class="flex max-h-[40%] min-h-0 shrink-0 flex-col rounded-2xl bg-white p-3 dark:bg-slate-900">
+                <div class="glass flex max-h-[40%] min-h-0 shrink-0 flex-col p-4">
                     <livewire:todos.panel />
                 </div>
             </section>
@@ -2064,44 +2068,25 @@ new #[Layout('layouts::display')] class extends Component
     <livewire:kids.pin />
 
     {{-- ============================ TAB BAR ============================= --}}
-    <nav data-tab-bar class="grid shrink-0 grid-cols-7 gap-1 border-t border-slate-200 px-4 py-1 dark:border-slate-800">
-        @foreach ([
-            ['home', 'Home', 'M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z'],
-            ['review', 'Review', 'M4 4h16v12H8l-4 4z'],
-            ['meals', 'Meals', 'M6 3v9a3 3 0 0 0 6 0V3M9 12v9M17 3c-1.5 2-2 4-2 6s.5 3 2 3 2-1 2-3-.5-4-2-6zm0 9v9'],
-            ['lists', 'Lists', 'M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01'],
-            ['home-devices', 'Switches', 'M9 21h6M10 18h4M12 3a6 6 0 0 0-3.5 10.9c.3.2.5.6.5 1V15h6v-.1c0-.4.2-.8.5-1A6 6 0 0 0 12 3z'],
-            ['photos', 'Photos', 'M3 7a2 2 0 0 1 2-2h3l1.5-2h5L16 5h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M12 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z'],
-            ['timers', 'Timers', 'M12 21a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15z M12 9.5v4l2.5 2 M9.5 2.5h5'],
-        ] as [$key, $label, $path])
-            <button
-                type="button"
-                x-on:click="tab = '{{ $key }}'"
-                {{-- Taller than the 44px minimum: this is a 15.6" panel on a
-                     wall, tapped in passing rather than looked at first. --}}
-                class="flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl"
-                :class="tab === '{{ $key }}' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'"
-                @if ($key === 'review' && $this->reviewCount > 0)
-                    aria-label="{{ $label }}, {{ $this->reviewCount }} waiting"
-                @endif
-            >
-                <span class="relative">
-                    <svg class="size-[1.875rem]" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="{{ $path }}" />
-                    </svg>
-                    @if ($key === 'review' && $this->reviewCount > 0)
-                        {{-- Hidden from the accessible name: the button already
-                             says "Review, N waiting". --}}
-                        <span aria-hidden="true"
-                              class="absolute -top-1 -right-2.5 grid min-w-5 place-items-center rounded-full bg-blue-600 px-1.5 text-xs font-bold text-white">
-                            {{ $this->reviewCount }}
-                        </span>
-                    @endif
-                </span>
-                <span class="text-[0.9375rem] font-medium">{{ $label }}</span>
-            </button>
-        @endforeach
-    </nav>
+    {{-- The tab bar, floating rather than bolted to the bottom edge: a
+         pill of glass with the room's own colour in it, and one blob that
+         travels between the tabs rather than a fade that blinks. --}}
+    <div class="pointer-events-none flex shrink-0 justify-center px-10 pb-5 pt-2">
+        <x-glass shape="pill" class="pointer-events-auto p-1.5">
+            <x-display.tab-bar
+                :tabs="[
+                    ['home', 'Home', 'house'],
+                    ['review', 'Review', 'inbox'],
+                    ['meals', 'Meals', 'cutlery'],
+                    ['lists', 'Lists', 'list'],
+                    ['home-devices', 'Switches', 'light'],
+                    ['photos', 'Photos', 'photo'],
+                    ['timers', 'Timers', 'timer'],
+                ]"
+                :badges="['review' => $this->reviewCount]"
+            />
+        </x-glass>
+    </div>
 
     {{-- ========================== SCREENSAVER =========================== --}}
     {{-- Any touch wakes it, wherever it lands: on a dark screen there is

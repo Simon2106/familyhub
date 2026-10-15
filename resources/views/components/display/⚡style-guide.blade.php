@@ -274,9 +274,9 @@ new #[Layout('layouts::display')] class extends Component
                     <x-glass shape="pill" class="p-1.5">
                         <x-display.tab-bar :tabs="[
                             ['home', 'Home', 'house'],
-                            ['review', 'Review', 'label'],
+                            ['review', 'Review', 'inbox'],
                             ['meals', 'Meals', 'cutlery'],
-                            ['lists', 'Lists', 'check'],
+                            ['lists', 'Lists', 'list'],
                             ['photos', 'Photos', 'photo'],
                             ['timers', 'Timers', 'timer'],
                         ]" />

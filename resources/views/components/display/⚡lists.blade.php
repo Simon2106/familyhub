@@ -121,7 +121,7 @@ new class extends Component
     @else
         <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             @foreach ($this->checklists as $checklist)
-                <section class="rounded-2xl bg-white p-3 dark:bg-slate-900" wire:key="list-{{ $checklist->id }}">
+                <section class="glass p-4" wire:key="list-{{ $checklist->id }}">
                     <header class="flex items-center gap-2 px-1 pb-2">
                         <h2 class="flex-1 truncate text-base font-semibold">{{ $checklist->name }}</h2>
                     </header>

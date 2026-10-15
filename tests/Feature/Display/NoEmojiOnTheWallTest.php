@@ -82,18 +82,42 @@ class NoEmojiOnTheWallTest extends TestCase
     {
         // A name with no drawing behind it falls through to a plain circle,
         // which is a bug that looks like a design decision.
-        $icons = file_get_contents(__DIR__.'/../../../resources/views/components/icon.blade.php');
+        //
+        // The names are read out of the views rather than listed here. The
+        // list was the whole problem: it went stale the moment a tab bar
+        // asked for <x-icon name="label">, nothing failed, and the Review
+        // tab shipped with an empty circle on it.
+        $root = __DIR__.'/../../../resources/views';
 
-        preg_match_all("/^\s*'([a-z-]+)' =>/m", $icons, $defined);
+        $icons = file_get_contents($root.'/components/icon.blade.php');
 
-        $wanted = ['sun', 'moon', 'cloud', 'sun-cloud', 'fog', 'drizzle', 'rain', 'snow',
-            'snow-showers', 'storm', 'light', 'switch', 'climate', 'cover', 'scene', 'script',
-            'device', 'music', 'thumb-up', 'thumb-down', 'thumbs-split', 'celebrate', 'gift',
-            'ticked', 'unticked', 'check', 'cutlery', 'star', 'undo', 'pencil',
-            'bin', 'recycle', 'box', 'leaf', 'apple', 'plug'];
+        preg_match_all("/^\s*'([a-z0-9-]+)' =>/m", $icons, $defined);
 
-        foreach ($wanted as $name) {
-            $this->assertContains($name, $defined[1], "<x-icon name=\"{$name}\"> has nothing to draw.");
+        $asked = [];
+
+        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root)) as $file) {
+            if (! str_ends_with((string) $file, '.blade.php')) {
+                continue;
+            }
+
+            // Literal names only. A name built from a variable is the
+            // household's own data — a chore's icon, a bin's — and those
+            // are checked where they are set, not here.
+            preg_match_all('/<x-icon\s[^>]*\bname="([a-z0-9-]+)"/', (string) file_get_contents($file), $found);
+
+            foreach ($found[1] as $name) {
+                $asked[$name] = basename((string) $file);
+            }
+        }
+
+        $this->assertNotEmpty($asked, 'No icon names were found at all — the scan is broken.');
+
+        foreach ($asked as $name => $where) {
+            $this->assertContains(
+                $name,
+                $defined[1],
+                "<x-icon name=\"{$name}\"> in {$where} has nothing to draw.",
+            );
         }
     }
 
