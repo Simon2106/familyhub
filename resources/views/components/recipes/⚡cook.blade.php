@@ -2,6 +2,7 @@
 
 use App\Models\Household;
 use App\Models\Recipe;
+use App\Services\Recipes\StepSplitter;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Component;
@@ -28,21 +29,37 @@ new class extends Component
     /** @var list<int> */
     public array $gathered = [];
 
+    /**
+     * How many this is being cooked for.
+     *
+     * Null until somebody changes it, so a recipe written for four stays
+     * written for four and nothing is scaled by a rounding error.
+     */
+    public ?int $servings = null;
+
     #[On('cook')]
     public function start(int $recipe): void
     {
         $this->recipeId = $recipe;
         $this->step = 0;
         $this->gathered = [];
+        $this->servings = null;
 
-        unset($this->recipe);
+        unset($this->recipe, $this->steps, $this->screens, $this->current, $this->isLast);
+
+        // The wall holds its screensaver while this is open: a photograph
+        // over step four is something somebody has to wipe away with floury
+        // hands.
+        $this->dispatch('cooking-started');
     }
 
     public function close(): void
     {
-        $this->reset(['recipeId', 'step', 'gathered']);
+        $this->reset(['recipeId', 'step', 'gathered', 'servings']);
 
-        unset($this->recipe);
+        unset($this->recipe, $this->steps, $this->screens, $this->current, $this->isLast);
+
+        $this->dispatch('cooking-ended');
     }
 
     #[Computed]
@@ -51,6 +68,22 @@ new class extends Component
         return $this->recipeId
             ? Recipe::where('household_id', Household::current()->id)->find($this->recipeId)
             : null;
+    }
+
+    /**
+     * The steps, derived once where the recipe never had any.
+     *
+     * Half of what lands in the box is a photograph of a page or an
+     * Instagram caption, and cook mode shows one step a screen — so a
+     * recipe with no steps is one it cannot open at all. The splitter
+     * writes what it works out back to the row, so this happens once.
+     *
+     * @return list<string>
+     */
+    #[Computed]
+    public function steps(): array
+    {
+        return $this->recipe ? app(StepSplitter::class)->for($this->recipe) : [];
     }
 
     /**
@@ -77,11 +110,75 @@ new class extends Component
             $screens[] = ['kind' => 'ingredients', 'index' => 0];
         }
 
-        foreach ((array) ($recipe->steps ?? []) as $index => $ignored) {
+        foreach ($this->steps as $index => $ignored) {
             $screens[] = ['kind' => 'step', 'index' => $index];
         }
 
         return $screens;
+    }
+
+    /* ----------------------------- servings ----------------------------- */
+
+    /** What the recipe was written for, where it says. */
+    #[Computed]
+    public function baseServings(): ?int
+    {
+        $written = (int) ($this->recipe?->servings ?? 0);
+
+        return $written > 0 ? $written : null;
+    }
+
+    /** How many it is being cooked for now. */
+    #[Computed]
+    public function cookingFor(): ?int
+    {
+        return $this->servings ?? $this->baseServings;
+    }
+
+    /** Only where there is something to scale and a number to scale it by. */
+    #[Computed]
+    public function canScale(): bool
+    {
+        return $this->baseServings !== null && $this->recipe?->hasIngredients();
+    }
+
+    public function scaleTo(int $servings): void
+    {
+        $this->servings = max(1, min(24, $servings));
+    }
+
+    /**
+     * One ingredient line, scaled to however many are eating.
+     *
+     * Quantities only: "a pinch" does not double, and a recipe that said
+     * "2 x 400g tins" and now says "3.2 tins" has stopped being useful.
+     * Rounded to something a kitchen scale can read.
+     *
+     * @param  array{quantity: float|null, unit: string|null, item: string, note: string|null}  $line
+     */
+    public function ingredientLine(array $line): string
+    {
+        $quantity = $line['quantity'];
+
+        if ($quantity !== null && $this->canScale && $this->cookingFor !== $this->baseServings) {
+            $quantity = $quantity * $this->cookingFor / $this->baseServings;
+        }
+
+        // Joined from the parts that exist rather than concatenated with
+        // spaces: an ingredient with no unit was rendering "4  onion".
+        return implode(' ', array_filter([
+            $quantity === null ? null : $this->tidyNumber($quantity),
+            $line['unit'],
+            $line['item'],
+        ]));
+    }
+
+    /** 0.5 rather than 0.50, 2 rather than 2.00. */
+    protected function tidyNumber(float $quantity): string
+    {
+        $rounded = round($quantity, $quantity < 10 ? 2 : 0);
+
+        return rtrim(rtrim(number_format($rounded, 2, '.', ''), '0'), '.') ?: '0';
     }
 
     #[Computed]
@@ -90,12 +187,10 @@ new class extends Component
         return $this->screens[$this->step] ?? null;
     }
 
-    /** The words of a step, whichever shape the reader stored them in. */
+    /** The words of a step. */
     public function stepText(int $index): string
     {
-        $step = ((array) ($this->recipe?->steps ?? []))[$index] ?? '';
-
-        return is_string($step) ? $step : (string) ($step['text'] ?? '');
+        return $this->steps[$index] ?? '';
     }
 
     public function next(): void
@@ -172,7 +267,7 @@ new class extends Component
 
                 <button type="button" wire:click="close"
                         class="grid touch-target shrink-0 place-items-center rounded-2xl bg-slate-100 px-6 text-lg font-semibold dark:bg-slate-800">
-                    Done
+                    I&rsquo;m done
                 </button>
             </header>
 
@@ -183,7 +278,33 @@ new class extends Component
                      style="width: {{ $total > 0 ? round(($step + 1) / $total * 100) : 0 }}%"></div>
             </div>
 
-            <div class="min-h-0 flex-1 overflow-y-auto px-8 pt-6 pb-10">
+            {{-- Servings, where the recipe said how many it was for. One row
+                 rather than a dialog: scaling is decided once, before
+                 anybody has started. --}}
+            @if ($this->canScale)
+                <div class="flex shrink-0 items-center gap-3 px-8 pt-4">
+                    <span class="text-[1.0625rem] font-medium uppercase tracking-[0.06em] opacity-70">Cooking for</span>
+                    @foreach ([1, 2, 3, 4, 6, 8] as $many)
+                        <button type="button" wire:click="scaleTo({{ $many }})"
+                                class="touch-target rounded-full px-5 text-[1.375rem] font-medium tabular-nums {{ $this->cookingFor === $many ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800' }}">
+                            {{ $many }}
+                        </button>
+                    @endforeach
+                    @if ($this->cookingFor !== $this->baseServings)
+                        <span class="text-[1.0625rem] opacity-70">written for {{ $this->baseServings }}</span>
+                    @endif
+                </div>
+            @endif
+
+            {{-- Swiping moves a step, which is what a hand already reaching
+                 for the screen expects. The buttons stay: a wet hand is not
+                 a precise one. --}}
+            <div class="min-h-0 flex-1 overflow-y-auto px-8 pt-6 pb-10"
+                 x-on:touchstart="swipeFrom = $event.changedTouches[0].clientX"
+                 x-on:touchend="
+                     const dx = $event.changedTouches[0].clientX - (swipeFrom ?? 0);
+                     if (Math.abs(dx) > 70) dx < 0 ? $wire.next() : $wire.back();
+                 ">
                 @if ($screen['kind'] === 'ingredients')
                     <ul class="mx-auto max-w-5xl space-y-2">
                         @foreach ($recipe->ingredientList() as $index => $line)
@@ -196,7 +317,7 @@ new class extends Component
                                         @endif
                                     </span>
                                     <span class="min-w-0 flex-1 text-3xl {{ in_array($index, $gathered, true) ? 'text-slate-400 line-through' : '' }}">
-                                        {{ trim(($line['quantity'] ? rtrim(rtrim(number_format($line['quantity'], 2, '.', ''), '0'), '.') : '').' '.($line['unit'] ?? '').' '.$line['item']) }}@if ($line['note'])<span class="text-slate-400">, {{ $line['note'] }}</span>@endif
+                                        {{ $this->ingredientLine($line) }}@if ($line['note'])<span class="text-slate-400">, {{ $line['note'] }}</span>@endif
                                     </span>
                                 </button>
                             </li>
@@ -216,7 +337,7 @@ new class extends Component
                         <div class="mt-8 flex flex-wrap items-center gap-3"
                              x-data="{ minutes: @js($this->minutesIn($this->stepText($screen['index']))) }">
                             <template x-for="m in minutes" :key="m">
-                                <button type="button" x-on:click="startTimer(m)"
+                                <button type="button" x-on:click="startTimer(m, @js($recipe->title))"
                                         class="touch-target rounded-2xl bg-blue-600 px-8 py-4 text-2xl font-semibold text-white">
                                     <span x-text="`Start ${m} min`"></span>
                                 </button>
@@ -225,7 +346,7 @@ new class extends Component
                             <template x-if="! minutes.length">
                                 <div class="flex items-center gap-2">
                                     <template x-for="m in [5, 10, 20]" :key="m">
-                                        <button type="button" x-on:click="startTimer(m)"
+                                        <button type="button" x-on:click="startTimer(m, @js($recipe->title))"
                                                 class="touch-target rounded-2xl bg-slate-100 px-6 py-4 text-2xl font-semibold dark:bg-slate-800">
                                             <span x-text="`${m} min`"></span>
                                         </button>
@@ -237,20 +358,6 @@ new class extends Component
                     </div>
                 @endif
             </div>
-
-            {{-- Running timers, above the buttons so a glance finds them. --}}
-            <template x-if="timers.length">
-                <div class="flex shrink-0 flex-wrap gap-2 px-8 pb-2">
-                    <template x-for="timer in timers" :key="timer.id">
-                        <button type="button" x-on:click="stopTimer(timer.id)"
-                                class="flex items-center gap-3 rounded-2xl px-6 py-3 text-3xl font-bold"
-                                :class="timer.left <= 0 ? 'bg-amber-400 text-slate-900' : 'bg-slate-100 dark:bg-slate-800'">
-                            <span x-text="timer.left > 0 ? formatted(timer.left) : 'Time!'" class="tabular-nums"></span>
-                            <span class="text-base font-normal opacity-70">tap to stop</span>
-                        </button>
-                    </template>
-                </div>
-            </template>
 
             {{-- Big enough for messy hands, and always in the same place. --}}
             <footer class="flex shrink-0 gap-3 px-8 pt-2 pb-8">

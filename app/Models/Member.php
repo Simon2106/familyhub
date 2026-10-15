@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Casts\CalendarDate;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Builder;
@@ -16,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 
-#[Fillable(['household_id', 'name', 'colour', 'avatar_path', 'is_child', 'pin', 'sort_order', 'birthday'])]
+#[Fillable(['household_id', 'name', 'colour', 'avatar_path', 'is_child', 'pin', 'sort_order', 'birthday', 'school_notes'])]
 #[Hidden(['pin'])]
 class Member extends Model
 {
@@ -30,6 +31,7 @@ class Member extends Model
             // CalendarDate rather than date: a birthday with a time on it is
             // a birthday that lands on the wrong day in MySQL.
             'birthday' => CalendarDate::class,
+            'school_notes' => 'array',
         ];
     }
 
@@ -37,6 +39,75 @@ class Member extends Model
     public function household(): BelongsTo
     {
         return $this->belongsTo(Household::class);
+    }
+
+    /* -------------------------- the school week ------------------------- */
+
+    /** The days a school note can be set against. */
+    public const SCHOOL_DAYS = [
+        'mon' => 'Monday',
+        'tue' => 'Tuesday',
+        'wed' => 'Wednesday',
+        'thu' => 'Thursday',
+        'fri' => 'Friday',
+    ];
+
+    /**
+     * What this child needs on each day of the school week.
+     *
+     * Per weekday rather than per date, because that is how a timetable
+     * works: PE is on Tuesdays until the year ends, not on the 14th.
+     *
+     * @return array<string, string>
+     */
+    public function schoolNotes(): array
+    {
+        $saved = (array) ($this->school_notes ?? []);
+        $notes = [];
+
+        foreach (array_keys(self::SCHOOL_DAYS) as $day) {
+            $note = trim((string) ($saved[$day] ?? ''));
+
+            if ($note !== '') {
+                $notes[$day] = $note;
+            }
+        }
+
+        return $notes;
+    }
+
+    /**
+     * The things needed on a given day, split out of the note.
+     *
+     * Comma-separated because that is how anybody types a packing list, and
+     * one chip each is far easier to check off at speed than one sentence.
+     *
+     * @return list<string>
+     */
+    public function neededOn(CarbonInterface $date): array
+    {
+        $note = $this->schoolNotes()[mb_strtolower($date->format('D'))] ?? '';
+
+        return array_values(array_filter(array_map(
+            'trim',
+            preg_split('/[,;\n]+/', $note) ?: [],
+        ), fn (string $item) => $item !== ''));
+    }
+
+    /** @param array<string, string> $notes */
+    public function setSchoolNotes(array $notes): void
+    {
+        $clean = [];
+
+        foreach (array_keys(self::SCHOOL_DAYS) as $day) {
+            $note = trim((string) ($notes[$day] ?? ''));
+
+            if ($note !== '') {
+                $clean[$day] = mb_substr($note, 0, 200);
+            }
+        }
+
+        $this->forceFill(['school_notes' => $clean === [] ? null : $clean])->save();
     }
 
     /** @return HasMany<Calendar, $this> */

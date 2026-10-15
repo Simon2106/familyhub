@@ -57,6 +57,10 @@ class OpenMeteo
                 'longitude' => config('familyhub.weather.longitude'),
                 'current' => 'temperature_2m,weather_code,is_day',
                 'daily' => 'temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+                // The morning face wants to know what it will be doing at
+                // the school gate, which is the whole reason anybody looks
+                // at a forecast before eight o'clock.
+                'hourly' => 'temperature_2m,weather_code,precipitation_probability',
                 'timezone' => config('familyhub.timezone'),
                 'forecast_days' => 1,
             ]);
@@ -92,6 +96,51 @@ class OpenMeteo
             low: $this->firstOf($daily['temperature_2m_min'] ?? null),
             rainChance: $this->firstOf($daily['precipitation_probability_max'] ?? null),
             isDay: (int) ($current['is_day'] ?? 1) === 1,
+        );
+    }
+
+    /**
+     * What it will be doing at a particular hour today.
+     *
+     * Null when the forecast does not reach that far, or when there is no
+     * weather at all — a missing second tile is not worth an error.
+     */
+    public function atHour(int $hour): ?Forecast
+    {
+        if (! $this->isConfigured()) {
+            return null;
+        }
+
+        $data = Cache::remember(
+            self::KEY,
+            now()->addMinutes((int) config('familyhub.weather.cache_minutes')),
+            fn () => $this->fetch(),
+        );
+
+        $hourly = is_array($data) ? ($data['hourly'] ?? []) : [];
+        $times = $hourly['time'] ?? null;
+
+        if (! is_array($times)) {
+            return null;
+        }
+
+        // The times come back in the household's own zone, which is what was
+        // asked for, so matching on the hour is matching on the hour people
+        // mean.
+        $wanted = now(config('familyhub.timezone'))->setTime($hour, 0)->format('Y-m-d\\TH:00');
+        $at = array_search($wanted, $times, true);
+
+        if ($at === false || ! isset($hourly['temperature_2m'][$at])) {
+            return null;
+        }
+
+        return new Forecast(
+            temperature: (float) $hourly['temperature_2m'][$at],
+            code: (int) ($hourly['weather_code'][$at] ?? 0),
+            rainChance: isset($hourly['precipitation_probability'][$at])
+                ? (float) $hourly['precipitation_probability'][$at]
+                : null,
+            isDay: $hour >= 7 && $hour < 19,
         );
     }
 

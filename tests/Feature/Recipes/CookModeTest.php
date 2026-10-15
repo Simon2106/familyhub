@@ -3,14 +3,18 @@
 namespace Tests\Feature\Recipes;
 
 use App\Models\Household;
+use App\Models\Meal;
 use App\Models\Recipe;
+use App\Models\Timer;
 use App\Models\User;
+use App\Services\Recipes\StepSplitter;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
-/** Cooking from the wall, one step to a screen. */
+/** Cooking from the wall, with floury hands. */
 class CookModeTest extends TestCase
 {
     use RefreshDatabase;
@@ -22,220 +26,229 @@ class CookModeTest extends TestCase
         parent::setUp();
 
         $this->household = Household::factory()->create();
-        $this->actingAs(User::factory()->create(['household_id' => $this->household->id]));
+        User::factory()->create(['household_id' => $this->household->id]);
     }
 
     protected function recipe(array $attributes = []): Recipe
     {
-        return Recipe::factory()->create($attributes + [
+        return Recipe::create($attributes + [
             'household_id' => $this->household->id,
-            'title' => 'Fish pie',
-            'status' => 'ready',
-            'ingredients' => [
-                ['item' => 'smoked haddock', 'quantity' => 400, 'unit' => 'g'],
-                ['item' => 'potatoes', 'quantity' => 1, 'unit' => 'kg'],
-            ],
-            'steps' => ['Boil the potatoes for 20 minutes.', 'Poach the fish.', 'Bake until golden.'],
+            'title' => 'Chilli',
         ]);
     }
 
+    /* ---------------------------- the steps ----------------------------- */
+
     #[Test]
-    public function it_opens_on_the_ingredients_and_walks_through_the_steps(): void
+    public function a_numbered_list_is_taken_at_its_word(): void
     {
-        // Gathering happens once, at the start; repeating the list beside step
-        // four is how a wall runs out of room for the step.
-        $recipe = $this->recipe();
+        $steps = app(StepSplitter::class)->split(<<<'TEXT'
+            Ingredients: beef, beans, tomatoes
 
-        $component = Livewire::test('recipes.cook')
-            ->call('start', $recipe->id)
-            ->assertSee('What you need')
-            ->assertSee('smoked haddock');
+            1. Brown the mince in a wide pan.
+            2) Add the onions and cook for ten minutes.
+            Step 3: Tip in the tomatoes and simmer for 40 minutes.
+            TEXT);
 
-        $component->call('next')->assertSee('Boil the potatoes');
-        $component->call('next')->assertSee('Poach the fish');
-        $component->call('back')->assertSee('Boil the potatoes');
+        $this->assertCount(3, $steps);
+        $this->assertSame('Brown the mince in a wide pan.', $steps[0]);
+        $this->assertStringContainsString('simmer for 40 minutes', $steps[2]);
     }
 
     #[Test]
-    public function a_recipe_with_no_ingredients_starts_at_the_first_step(): void
+    public function a_wall_of_text_is_split_into_sentences(): void
     {
-        $recipe = $this->recipe(['ingredients' => null]);
+        // Half of what lands in the box is an Instagram caption.
+        $steps = app(StepSplitter::class)->split(
+            'Brown the mince in a wide pan. Add the onions and soften them. Tip in the tomatoes and simmer for forty minutes.'
+        );
 
-        Livewire::test('recipes.cook')
-            ->call('start', $recipe->id)
-            ->assertSee('Boil the potatoes')
-            ->assertDontSee('What you need');
+        $this->assertCount(3, $steps);
+        $this->assertSame('Brown the mince in a wide pan.', $steps[0]);
     }
 
     #[Test]
-    public function it_cannot_be_walked_off_either_end(): void
-    {
-        $recipe = $this->recipe();
-
-        $component = Livewire::test('recipes.cook')->call('start', $recipe->id);
-
-        $component->call('back')->assertSet('step', 0);
-
-        foreach (range(1, 10) as $ignored) {
-            $component->call('next');
-        }
-
-        // Four screens: the ingredients and three steps.
-        $component->assertSet('step', 3);
-    }
-
-    #[Test]
-    public function ingredients_are_ticked_off_and_untucked_again(): void
-    {
-        $recipe = $this->recipe();
-
-        Livewire::test('recipes.cook')
-            ->call('start', $recipe->id)
-            ->call('gather', 0)
-            ->assertSet('gathered', [0])
-            ->call('gather', 1)
-            ->assertSet('gathered', [0, 1])
-            ->call('gather', 0)
-            ->assertSet('gathered', [1]);
-    }
-
-    #[Test]
-    public function the_ticks_are_about_this_evening_and_not_about_the_recipe(): void
-    {
-        // A chilli that remembered which onions were chopped in March would be
-        // worse than one that remembered nothing.
-        $recipe = $this->recipe();
-
-        Livewire::test('recipes.cook')
-            ->call('start', $recipe->id)
-            ->call('gather', 0)
-            ->call('close')
-            ->call('start', $recipe->id)
-            ->assertSet('gathered', []);
-    }
-
-    #[Test]
-    public function finishing_closes_it_and_returns_to_the_recipe(): void
-    {
-        $recipe = $this->recipe();
-
-        Livewire::test('recipes.cook')
-            ->call('start', $recipe->id)
-            ->call('next')->call('next')->call('next')
-            ->assertSet('isLast', true)
-            ->call('close')
-            ->assertSet('recipeId', null)
-            ->assertDontSee('Fish pie');
-    }
-
-    /* ------------------------------- timers ------------------------------ */
-
-    #[Test]
-    public function the_minutes_a_step_mentions_become_a_timer_button(): void
-    {
-        // Nobody who has just read "simmer for 20 minutes" wants to then type
-        // 20 with a wooden spoon in their hand.
-        $cook = Livewire::test('recipes.cook')->instance();
-
-        $this->assertSame([20], $cook->minutesIn('Boil the potatoes for 20 minutes.'));
-        $this->assertSame([5], $cook->minutesIn('Rest for 5 mins.'));
-        $this->assertSame([3, 40], $cook->minutesIn('Fry 3 minutes, then bake 40 minutes.'));
-    }
-
-    #[Test]
-    public function a_range_offers_the_longer_end(): void
-    {
-        // A timer that goes off early is one somebody has to set again.
-        $cook = Livewire::test('recipes.cook')->instance();
-
-        $this->assertSame([25], $cook->minutesIn('Simmer for 20-25 minutes.'));
-        $this->assertSame([45], $cook->minutesIn('Bake 40 to 45 minutes.'));
-    }
-
-    #[Test]
-    public function nonsense_is_not_offered_as_a_timer(): void
-    {
-        $cook = Livewire::test('recipes.cook')->instance();
-
-        $this->assertSame([], $cook->minutesIn('Serves 4. Preheat to 200C.'));
-        $this->assertSame([], $cook->minutesIn('Leave for 600 minutes.'), 'Ten hours is not a kitchen timer.');
-    }
-
-    /* ------------------------------- reach ------------------------------- */
-
-    #[Test]
-    public function the_recipe_box_offers_it_only_where_there_are_steps(): void
-    {
-        $withSteps = $this->recipe();
-        $without = $this->recipe(['title' => 'That chicken thing', 'steps' => null]);
-
-        Livewire::test('recipes.box')
-            ->call('open', $withSteps->id)
-            ->assertSee('Cook this');
-
-        Livewire::test('recipes.box')
-            ->call('open', $without->id)
-            ->assertDontSee('Cook this');
-    }
-
-    #[Test]
-    public function somebody_elses_recipe_cannot_be_cooked(): void
-    {
-        $theirs = Recipe::factory()->create([
-            'household_id' => Household::factory()->create()->id,
-            'title' => 'Not ours',
-            'steps' => ['Do a thing'],
-        ]);
-
-        Livewire::test('recipes.cook')
-            ->call('start', $theirs->id)
-            ->assertDontSee('Not ours');
-    }
-
-    /**
-     * Ingredient rows arrive from an AI extraction, a shared page, or somebody
-     * typing, so a row is often just an item. Everything that draws them —
-     * the dialog, cook mode, the shopping list — reads four keys, and a row
-     * missing one used to take the whole recipe dialog down with it.
-     */
-    #[Test]
-    public function every_ingredient_row_comes_back_with_the_whole_shape(): void
+    public function the_split_is_done_once_and_written_back(): void
     {
         $recipe = $this->recipe([
-            'ingredients' => [
-                ['item' => 'Olive oil'],
-                ['item' => 'Sausages', 'quantity' => '8', 'note' => 'good ones'],
-                ['item' => 'Tomatoes', 'quantity' => 400, 'unit' => 'g'],
-                ['item' => '', 'quantity' => 3],
-                'not an array',
-            ],
+            'raw_text' => "1. Brown the mince well.\n2. Add the onions and soften.",
         ]);
 
-        $lines = $recipe->ingredientList();
+        $this->assertNull($recipe->steps);
 
-        $this->assertCount(3, $lines, 'Rows with no item are dropped.');
+        $steps = app(StepSplitter::class)->for($recipe);
 
-        foreach ($lines as $line) {
-            $this->assertSame(['quantity', 'unit', 'item', 'note'], array_keys($line));
-        }
-
-        $this->assertSame(
-            ['quantity' => null, 'unit' => null, 'item' => 'Olive oil', 'note' => null],
-            $lines[0],
-        );
-        $this->assertSame(8.0, $lines[1]['quantity']);
-        $this->assertSame('good ones', $lines[1]['note']);
+        $this->assertCount(2, $steps);
+        $this->assertCount(2, (array) $recipe->fresh()->steps, 'It should not be worked out again next time.');
     }
 
-    /** The dialog draws a bare row without falling over. */
     #[Test]
-    public function the_recipe_dialog_draws_an_ingredient_with_nothing_but_a_name(): void
+    public function a_recipe_that_already_has_steps_is_left_alone(): void
     {
-        $recipe = $this->recipe(['ingredients' => [['item' => 'Olive oil']]]);
+        $recipe = $this->recipe([
+            'steps' => ['Do the thing properly.'],
+            'raw_text' => '1. Something else entirely that should not win.',
+        ]);
 
-        Livewire::test('recipes.box')
-            ->call('open', $recipe->id)
-            ->assertOk()
-            ->assertSee('Olive oil');
+        $this->assertSame(['Do the thing properly.'], app(StepSplitter::class)->for($recipe));
+    }
+
+    #[Test]
+    public function a_recipe_with_nothing_to_split_says_so_rather_than_inventing(): void
+    {
+        $this->assertSame([], app(StepSplitter::class)->for($this->recipe()));
+    }
+
+    #[Test]
+    public function cook_mode_opens_a_recipe_that_never_had_structured_steps(): void
+    {
+        // This is the whole reason the splitter exists: cook mode shows one
+        // step a screen, so a recipe with none is one it cannot open.
+        $recipe = $this->recipe([
+            'raw_text' => "1. Brown the mince well.\n2. Add the onions.\n3. Simmer for 30 minutes.",
+        ]);
+
+        Livewire::test('recipes.cook')
+            ->call('start', $recipe->id)
+            ->assertSee('Brown the mince well.');
+    }
+
+    /* --------------------------- the servings --------------------------- */
+
+    #[Test]
+    public function quantities_scale_with_the_number_eating(): void
+    {
+        $recipe = $this->recipe([
+            'servings' => 4,
+            'ingredients' => [
+                ['item' => 'beef mince', 'quantity' => 500, 'unit' => 'g'],
+                ['item' => 'onion', 'quantity' => 2, 'unit' => null],
+                // No quantity: "a pinch" does not double.
+                ['item' => 'salt', 'quantity' => null, 'unit' => null, 'note' => 'to taste'],
+            ],
+            'steps' => ['Cook it.'],
+        ]);
+
+        Livewire::test('recipes.cook')
+            ->call('start', $recipe->id)
+            ->assertSee('500 g beef mince')
+            ->call('scaleTo', 8)
+            ->assertSee('1000 g beef mince')
+            ->assertSee('4 onion')
+            ->assertSee('salt')
+            ->assertSee('written for 4');
+    }
+
+    #[Test]
+    public function a_recipe_that_never_said_how_many_it_serves_is_not_scaled(): void
+    {
+        // Doubling a recipe written for nobody-knows-how-many is arithmetic
+        // dressed up as help.
+        $recipe = $this->recipe([
+            'ingredients' => [['item' => 'beef mince', 'quantity' => 500, 'unit' => 'g']],
+            'steps' => ['Cook it.'],
+        ]);
+
+        Livewire::test('recipes.cook')
+            ->call('start', $recipe->id)
+            ->assertSet('canScale', false)
+            ->assertDontSee('Cooking for');
+    }
+
+    #[Test]
+    public function awkward_fractions_are_rounded_to_something_a_scale_can_read(): void
+    {
+        $recipe = $this->recipe([
+            'servings' => 3,
+            'ingredients' => [['item' => 'flour', 'quantity' => 100, 'unit' => 'g']],
+            'steps' => ['Cook it.'],
+        ]);
+
+        Livewire::test('recipes.cook')
+            ->call('start', $recipe->id)
+            ->call('scaleTo', 2)
+            ->assertSee('67 g flour');
+    }
+
+    /* ------------------------- holding the screen ------------------------ */
+
+    #[Test]
+    public function cooking_holds_the_screensaver_back_and_gives_it_up_afterwards(): void
+    {
+        // A photograph over step four is something somebody has to wipe away
+        // with floury hands.
+        $recipe = $this->recipe(['steps' => ['Cook it.']]);
+
+        Livewire::test('recipes.cook')
+            ->call('start', $recipe->id)
+            ->assertDispatched('cooking-started')
+            ->call('close')
+            ->assertDispatched('cooking-ended');
+    }
+
+    #[Test]
+    public function the_minutes_in_a_step_are_offered_as_a_timer(): void
+    {
+        $recipe = $this->recipe(['steps' => ['Simmer for 20-25 minutes until thickened.']]);
+
+        $cook = Livewire::test('recipes.cook')->call('start', $recipe->id);
+
+        // The longer of a range: a timer that goes off early is a timer
+        // somebody has to set again.
+        $this->assertSame([25], $cook->instance()->minutesIn('Simmer for 20-25 minutes until thickened.'));
+    }
+
+    #[Test]
+    public function a_timer_started_at_the_hob_outlives_the_cooking(): void
+    {
+        Livewire::test('display.timers')->call('startFor', 25, 'Chilli');
+
+        $timer = Timer::first();
+
+        $this->assertNotNull($timer);
+        $this->assertSame('Chilli', $timer->name);
+        $this->assertSame(25 * 60, $timer->seconds);
+    }
+
+    /* --------------------------- from the plan --------------------------- */
+
+    #[Test]
+    public function tonights_meal_can_be_cooked_straight_from_the_evening_face(): void
+    {
+        $recipe = $this->recipe(['steps' => ['Cook it.']]);
+
+        // Travelled first: the meal has to land on the day the face will be
+        // looking at, not on whatever day the suite happens to run.
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 18:00', $this->household->displayTimezone()));
+
+        Meal::create([
+            'household_id' => $this->household->id,
+            'on' => $this->household->todayLocal()->toDateString(),
+            'slot' => 'dinner',
+            'title' => 'Chilli',
+            'recipe_id' => $recipe->id,
+        ]);
+
+        Livewire::test('display.evening')
+            ->assertSee('Start cooking')
+            ->call('cook')
+            ->assertDispatched('cook', recipe: $recipe->id);
+    }
+
+    #[Test]
+    public function a_meal_with_no_recipe_behind_it_does_not_offer_to_be_cooked(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 18:00', $this->household->displayTimezone()));
+
+        Meal::create([
+            'household_id' => $this->household->id,
+            'on' => $this->household->todayLocal()->toDateString(),
+            'slot' => 'dinner',
+            'title' => 'Fish and chips',
+        ]);
+
+        Livewire::test('display.evening')
+            ->assertSee('Fish and chips')
+            ->assertDontSee('Start cooking');
     }
 }

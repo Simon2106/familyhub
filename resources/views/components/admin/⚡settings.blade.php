@@ -49,6 +49,32 @@ new #[Layout('layouts::app')] class extends Component
     /** A public iCloud shared album the screensaver pulls from. */
     public string $photoAlbumUrl = '';
 
+    /**
+     * When each face of the wall starts.
+     *
+     * @var array<string, string>
+     */
+    public array $faceTimes = [];
+
+    /** How dark the night face goes, as a percentage for the slider. */
+    public int $nightDim = 50;
+
+    /** The hour the morning face checks the forecast for. */
+    public int $pickupHour = 15;
+
+    /** Whether a finished timer makes a noise. */
+    public bool $timerChime = true;
+
+    /** Whether the wall drops the heavier glass effects. */
+    public bool $liteGlass = false;
+
+    /**
+     * What the child being edited needs on each school day.
+     *
+     * @var array<string, string>
+     */
+    public array $schoolNotes = [];
+
     /** Set while the album is being read from this page. */
     public bool $syncingPhotos = false;
 
@@ -115,6 +141,12 @@ new #[Layout('layouts::app')] class extends Component
         $this->binWeekB = $pattern?->weekB ?? [];
 
         $this->wallSpeaks = $household->wallSpeaks();
+
+        $this->faceTimes = $household->faceTimes();
+        $this->nightDim = (int) round($household->nightDim() * 100);
+        $this->pickupHour = $household->schoolPickupHour();
+        $this->timerChime = $household->timerChime();
+        $this->liteGlass = $household->liteGlass();
 
         $this->photoAlbumUrl = (string) $household->photoAlbumUrl();
         $dark = $household->darkMode();
@@ -355,6 +387,9 @@ new #[Layout('layouts::app')] class extends Component
             'darkEnd' => 'required|date_format:H:i',
             'screensaverMinutes' => 'required|integer|min:0|max:240',
             'screensaverStyle' => 'required|in:'.implode(',', array_keys(Household::SCREENSAVER_STYLES)),
+            'faceTimes.*' => 'required|date_format:H:i',
+            'nightDim' => 'required|integer|min:0|max:90',
+            'pickupHour' => 'required|integer|min:0|max:23',
             'mirrorCalendarId' => 'nullable|integer',
         ]);
 
@@ -384,6 +419,11 @@ new #[Layout('layouts::app')] class extends Component
         $household->setDarkMode($this->darkStart, $this->darkEnd);
         $household->setScreensaverMinutes($this->screensaverMinutes);
         $household->setScreensaverStyle($this->screensaverStyle);
+        $household->setFaceTimes($this->faceTimes);
+        $household->setNightDim($this->nightDim / 100);
+        $household->setSchoolPickupHour($this->pickupHour);
+        $household->setTimerChime($this->timerChime);
+        $household->setLiteGlass($this->liteGlass);
         $household->setPhotoAlbumUrl($this->photoAlbumUrl);
         $household->setBinCalendarUrl($this->binCalendarUrl);
 
@@ -479,11 +519,13 @@ new #[Layout('layouts::app')] class extends Component
         $this->pin = '';
         $this->aliases = $member->aliases->where('kind', 'name')->pluck('alias')->join(', ');
         $this->domains = $member->aliases->where('kind', 'domain')->pluck('alias')->join(', ');
+        $this->schoolNotes = $member->schoolNotes() + array_fill_keys(array_keys(Member::SCHOOL_DAYS), '');
     }
 
     public function addMember(): void
     {
         $this->reset(['editingId', 'name', 'colour', 'isChild', 'birthday', 'pin', 'aliases', 'domains']);
+        $this->schoolNotes = array_fill_keys(array_keys(Member::SCHOOL_DAYS), '');
         $this->editingId = 0; // 0 means "new"
     }
 
@@ -516,11 +558,12 @@ new #[Layout('layouts::app')] class extends Component
 
         $member->save();
         $member->ensureFirstNameAlias();
+        $member->setSchoolNotes($this->schoolNotes);
 
         $this->syncAliases($member);
         $this->syncDomains($member);
 
-        $this->reset(['editingId', 'name', 'colour', 'isChild', 'birthday', 'pin', 'aliases', 'domains']);
+        $this->reset(['editingId', 'name', 'colour', 'isChild', 'birthday', 'pin', 'aliases', 'domains', 'schoolNotes']);
         unset($this->members);
 
         // Titles that mention this member may now match differently.
@@ -784,6 +827,28 @@ new #[Layout('layouts::app')] class extends Component
                             Subdomains count.
                         </p>
                     </div>
+
+                    {{-- What has to go in a bag, by weekday. The morning
+                         face reads these out as chips; a timetable is per
+                         weekday, not per date. --}}
+                    @if ($isChild)
+                        <div>
+                            <span class="block text-sm font-medium">Needed on a school day</span>
+                            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                Shown on the wall's morning face. Separate several with commas —
+                                &ldquo;PE kit, packed lunch&rdquo;.
+                            </p>
+                            <div class="mt-2 space-y-2">
+                                @foreach (Member::SCHOOL_DAYS as $key => $label)
+                                    <label class="flex items-center gap-3">
+                                        <span class="w-24 shrink-0 text-sm text-slate-500 dark:text-slate-400">{{ $label }}</span>
+                                        <input wire:model="schoolNotes.{{ $key }}" type="text" autocapitalize="sentences"
+                                               class="touch-target min-w-0 flex-1 rounded-xl border border-slate-300 px-4 dark:border-slate-700 dark:bg-slate-900">
+                                    </label>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
 
                     {{-- Adults need one too: granting a reward at the wall
                          asks for a grown-up's PIN, and the wall has no login. --}}
@@ -1064,6 +1129,70 @@ new #[Layout('layouts::app')] class extends Component
                 </div>
                 @error('screensaverMinutes') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
             </div>
+
+            {{-- What the wall shows at which hour. Four times rather than a
+                 schedule: the browser works the rest out itself. --}}
+            <fieldset class="mt-4">
+                <legend class="text-sm font-medium">What it shows, by the hour</legend>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    The wall changes face through the day. Morning is weekdays only —
+                    the weekend uses the day face.
+                </p>
+
+                <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    @foreach (\App\Services\Display\WallFace::LABELS as $key => $label)
+                        <label class="block">
+                            <span class="block text-sm text-slate-500 dark:text-slate-400">{{ $label }} from</span>
+                            <input wire:model="faceTimes.{{ $key }}" type="time"
+                                   class="touch-target mt-1 w-full rounded-xl border border-slate-300 px-3 dark:border-slate-700 dark:bg-slate-950">
+                        </label>
+                    @endforeach
+                </div>
+                @error('faceTimes.*') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+
+                <label class="mt-3 block">
+                    <span class="block text-sm font-medium">How dark the night face goes</span>
+                    <span class="mt-1 flex items-center gap-3">
+                        <input wire:model.live="nightDim" type="range" min="0" max="90" step="5" class="min-w-0 flex-1">
+                        <span class="w-14 shrink-0 text-right text-sm tabular-nums">{{ $nightDim }}%</span>
+                    </span>
+                    <span class="mt-1 block text-sm text-slate-500 dark:text-slate-400">
+                        A layer over the photograph. The panel's backlight cannot be driven from
+                        a browser, so this is the only dimmer there is.
+                    </span>
+                </label>
+
+                <label class="mt-3 block">
+                    <span class="block text-sm font-medium">School pick-up</span>
+                    <input wire:model="pickupHour" type="number" min="0" max="23"
+                           class="touch-target mt-1 w-28 rounded-xl border border-slate-300 px-3 tabular-nums dark:border-slate-700 dark:bg-slate-950">
+                    <span class="mt-1 block text-sm text-slate-500 dark:text-slate-400">
+                        The hour the morning face checks the forecast for, as well as now.
+                    </span>
+                </label>
+                @error('pickupHour') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+            </fieldset>
+
+            <label class="mt-4 flex touch-target items-center justify-between gap-4">
+                <span class="min-w-0">
+                    <span class="block text-sm font-medium">Timers make a noise</span>
+                    <span class="block text-sm text-slate-500 dark:text-slate-400">
+                        A short tone when one finishes. The banner shows either way.
+                    </span>
+                </span>
+                <input wire:model="timerChime" type="checkbox" class="size-6 shrink-0">
+            </label>
+
+            <label class="mt-2 flex touch-target items-center justify-between gap-4">
+                <span class="min-w-0">
+                    <span class="block text-sm font-medium">Lighter glass</span>
+                    <span class="block text-sm text-slate-500 dark:text-slate-400">
+                        Drops the heaviest of the panel effects. Turn this on if the wall
+                        has started to feel sluggish.
+                    </span>
+                </span>
+                <input wire:model="liteGlass" type="checkbox" class="size-6 shrink-0">
+            </label>
 
             @if ($screensaverMinutes > 0)
                 <fieldset class="mt-3">

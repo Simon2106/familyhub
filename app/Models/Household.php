@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Exceptions\HouseholdNotProvisioned;
+use App\Services\Display\WallFace;
 use App\Services\PhotoLibrary;
 use App\Services\Photos\SharedAlbumLink;
 use Carbon\CarbonImmutable;
@@ -313,6 +314,110 @@ class Household extends Model
         $this->putSettings([
             'screensaver_style' => array_key_exists($style, self::SCREENSAVER_STYLES) ? $style : 'clock',
         ]);
+    }
+
+    /* ------------------------------- faces ------------------------------ */
+
+    /**
+     * When each face of the wall starts, in household time.
+     *
+     * Four strings rather than a schedule: the browser evaluates them itself
+     * every minute, so the wall changes face on the hour rather than at
+     * whatever moment the next poll happens to land.
+     *
+     * @return array<string, string>
+     */
+    public function faceTimes(): array
+    {
+        $saved = (array) ($this->settings['face_times'] ?? []);
+        $times = [];
+
+        foreach (WallFace::DEFAULTS as $face => $default) {
+            $time = (string) ($saved[$face] ?? '');
+
+            $times[$face] = preg_match('/^([01]\\d|2[0-3]):[0-5]\\d$/', $time) ? $time : $default;
+        }
+
+        return $times;
+    }
+
+    /** @param array<string, string> $times */
+    public function setFaceTimes(array $times): void
+    {
+        $clean = [];
+
+        foreach (WallFace::DEFAULTS as $face => $default) {
+            $time = trim((string) ($times[$face] ?? ''));
+
+            $clean[$face] = preg_match('/^([01]\\d|2[0-3]):[0-5]\\d$/', $time) ? $time : $default;
+        }
+
+        $this->putSettings(['face_times' => $clean]);
+    }
+
+    /**
+     * How dark the night face goes, 0 to 0.9.
+     *
+     * A layer over the photograph rather than the backlight: the panel's
+     * brightness cannot be driven from a browser, so this is the only dimmer
+     * there is.
+     */
+    public function nightDim(): float
+    {
+        $dim = $this->settings['night_dim'] ?? null;
+
+        return is_numeric($dim) ? max(0.0, min(0.9, round((float) $dim, 2))) : 0.5;
+    }
+
+    public function setNightDim(float $dim): void
+    {
+        $this->putSettings(['night_dim' => max(0.0, min(0.9, round($dim, 2)))]);
+    }
+
+    /**
+     * The hour the morning face checks the forecast for.
+     *
+     * School pick-up: the one moment in the day where knowing whether it
+     * will be raining changes what somebody puts in a bag.
+     */
+    public function schoolPickupHour(): int
+    {
+        $hour = $this->settings['school_pickup_hour'] ?? null;
+
+        return is_numeric($hour) ? max(0, min(23, (int) $hour)) : 15;
+    }
+
+    public function setSchoolPickupHour(int $hour): void
+    {
+        $this->putSettings(['school_pickup_hour' => max(0, min(23, $hour))]);
+    }
+
+    /** Whether a finished timer makes a noise. */
+    public function timerChime(): bool
+    {
+        return (bool) ($this->settings['timer_chime'] ?? true);
+    }
+
+    public function setTimerChime(bool $chime): void
+    {
+        $this->putSettings(['timer_chime' => $chime]);
+    }
+
+    /**
+     * Whether the wall drops the heavier glass effects.
+     *
+     * The displacement ring is the expensive one on a Pi. This is the switch
+     * for a household whose wall is not keeping up, and it is honoured by the
+     * same CSS that honours prefers-reduced-motion.
+     */
+    public function liteGlass(): bool
+    {
+        return (bool) ($this->settings['lite_glass'] ?? false);
+    }
+
+    public function setLiteGlass(bool $lite): void
+    {
+        $this->putSettings(['lite_glass' => $lite]);
     }
 
     /** What the shared album is called, as Apple reports it. */

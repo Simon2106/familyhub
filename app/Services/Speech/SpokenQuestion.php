@@ -49,7 +49,7 @@ class SpokenQuestion
     /**
      * Where it has got to.
      *
-     * @return array{status: string, transcript: ?string, answer: ?string, error: ?string, speaks: bool}
+     * @return array{status: string, transcript: ?string, answer: ?string, error: ?string, speaks: bool, timers: bool}
      */
     public function state(): array
     {
@@ -59,6 +59,9 @@ class SpokenQuestion
             'answer' => null,
             'error' => null,
             'speaks' => false,
+            // Set when the question turned out to be a timer, so the wall
+            // can go and fetch it rather than waiting for the next poll.
+            'timers' => false,
         ];
     }
 

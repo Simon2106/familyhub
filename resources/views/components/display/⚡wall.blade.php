@@ -510,7 +510,21 @@ new #[Layout('layouts::display')] class extends Component
             'darkEnd' => $dark['end'],
             'idleMs' => $this->household()->screensaverMinutes() * 60 * 1000,
             'style' => $this->household()->screensaverStyle(),
+            // The face boundaries go down as minutes past midnight so the
+            // browser can work out which face it is on every minute without
+            // asking — a wall whose face only turned over on the next poll
+            // would be showing the morning at ten past nine.
+            'faces' => app(\App\Services\Display\WallFace::class)->boundaries($this->household()),
+            'face' => app(\App\Services\Display\WallFace::class)->at($this->household()),
+            'nightDim' => $this->household()->nightDim(),
         ];
+    }
+
+    /** What each face is called, and what it says hello with. */
+    #[Computed]
+    public function faceGreetings(): array
+    {
+        return \App\Services\Display\WallFace::GREETINGS;
     }
 
     /**
@@ -694,6 +708,21 @@ new #[Layout('layouts::display')] class extends Component
         tz: @js($tz),
         weekDates: @js(array_column($week, 'date')),
 
+        /* --- which face the wall is wearing --- */
+        faceBounds: @js($wall['faces']),
+        face: @js($wall['face']),
+        /* An override lasts until the hour would have changed it anyway:
+           somebody who taps Evening at four wants the evening, not the
+           evening for ever. */
+        faceOverride: null,
+        faceOverrodeAt: null,
+        facePicker: false,
+        nightDim: @js($wall['nightDim']),
+
+        /* Cooking holds the screen: a screensaver over step four is a
+           screensaver somebody with floury hands has to wipe away. */
+        cooking: false,
+
         init() {
             /* Remembered per device, not per household: the wall in the
                kitchen and a phone previewing it want different things, and
@@ -722,6 +751,14 @@ new #[Layout('layouts::display')] class extends Component
             this.armIdleTimer();
             this.applyDarkSchedule();
 
+            /* The face is worked out here rather than on the server so it
+               turns over on the minute. Checked every fifteen seconds, which
+               is close enough to on-the-hour for a kitchen and cheap
+               enough to be free. */
+            this.applyFace();
+            setInterval(() => this.applyFace(), 15_000);
+            this.$watch('faceBounds', () => this.applyFace());
+
             /* The settings come back down on every poll, so a change made in
                /admin reaches the wall within the minute rather than at the
                next reload. */
@@ -738,7 +775,7 @@ new #[Layout('layouts::display')] class extends Component
 
             if (this.photos.length > 1) {
                 setInterval(() => {
-                    if (this.idle) this.nextPhoto();
+                    if (this.showingSaver) this.nextPhoto();
                 }, @js(config('familyhub.screensaver.interval_seconds') * 1000));
             }
 
@@ -836,7 +873,7 @@ new #[Layout('layouts::display')] class extends Component
         /* Whatever the album has now. Quietly: a failure here means the wall
            keeps showing the photographs it already has, which is right. */
         async refreshPhotos() {
-            if (! this.idle) return;
+            if (! this.showingSaver) return;
 
             try {
                 const response = await fetch(@js(route('display.photos')), {
@@ -879,7 +916,7 @@ new #[Layout('layouts::display')] class extends Component
          * sliding rather than three things drifting.
          */
         stepDrift() {
-            if (!this.idle) return;
+            if (!this.showingSaver) return;
 
             const screen = this.$refs.screensaver;
 
@@ -971,10 +1008,87 @@ new #[Layout('layouts::display')] class extends Component
             };
         },
 
+        /*
+         * Which face the hour calls for, ignoring any manual override.
+         *
+         * Walks the boundaries in order and keeps the last one passed; before
+         * the first it is still last night, which is why it starts on night.
+         * Morning is a weekday thing — the weekend uses the day face, because
+         * nobody needs a PE kit reminder on a Saturday.
+         */
+        naturalFace() {
+            const now = new Date();
+            const minutes = now.getHours() * 60 + now.getMinutes();
+
+            let face = 'night';
+
+            for (const candidate of ['morning', 'day', 'evening', 'night']) {
+                if (minutes >= this.faceBounds[candidate]) face = candidate;
+            }
+
+            const weekend = now.getDay() === 0 || now.getDay() === 6;
+
+            return face === 'morning' && weekend ? 'day' : face;
+        },
+
+        applyFace() {
+            const natural = this.naturalFace();
+
+            /* An override is given up the moment the hour would have moved
+               on anyway: it was for this part of the day, not for ever. */
+            if (this.faceOverride && this.faceOverrodeAt !== natural) {
+                this.faceOverride = null;
+                this.faceOverrodeAt = null;
+            }
+
+            const was = this.face;
+
+            this.face = this.faceOverride ?? natural;
+
+            /* The drift measures from the moment the screensaver came up.
+               The night face brings it up without the idle timer ever
+               firing, so the clock needs a starting gun of its own. */
+            if (this.face === 'night' && was !== 'night' && !this.idle) {
+                this.idleSince = Date.now();
+            }
+        },
+
+        pickFace(face) {
+            this.faceOverride = face;
+            this.faceOverrodeAt = this.naturalFace();
+            this.face = face;
+            this.facePicker = false;
+            this.wake();
+        },
+
+        clearFace() {
+            this.faceOverride = null;
+            this.faceOverrodeAt = null;
+            this.facePicker = false;
+            this.applyFace();
+        },
+
+        /*
+         * The night face is the screensaver, awake or not.
+         *
+         * At eleven at night a kitchen wants a photograph and a clock and
+         * nothing else; waiting out the idle timer to get there is a wall
+         * showing a chore board to an empty room.
+         */
+        get nightly() {
+            return this.face === 'night' && this.tab === 'home' && !this.searching && !this.cooking;
+        },
+
+        get showingSaver() {
+            return (this.idle || this.nightly) && !this.cooking;
+        },
+
         armIdleTimer() {
             if (!this.idleMs) return;
             clearTimeout(this.idleTimer);
             this.idleTimer = setTimeout(() => {
+                if (this.cooking) return;
+
                 this.idleSince = Date.now();
                 this.idle = true;
             }, this.idleMs);
@@ -991,6 +1105,8 @@ new #[Layout('layouts::display')] class extends Component
     }"
     x-on:pointerdown.window="wake()"
     x-on:keydown.window="wake()"
+    x-on:cooking-started.window="cooking = true; idle = false"
+    x-on:cooking-ended.window="cooking = false; wake()"
 >
     {{-- ============================= HEADER ============================= --}}
     <header class="flex shrink-0 items-baseline justify-between gap-6 px-6 pt-4 pb-3 sm:px-8">
@@ -999,14 +1115,42 @@ new #[Layout('layouts::display')] class extends Component
                  reason: this one is on screen all day. --}}
             <span class="display-digits text-4xl font-bold" x-text="clock">&nbsp;</span>
 
-            <div x-show="view === 'week'">
+            {{-- The face's own greeting, and the way to change it by hand.
+                 Small: it is a thing somebody uses once to see what the
+                 evening face looks like, not a control anybody needs. --}}
+            <button type="button" x-on:click="facePicker = ! facePicker"
+                    class="flex shrink-0 items-center gap-2 rounded-full px-3 py-1 text-left"
+                    :class="faceOverride ? 'bg-blue-600/15 text-blue-700 dark:text-blue-300' : ''"
+                    aria-label="Change what the wall is showing">
+                <span class="text-xl font-semibold" x-text="@js($this->faceGreetings)[face]"></span>
+                <span x-show="faceOverride" x-cloak class="text-sm font-medium opacity-70">held</span>
+            </button>
+
+            <div x-show="facePicker" x-cloak class="relative">
+                <div class="absolute top-8 left-0 z-40 flex flex-col gap-1 rounded-2xl bg-white p-2 shadow-xl dark:bg-slate-900"
+                     x-on:click.outside="facePicker = false">
+                    @foreach (\App\Services\Display\WallFace::LABELS as $key => $label)
+                        <button type="button" x-on:click="pickFace('{{ $key }}')"
+                                class="touch-target rounded-xl px-5 text-left text-lg font-medium"
+                                :class="face === '{{ $key }}' ? 'bg-blue-600 text-white' : ''">
+                            {{ $label }}
+                        </button>
+                    @endforeach
+                    <button type="button" x-on:click="clearFace()" x-show="faceOverride" x-cloak
+                            class="touch-target rounded-xl px-5 text-left text-lg opacity-70">
+                        Back to the clock
+                    </button>
+                </div>
+            </div>
+
+            <div x-show="view === 'week' && face === 'day'">
                 <p class="text-xl font-semibold">This week</p>
                 <p class="text-sm text-slate-500 dark:text-slate-400">
                     {{ $week[0]['carbon']->format('j M') }} – {{ $week[6]['carbon']->format('j M') }}
                 </p>
             </div>
 
-            <div x-show="view === 'day'" x-cloak>
+            <div x-show="view === 'day' && face === 'day'" x-cloak>
                 <p class="text-xl font-semibold"
                    x-text="selected && new Date(selected + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long' })"></p>
                 <p class="text-sm text-slate-500 dark:text-slate-400"
@@ -1207,11 +1351,32 @@ new #[Layout('layouts::display')] class extends Component
         </div>
     </header>
 
+    {{-- Timers, pinned above everything on every tab. The one thing a
+         kitchen timer must never do is be somewhere else when it rings. --}}
+    <livewire:display.timers />
+
     {{-- ============================== BODY ============================== --}}
     <div class="min-h-0 flex-1 px-6 pb-3 sm:px-8">
 
+        {{-- ------------------------ MORNING FACE ------------------------ --}}
+        <div x-show="tab === 'home' && face === 'morning'" x-cloak
+             x-transition:enter="transition ease-out duration-[360ms]"
+             x-transition:enter-start="opacity-0 translate-y-3"
+             class="h-full min-h-0">
+            <livewire:display.morning />
+        </div>
+
+        {{-- ------------------------ EVENING FACE ------------------------ --}}
+        <div x-show="tab === 'home' && face === 'evening'" x-cloak
+             x-transition:enter="transition ease-out duration-[360ms]"
+             x-transition:enter-start="opacity-0 translate-y-3"
+             class="h-full min-h-0">
+            <livewire:display.evening />
+        </div>
+
         {{-- ---------------------------- HOME ---------------------------- --}}
-        <div x-show="tab === 'home'" class="flex h-full min-h-0 flex-col gap-3">
+        {{-- The day face, and what sits behind the night one. --}}
+        <div x-show="tab === 'home' && (face === 'day' || face === 'night')" class="flex h-full min-h-0 flex-col gap-3">
           <div class="grid min-h-0 flex-1 gap-4 lg:grid-cols-5">
 
             <section
@@ -1870,6 +2035,11 @@ new #[Layout('layouts::display')] class extends Component
         <div x-show="tab === 'photos'" x-cloak class="h-full min-h-0">
             <livewire:photos.page :on-wall="true" />
         </div>
+
+        {{-- --------------------------- TIMERS --------------------------- --}}
+        <div x-show="tab === 'timers'" x-cloak class="h-full min-h-0">
+            <livewire:display.timer-board />
+        </div>
     </div>
 
     {{-- Search, as an overlay rather than a permanent field: the header has
@@ -1894,7 +2064,7 @@ new #[Layout('layouts::display')] class extends Component
     <livewire:kids.pin />
 
     {{-- ============================ TAB BAR ============================= --}}
-    <nav data-tab-bar class="grid shrink-0 grid-cols-6 gap-1 border-t border-slate-200 px-4 py-1 dark:border-slate-800">
+    <nav data-tab-bar class="grid shrink-0 grid-cols-7 gap-1 border-t border-slate-200 px-4 py-1 dark:border-slate-800">
         @foreach ([
             ['home', 'Home', 'M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z'],
             ['review', 'Review', 'M4 4h16v12H8l-4 4z'],
@@ -1902,6 +2072,7 @@ new #[Layout('layouts::display')] class extends Component
             ['lists', 'Lists', 'M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01'],
             ['home-devices', 'Switches', 'M9 21h6M10 18h4M12 3a6 6 0 0 0-3.5 10.9c.3.2.5.6.5 1V15h6v-.1c0-.4.2-.8.5-1A6 6 0 0 0 12 3z'],
             ['photos', 'Photos', 'M3 7a2 2 0 0 1 2-2h3l1.5-2h5L16 5h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M12 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z'],
+            ['timers', 'Timers', 'M12 21a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15z M12 9.5v4l2.5 2 M9.5 2.5h5'],
         ] as [$key, $label, $path])
             <button
                 type="button"
@@ -1937,7 +2108,7 @@ new #[Layout('layouts::display')] class extends Component
          nothing to aim at, so everything is the target. --}}
     <div
         x-ref="screensaver"
-        x-show="idle"
+        x-show="showingSaver"
         x-cloak
         x-transition.opacity.duration.700ms
         x-on:click="wake()"
@@ -1956,6 +2127,15 @@ new #[Layout('layouts::display')] class extends Component
             </div>
         </template>
 
+        {{-- The night dimmer. The panel's backlight cannot be driven from a
+             browser, so a layer of black over the photograph is the only
+             dimmer there is. --}}
+        {{-- Opacity rather than x-show, for the same reason as the events
+             block: x-show and :style fight over the style attribute. Fading
+             from nothing is also exactly the crossfade this wants. --}}
+        <div class="pointer-events-none absolute inset-0 bg-black transition-opacity duration-[600ms]"
+             :style="`opacity: ${face === 'night' ? nightDim : 0}`"></div>
+
         @if ($wall['style'] === 'photos')
             @php $agenda = $this->saverAgenda; @endphp
 
@@ -1969,7 +2149,8 @@ new #[Layout('layouts::display')] class extends Component
 
             {{-- Weather, top right. --}}
             @if ($this->weather)
-                <div class="absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent p-[5.5rem] pb-10 text-white">
+                <div x-show="face !== 'night'" x-transition.opacity.duration.600ms
+                     class="absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent p-[5.5rem] pb-10 text-white">
                     <p x-ref="saverWeather"
                        class="display-face ml-auto flex w-fit items-center gap-3 text-3xl drop-shadow will-change-transform"
                        :style="`transform: translate3d(${driftWeather.x}px, ${driftWeather.y}px, 0)`"
@@ -2001,7 +2182,20 @@ new #[Layout('layouts::display')] class extends Component
                            class="mt-3 max-w-xl text-xl text-white/80"></p>
                     </div>
 
-                    {{-- Today, bottom right. --}}
+                    {{-- Today, bottom right. Not at night: a clock and a
+                         photograph is the whole of what eleven o'clock
+                         wants.
+
+                         The hiding is done by a wrapper rather than on the
+                         drifting element itself. x-show works by setting
+                         display on the element, and a :style binding rewrites
+                         that element's whole style attribute every time it
+                         re-evaluates — which, for something being drifted five
+                         times a second, means display:none survives about two
+                         hundred milliseconds. The weather block was already
+                         built this way, which is why it worked and this did
+                         not. --}}
+                    <div x-show="face !== 'night'" x-transition.opacity.duration.600ms class="min-w-0">
                     <div x-ref="saverEvents"
                          class="display-face min-w-0 max-w-2xl text-right text-white drop-shadow will-change-transform"
                          :style="`transform: translate3d(${driftEvents.x}px, ${driftEvents.y}px, 0)`"
@@ -2045,6 +2239,7 @@ new #[Layout('layouts::display')] class extends Component
                             <p class="pt-0.5 text-xl text-white/75">+{{ $agenda['more'] }} more</p>
                         @endif
                     </div>
+                    </div>
                 </div>
             </div>
         @else
@@ -2062,7 +2257,7 @@ new #[Layout('layouts::display')] class extends Component
                 @if ($wall['style'] === 'today')
                     @php $agenda = $this->saverAgenda; @endphp
 
-                    <div class="mt-8 max-w-4xl">
+                    <div class="mt-8 max-w-4xl" x-show="face !== 'night'" x-transition.opacity.duration.600ms>
                         @if ($agenda['label'])
                             <p class="mb-2 text-2xl font-semibold tracking-wide text-white/45 uppercase">
                                 {{ $agenda['label'] }}

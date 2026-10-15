@@ -15,6 +15,8 @@ import { describePermission, isStandalone, keyToBytes, looksLikeIos, unavailable
 import { startEcho, watchConnection } from './echo';
 import { createScreenOff } from './screen-off';
 import { createUpdater } from './updater';
+import { chime } from './chime';
+import { RESYNC_MS, adopt, bannerFor, formatted as formattedTime, newlyFinished, secondsLeft } from './timers';
 
 /* -------------------------------------------------------------------------
  * Dark mode by schedule
@@ -40,6 +42,9 @@ window.familyhubDarkMode = applyDarkModeSchedule;
 // The screensaver clock's wander. Kept here rather than in the Blade so the
 // path can be tested; the wall only asks it where to be.
 window.familyhubDrift = { driftAt, roomFor };
+
+// Shared with the handful of places that draw a countdown outside the strip.
+window.familyhubTimers = { formatted: formattedTime, secondsLeft };
 
 // The clock and the schedule must not drift while the tab is backgrounded.
 document.addEventListener('visibilitychange', () => {
@@ -523,6 +528,14 @@ document.addEventListener('alpine:init', () => {
             if (final.status === 'failed') return this.fail(final.error ?? 'That did not work.');
 
             this.answer = final.answer ?? '';
+
+            // A question that turned out to be a timer: the strip is told to
+            // go and look rather than waiting half a minute for its resync,
+            // because somebody is standing there having just asked for it.
+            if (final.timers) {
+                window.dispatchEvent(new CustomEvent('timers-set'));
+            }
+
             this.say(final);
         },
 
@@ -934,14 +947,13 @@ document.addEventListener('alpine:init', () => {
 
 document.addEventListener('alpine:init', () => {
     window.Alpine.data('cookMode', () => ({
-        timers: [],
         awake: false,
         lock: null,
-        ticker: null,
+
+        /** Where a swipe across the step started. */
+        swipeFrom: null,
 
         async init() {
-            this.ticker = setInterval(() => this.tick(), 1000);
-
             await this.keepAwake();
 
             // A wake lock is dropped whenever the page is hidden — switching
@@ -951,7 +963,6 @@ document.addEventListener('alpine:init', () => {
         },
 
         destroy() {
-            clearInterval(this.ticker);
             document.removeEventListener('visibilitychange', this.reacquire);
             this.release();
         },
@@ -982,66 +993,108 @@ document.addEventListener('alpine:init', () => {
             this.awake = false;
         },
 
-        startTimer(minutes) {
-            this.timers.push({ id: Date.now() + Math.random(), left: minutes * 60, rung: false });
+        /**
+         * Hand the timer to the strip rather than keeping one here.
+         *
+         * Cook mode used to run its own countdown, which meant a timer set
+         * at the hob vanished the moment somebody tapped Done — and said
+         * nothing at all from any other tab. The strip's timers are rows,
+         * so they outlive this screen and the browser.
+         */
+        startTimer(minutes, name = null) {
+            window.dispatchEvent(new CustomEvent('cook-timer', {
+                detail: { minutes, name },
+            }));
+        },
+    }));
+});
+
+/* -------------------------------------------------------------------------
+ * The timer strip
+ *
+ * The countdown is done here, from end times the server handed down, so the
+ * strip keeps ticking while Livewire is idle and comes back right after a
+ * Chromium restart. The server is asked again every half minute, which is
+ * the only thing that makes a timer set on a phone appear on the wall.
+ * ---------------------------------------------------------------------- */
+
+document.addEventListener('alpine:init', () => {
+    window.Alpine.data('timerStrip', (initial, chimes) => ({
+        timers: initial ?? [],
+        chimes: Boolean(chimes),
+        banner: null,
+        now: Date.now(),
+
+        /** Timers this screen has already made a noise for. */
+        announced: new Set(),
+
+        /** When each banner went up, so it can stand down on its own. */
+        shownAt: new Map(),
+
+        init() {
+            this.ticker = setInterval(() => this.tick(), 250);
+            this.syncer = setInterval(() => this.resync(), RESYNC_MS);
+
+            // Cook mode asks for a timer by shouting; the strip is what owns
+            // them, so it is the strip that answers.
+            this.onCookTimer = (event) => {
+                this.$wire.startFor(event.detail.minutes, event.detail.name ?? null);
+            };
+
+            window.addEventListener('cook-timer', this.onCookTimer);
+
+            // Something was set out loud; the strip finds out now rather
+            // than at its next resync.
+            this.onSpoken = () => this.resync();
+
+            window.addEventListener('timers-set', this.onSpoken);
         },
 
-        stopTimer(id) {
-            this.timers = this.timers.filter((timer) => timer.id !== id);
+        destroy() {
+            clearInterval(this.ticker);
+            clearInterval(this.syncer);
+            window.removeEventListener('cook-timer', this.onCookTimer);
+            window.removeEventListener('timers-set', this.onSpoken);
         },
 
         tick() {
-            for (const timer of this.timers) {
-                if (timer.left > 0) {
-                    timer.left -= 1;
+            this.now = Date.now();
 
-                    if (timer.left === 0 && !timer.rung) {
-                        timer.rung = true;
-                        this.ring();
-                    }
-                }
+            const rung = newlyFinished(this.timers, this.announced, this.now);
+
+            for (const timer of rung) {
+                this.announced.add(timer.id);
+                this.shownAt.set(timer.id, this.now);
+
+                if (this.chimes) chime(2);
             }
+
+            // Told once per batch rather than once per timer: the server only
+            // needs to know that something rang.
+            if (rung.length) this.$wire.rang();
+
+            this.banner = bannerFor(this.timers, this.shownAt, this.now);
         },
 
-        /**
-         * A short tone rather than an audio file: the kiosk may have no
-         * speakers worth the download, and a beep somebody can hear over an
-         * extractor fan is three sine waves and nothing else.
-         */
-        ring() {
+        async resync() {
+            // Livewire's own refresh is the cheapest way to ask: the computed
+            // property is already the answer.
             try {
-                const context = new (window.AudioContext || window.webkitAudioContext)();
-
-                for (const [at, hz] of [
-                    [0, 880],
-                    [0.35, 880],
-                    [0.7, 1174],
-                ]) {
-                    const oscillator = context.createOscillator();
-                    const gain = context.createGain();
-
-                    oscillator.frequency.value = hz;
-                    gain.gain.setValueAtTime(0.0001, context.currentTime + at);
-                    gain.gain.exponentialRampToValueAtTime(0.3, context.currentTime + at + 0.02);
-                    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + at + 0.25);
-
-                    oscillator.connect(gain).connect(context.destination);
-                    oscillator.start(context.currentTime + at);
-                    oscillator.stop(context.currentTime + at + 0.3);
-                }
-
-                setTimeout(() => context.close(), 2000);
+                await this.$wire.$refresh();
             } catch {
-                // No audio. The timer still turns amber, which is the part
-                // somebody standing at the wall will see anyway.
+                // Offline, or mid-deploy. The local countdown carries on,
+                // which is the right thing for it to do.
             }
         },
 
-        formatted(seconds) {
-            const m = Math.floor(seconds / 60);
-            const s = seconds % 60;
+        /** A fresh list from the server. */
+        adopt(fresh) {
+            this.timers = adopt(fresh ?? [], this.announced);
+            this.tick();
+        },
 
-            return `${m}:${String(s).padStart(2, '0')}`;
+        clock(timer) {
+            return formattedTime(secondsLeft(timer, this.now));
         },
     }));
 });

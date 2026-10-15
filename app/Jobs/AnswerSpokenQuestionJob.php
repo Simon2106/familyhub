@@ -8,6 +8,8 @@ use App\Services\Speech\Contracts\SpeechToText;
 use App\Services\Speech\Contracts\TextToSpeech;
 use App\Services\Speech\SpeechException;
 use App\Services\Speech\SpokenQuestion;
+use App\Services\Timers\TimerBoard;
+use App\Services\Timers\TimerParser;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -96,6 +98,36 @@ class AnswerSpokenQuestionJob implements ShouldQueue
         }
 
         $question->put(['status' => 'thinking', 'transcript' => $said]);
+
+        /*
+         * "Set a 20 minute pasta timer" never reaches the assistant.
+         *
+         * The read-only promise the page makes in words is kept by the tool
+         * surface, not by the prompt — so the way to let a wall set a timer
+         * without breaking it is to recognise the request here and answer it
+         * ourselves. Anything that might be a question goes straight on to
+         * the assistant, because answering a question with a timer is a far
+         * worse failure than setting no timer.
+         */
+        $parser = app(TimerParser::class);
+
+        if ($parser->looksLikeOne($said)) {
+            [$timer, $request] = app(TimerBoard::class)->fromSpeech($household, $said);
+
+            Log::info('The wall set a timer', ['seconds' => $timer->seconds, 'guessed' => $request->guessed]);
+
+            $spoken = $request->confirmation();
+
+            $question->put(['status' => 'speaking', 'answer' => $spoken]);
+
+            if ($household->wallSpeaks() && ($mp3 = $voice->speak($spoken))) {
+                $question->storeAnswerAudio($mp3);
+            }
+
+            $question->put(['status' => 'done', 'timers' => true]);
+
+            return;
+        }
 
         try {
             $answer = $assistant->ask($said, $household);
