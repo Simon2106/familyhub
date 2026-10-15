@@ -4,6 +4,7 @@ use App\Http\Controllers\App\PushSubscriptionController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Display\ListenController;
 use App\Http\Controllers\Display\PhotoFeedController;
+use App\Http\Controllers\Display\PresenceController;
 use App\Http\Controllers\ShareTargetController;
 use App\Http\Controllers\Webhooks\PostmarkInboundController;
 use App\Support\BuildVersion;
@@ -141,6 +142,12 @@ Route::middleware(['display.token', 'throttle:30,1'])->group(function () {
 
     // The screensaver asking whether the album has anything new in it.
     Route::get('/display/photos', PhotoFeedController::class)->name('display.photos');
+
+    // Whether anybody is standing in front of the wall. Polled every five
+    // seconds, and free where the websocket listener is keeping the state
+    // cache warm.
+    Route::get('/display/presence', PresenceController::class)
+        ->name('display.presence');
 });
 
 Route::middleware('guest')->group(function () {
@@ -185,4 +192,5 @@ Route::middleware('auth')->group(function () {
     Route::livewire('/admin/routines', 'admin.routines')->name('admin.routines');
     Route::livewire('/admin/rewards', 'admin.rewards')->name('admin.rewards');
     Route::livewire('/admin/home', 'admin.home')->name('admin.home');
+    Route::livewire('/admin/house', 'admin.house')->name('admin.house');
 });

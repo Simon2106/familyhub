@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Events\HomeStateChanged;
+use App\Models\Household;
+use App\Services\Activity\ActivityRecorder;
 use App\Services\HomeAssistant\Client;
 use App\Services\HomeAssistant\HomeAssistant;
 use App\Services\HomeAssistant\StateStore;
@@ -163,8 +165,33 @@ class ListenToHomeAssistant extends Command
 
             if (is_array($message) && $store->apply($message)) {
                 $ha->remember($store->rows());
+                $this->record($message);
                 $this->nudge();
             }
+        }
+    }
+
+    /**
+     * Hand a state change to the activity feed.
+     *
+     * The listener already receives every change in the house, so this is
+     * the feed's real path; the scheduled poll is only there for when this
+     * daemon is not running. Never fatal — a feed that cannot be written is
+     * not a reason to stop keeping the state cache warm.
+     */
+    protected function record(array $message): void
+    {
+        $data = $message['event']['data'] ?? null;
+
+        if (! is_array($data)) {
+            return;
+        }
+
+        try {
+            app(ActivityRecorder::class)
+                ->fromListener(Household::current(), $data);
+        } catch (Throwable $e) {
+            report($e);
         }
     }
 

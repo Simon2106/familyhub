@@ -18,6 +18,7 @@ import { createUpdater } from './updater';
 import { chime } from './chime';
 import { sampler, tintPanels } from './glass';
 import { watchOnce } from './framerate';
+import { ASLEEP, AWAKE, decide, trackClearing } from './presence';
 import { RESYNC_MS, adopt, bannerFor, formatted as formattedTime, newlyFinished, secondsLeft } from './timers';
 
 /* -------------------------------------------------------------------------
@@ -47,6 +48,10 @@ window.familyhubDrift = { driftAt, roomFor };
 
 // Shared with the handful of places that draw a countdown outside the strip.
 window.familyhubTimers = { formatted: formattedTime, secondsLeft };
+
+// The wall's half of the proximity feature: the server debounces the
+// sensors, this decides what to show from them.
+window.familyhubPresence = { decide, trackClearing, AWAKE, ASLEEP };
 
 /*
  * Glass over a photograph.

@@ -1090,6 +1090,17 @@ new #[Layout('layouts::app')] class extends Component
                    class="grid touch-target shrink-0 place-items-center rounded-xl px-4 font-semibold text-blue-600 dark:text-blue-400">
                     Manage
                 </a>
+
+                <a href="{{ route('admin.house') }}" wire:navigate
+                   class="mt-2 flex touch-target items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 dark:bg-slate-950">
+                    <span class="min-w-0">
+                        <span class="block font-semibold">The house</span>
+                        <span class="block text-sm text-slate-500 dark:text-slate-400">
+                            Waking when somebody walks up, who is home, the activity feed and announcements.
+                        </span>
+                    </span>
+                    <x-icon name="chevron-right" class="size-5 shrink-0 text-slate-400" />
+                </a>
             </div>
         </section>
 

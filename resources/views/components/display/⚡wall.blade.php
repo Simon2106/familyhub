@@ -39,10 +39,44 @@ new #[Layout('layouts::display')] class extends Component
         return Household::current();
     }
 
+    /**
+     * The household, with whoever is in the house first.
+     *
+     * Where nobody has mapped a tracker in /admin this is the household in
+     * its own order — which is exactly what it was before any of this, and
+     * what a household that never sets it up should keep getting.
+     *
+     * @return Collection<int, \App\Models\Member>
+     */
     #[Computed]
     public function members(): Collection
     {
-        return $this->household()->members()->get();
+        return app(\App\Services\HomeAssistant\WhosHome::class)->ordered($this->household());
+    }
+
+    /**
+     * Who is out, and where.
+     *
+     * @return Collection<int, array{member: \App\Models\Member, zone: ?string}>
+     */
+    #[Computed]
+    public function away(): Collection
+    {
+        return app(\App\Services\HomeAssistant\WhosHome::class)->away($this->household());
+    }
+
+    /** @return list<int> the ids of the people who are out */
+    #[Computed]
+    public function awayIds(): array
+    {
+        return $this->away->pluck('member.id')->all();
+    }
+
+    /** A child in on their own, which changes what the face leads with. */
+    #[Computed]
+    public function loneChild(): ?\App\Models\Member
+    {
+        return app(\App\Services\HomeAssistant\WhosHome::class)->loneChild($this->household());
     }
 
     /** Monday of the current week, in household time. */
@@ -723,6 +757,15 @@ new #[Layout('layouts::display')] class extends Component
            screensaver somebody with floury hands has to wipe away. */
         cooking: false,
 
+        /* --- somebody walking up to the wall --- */
+        sensors: { configured: false, readable: false, near: false, room: false },
+        /* When the near zone last went from occupied to clear, which is
+           what the hold is measured from. Only the browser knows it. */
+        nearClearedAt: null,
+        touchedAt: 0,
+        /* Black with a faint clock: the room has been empty a while. */
+        asleep: false,
+
         init() {
             /* Remembered per device, not per household: the wall in the
                kitchen and a phone previewing it want different things, and
@@ -758,6 +801,11 @@ new #[Layout('layouts::display')] class extends Component
             this.applyFace();
             setInterval(() => this.applyFace(), 15_000);
             this.$watch('faceBounds', () => this.applyFace());
+
+            /* Five seconds, as specified. Free where the websocket listener
+               is running: it reads the cache that listener keeps warm. */
+            this.readPresence();
+            setInterval(() => this.readPresence(), 5000);
 
             /* The settings come back down on every poll, so a change made in
                /admin reaches the wall within the minute rather than at the
@@ -1083,6 +1131,70 @@ new #[Layout('layouts::display')] class extends Component
             return (this.idle || this.nightly) && !this.cooking;
         },
 
+        /*
+         * Ask the server what the sensors say, and act on it.
+         *
+         * The decision itself is in presence.js so the state machine — empty
+         * room, ten minutes, go dark — can be tested without a kitchen.
+         */
+        async readPresence() {
+            try {
+                const response = await fetch(@js(route('display.presence')), {
+                    credentials: 'same-origin',
+                    headers: { Accept: 'application/json' },
+                });
+
+                if (!response.ok) return;
+
+                const fresh = await response.json();
+
+                /* The moment the near zone cleared is the browser's to keep:
+                   the server reports the state, not its history. */
+                const cleared = window.familyhubPresence.trackClearing(
+                    this.sensors.near, fresh.near,
+                );
+
+                if (cleared !== undefined) this.nearClearedAt = cleared;
+
+                this.sensors = fresh;
+                this.applyPresence();
+            } catch (e) {
+                /* Offline, or mid-deploy. The idle timer still runs, which
+                   is exactly the behaviour the wall had before any of this. */
+            }
+        },
+
+        applyPresence() {
+            if (this.cooking) return;
+
+            const want = window.familyhubPresence.decide(this.sensors, {
+                now: Date.now(),
+                idle: this.idle,
+                night: this.face === 'night',
+                touchedAt: this.touchedAt,
+                idleMs: this.idleMs,
+                nearClearedAt: this.nearClearedAt,
+            });
+
+            this.asleep = want === window.familyhubPresence.ASLEEP;
+
+            if (want === window.familyhubPresence.AWAKE) {
+                /* Woken by somebody approaching rather than by a touch, so
+                   the idle timer starts again from here. */
+                if (this.idle) {
+                    this.idle = false;
+                    this.armIdleTimer();
+                }
+
+                return;
+            }
+
+            if (!this.idle) {
+                this.idleSince = Date.now();
+                this.idle = true;
+            }
+        },
+
         armIdleTimer() {
             if (!this.idleMs) return;
             clearTimeout(this.idleTimer);
@@ -1095,6 +1207,9 @@ new #[Layout('layouts::display')] class extends Component
         },
 
         wake() {
+            /* A hand on the screen beats every sensor in the house. */
+            this.touchedAt = Date.now();
+            this.asleep = false;
             this.idle = false;
             this.armIdleTimer();
         },
@@ -1181,7 +1296,7 @@ new #[Layout('layouts::display')] class extends Component
 
             {{-- Bins, when they are close enough to matter. Beside the clock
                  because it is a thing you check on your way past. --}}
-            @if ($this->nextBins->isNotEmpty())
+            @if ($this->nextBins->isNotEmpty() && ! $this->loneChild)
                 @php
                     $binDay = $this->nextBins->first()->on;
                     $isToday = $binDay->isSameDay($this->today);
@@ -1237,6 +1352,9 @@ new #[Layout('layouts::display')] class extends Component
         </div>
 
         <div class="flex items-center gap-6">
+            {{-- Shouting up the stairs, without the stairs. --}}
+            <livewire:display.announce />
+
             {{-- Clock and weather, top right, together: the two things
                  somebody checks without breaking stride. --}}
             <span class="t-clock text-[2.75rem] leading-none" x-text="clock">&nbsp;</span>
@@ -1381,6 +1499,10 @@ new #[Layout('layouts::display')] class extends Component
         {{-- ---------------------------- HOME ---------------------------- --}}
         {{-- The day face, and what sits behind the night one. --}}
         <div x-show="tab === 'home' && (face === 'day' || face === 'night')" class="flex h-full min-h-0 flex-col gap-3">
+          {{-- What the house has been doing. One line; tap for the day. --}}
+          <div class="shrink-0">
+              <livewire:display.activity />
+          </div>
           <div class="grid min-h-0 flex-1 gap-6 lg:grid-cols-5">
 
             <section
@@ -1671,7 +1793,11 @@ new #[Layout('layouts::display')] class extends Component
                                      that does its own thing still does it:
                                      the guard lets a chore tile, a link or a
                                      checkbox have the tap first. --}}
-                                <div class="tile flex min-h-0 flex-col overflow-hidden"
+                                {{-- Dimmed when they are out: still there, because
+                                     what is in somebody's day matters most to
+                                     the person who has to collect them, but
+                                     quieter than the people in the house. --}}
+                                <div class="tile flex min-h-0 flex-col overflow-hidden motion-settle transition-opacity{{ in_array($member->id, $this->awayIds, true) ? ' opacity-60' : '' }}"
                                      @if ($member->is_child)
                                          role="button"
                                          tabindex="0"
@@ -1680,6 +1806,7 @@ new #[Layout('layouts::display')] class extends Component
                                              || $wire.dispatch('show-my-day', { member: {{ $member->id }}, date: '{{ $day['date'] }}' })"
                                      @endif>
                                     <div class="flex items-center gap-2 px-3 py-2" style="background-color: {{ $member->colour }}1a;">
+                                        @php $awayAt = collect($this->away)->firstWhere('member.id', $member->id); @endphp
                                         {{-- A child's avatar is the door into
                                              their own day. An adult's column
                                              header is just a heading. --}}
@@ -1704,6 +1831,12 @@ new #[Layout('layouts::display')] class extends Component
                                             <span class="size-3 shrink-0 rounded-full" style="background-color: {{ $member->colour }};"></span>
                                         @endif
                                         <span class="truncate text-base font-semibold">{{ $member->name }}</span>
+
+                                        @if ($awayAt && $day['is_today'])
+                                            <span class="shrink-0 rounded-full bg-slate-900/10 px-2 py-0.5 text-xs font-medium dark:bg-white/15">
+                                                {{ $awayAt['zone'] ?? 'away' }}
+                                            </span>
+                                        @endif
 
                                         {{-- A routine in its window earns a place
                                              in the header; the rest of the day it
@@ -1990,10 +2123,16 @@ new #[Layout('layouts::display')] class extends Component
                     </div>
                 </div>
 
-                {{-- Household to-dos, under "Coming up" in both views. --}}
-                <div class="glass flex max-h-[40%] min-h-0 shrink-0 flex-col p-4">
-                    <livewire:todos.panel />
-                </div>
+                {{-- Household to-dos, under "Coming up" in both views.
+                     Not when a child is in on their own: chasing the plumber
+                     is not theirs to do anything about, and a list of jobs
+                     they cannot act on is a list that teaches them to stop
+                     reading the wall. --}}
+                @unless ($this->loneChild)
+                    <div class="glass flex max-h-[40%] min-h-0 shrink-0 flex-col p-4">
+                        <livewire:todos.panel />
+                    </div>
+                @endunless
             </section>
           </div>
 
@@ -2044,6 +2183,11 @@ new #[Layout('layouts::display')] class extends Component
         <div x-show="tab === 'timers'" x-cloak class="h-full min-h-0">
             <livewire:display.timer-board />
         </div>
+
+        {{-- -------------------------- ACTIVITY -------------------------- --}}
+        <div x-show="tab === 'activity'" x-cloak class="h-full min-h-0">
+            <livewire:display.activity :full="true" />
+        </div>
     </div>
 
     {{-- Search, as an overlay rather than a permanent field: the header has
@@ -2082,6 +2226,7 @@ new #[Layout('layouts::display')] class extends Component
                     ['home-devices', 'Switches', 'light'],
                     ['photos', 'Photos', 'photo'],
                     ['timers', 'Timers', 'timer'],
+                    ['activity', 'Activity', 'activity'],
                 ]"
                 :badges="['review' => $this->reviewCount]"
             />
@@ -2111,6 +2256,15 @@ new #[Layout('layouts::display')] class extends Component
                      :class="showA ? 'opacity-0' : 'opacity-100'">
             </div>
         </template>
+
+        {{-- Deep sleep: the room has been empty a while. Black, with a
+             clock faint enough to be useless from the doorway and readable
+             from a step away — the panel's backlight cannot be turned down
+             from a browser, so this is the whole of what "off" can mean. --}}
+        <div x-show="asleep" x-cloak x-transition.opacity.duration.600ms
+             class="absolute inset-0 z-10 grid place-items-center bg-black">
+            <p class="t-clock text-white/15" x-text="clock"></p>
+        </div>
 
         {{-- The night dimmer. The panel's backlight cannot be driven from a
              browser, so a layer of black over the photograph is the only

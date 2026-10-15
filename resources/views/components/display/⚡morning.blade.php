@@ -70,11 +70,47 @@ new class extends Component
 
     /* ------------------------------ members ----------------------------- */
 
-    /** @return Collection<int, Member> */
+    /**
+     * The members, with whoever is in the house first.
+     *
+     * Where nobody has mapped a tracker in /admin this is simply the
+     * household in its own order, which is what it was before.
+     *
+     * @return Collection<int, Member>
+     */
     #[Computed]
     public function members(): Collection
     {
-        return $this->household()->members()->get();
+        return app(\App\Services\HomeAssistant\WhosHome::class)->ordered($this->household());
+    }
+
+    /** @return Collection<int, array{member: Member, zone: ?string}> */
+    #[Computed]
+    public function away(): Collection
+    {
+        return app(\App\Services\HomeAssistant\WhosHome::class)->away($this->household());
+    }
+
+    /** Only the people actually in get a column. */
+    #[Computed]
+    public function present(): Collection
+    {
+        $away = $this->away->pluck('member.id')->all();
+
+        return $this->members->reject(fn (Member $member) => in_array($member->id, $away, true))->values();
+    }
+
+    /**
+     * A child in on their own.
+     *
+     * Worth changing the whole face for: their routine and their jobs are
+     * the only things on it they can act on, and the shopping list is not
+     * theirs to do anything about.
+     */
+    #[Computed]
+    public function loneChild(): ?Member
+    {
+        return app(\App\Services\HomeAssistant\WhosHome::class)->loneChild($this->household());
     }
 
     /**
@@ -201,7 +237,8 @@ new class extends Component
 }; ?>
 
 @php
-    $members = $this->members;
+    $members = $this->present;
+    $away = $this->away;
     $tz = $this->household()->displayTimezone();
 @endphp
 
@@ -236,7 +273,7 @@ new class extends Component
         @endif
     </div>
 
-    {{-- A column each, in the order the household is listed. --}}
+    {{-- A column each, for whoever is in. --}}
     <div class="grid min-h-0 flex-1 gap-6" style="grid-template-columns: repeat({{ max(1, $members->count()) }}, minmax(0, 1fr));">
         @foreach ($members as $member)
             @php
@@ -325,5 +362,26 @@ new class extends Component
                 </div>
             </x-glass>
         @endforeach
+
+        @if ($members->isEmpty())
+            <x-glass class="grid place-items-center p-6">
+                <p class="t-body opacity-70">Nobody is in.</p>
+            </x-glass>
+        @endif
     </div>
+
+    {{-- Whoever is out, small, along the bottom. Their name and where they
+         are, which is all anybody wants of somebody who is not here. --}}
+    @if ($away->isNotEmpty())
+        <div class="flex shrink-0 flex-wrap items-center gap-3">
+            @foreach ($away as $row)
+                <span class="tile flex items-center gap-2.5 px-4 py-2" wire:key="away-{{ $row['member']->id }}">
+                    <span class="size-3 shrink-0 rounded-full opacity-60"
+                          style="background-color: {{ $row['member']->colour }};" aria-hidden="true"></span>
+                    <span class="t-body font-medium opacity-60">{{ $row['member']->name }}</span>
+                    <span class="t-small opacity-50">{{ $row['zone'] ?? 'away' }}</span>
+                </span>
+            @endforeach
+        </div>
+    @endif
 </div>

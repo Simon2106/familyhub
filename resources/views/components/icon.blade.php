@@ -75,6 +75,8 @@
         'play' => '<path d="M7.5 4.8v14.4L19 12z"/>',
         'close' => '<path d="M6 6l12 12M18 6 6 18"/>',
         'plus' => '<path d="M12 5v14M5 12h14"/>',
+        'megaphone' => '<path d="M4 9.5v5a1.5 1.5 0 0 0 1.5 1.5H8l9 4.5V5L8 9.5H5.5A1.5 1.5 0 0 0 4 11z"/><path d="M8 16v3.5a1.5 1.5 0 0 0 3 0V17"/><path d="M20 10.5v3"/>',
+        'activity' => '<path d="M3 12h4l3-7 4 14 3-7h4"/>',
 
         /* ------------------------------ the tabs -------------------------- */
         /* Drawn here because the tab bar asks for them through a variable,

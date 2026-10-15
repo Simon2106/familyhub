@@ -85,6 +85,23 @@ Schedule::command('familyhub:sync-photos')
     ->withoutOverlapping()
     ->runInBackground();
 
+/*
+| The activity feed's fallback.
+|
+| Where the websocket listener is running it feeds the recorder directly and
+| this finds nothing to do, which is the point: a poll that misses a door
+| opening and closing between two reads is still better than a feed that
+| stops the moment a daemon dies.
+*/
+Schedule::command('familyhub:poll-activity')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->runInBackground();
+
+Schedule::command('familyhub:prune-activity')
+    ->dailyAt('04:10')
+    ->withoutOverlapping();
+
 Schedule::command('familyhub:prune-done')
     ->dailyAt('04:00')
     ->withoutOverlapping();

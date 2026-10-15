@@ -251,6 +251,82 @@ class HomeAssistant
         return $this->client->get('/api/states');
     }
 
+    /**
+     * Any entity at all, by id, whatever its domain.
+     *
+     * states() deliberately shows only the six domains the tile picker
+     * offers, because a picker listing two hundred Zigbee sensors is a
+     * picker nobody finishes using. The features that came later — presence,
+     * who is home, the activity feed — are about entities a household picks
+     * one at a time, so they ask for those by name instead.
+     *
+     * @param  list<string>  $entityIds
+     * @return Collection<string, EntityState>
+     */
+    public function look(array $entityIds, bool $fresh = false): Collection
+    {
+        $wanted = array_values(array_filter(array_unique($entityIds)));
+
+        if ($wanted === []) {
+            return collect();
+        }
+
+        if ($fresh) {
+            $this->forget();
+        }
+
+        return collect($this->cachedRows())
+            ->filter(fn (array $row) => in_array($row['entity_id'] ?? '', $wanted, true))
+            ->map(fn (array $row) => EntityState::fromArray($row))
+            ->keyBy(fn (EntityState $state) => $state->entityId);
+    }
+
+    /** One entity, or null when HA has never heard of it. */
+    public function entity(string $entityId): ?EntityState
+    {
+        return $this->look([$entityId])->get($entityId);
+    }
+
+    /**
+     * Everything in a set of domains, for a picker.
+     *
+     * @param  list<string>  $domains
+     * @return Collection<int, array{entity_id: string, name: string, domain: string, state: string}>
+     */
+    public function choices(array $domains): Collection
+    {
+        return collect($this->cachedRows())
+            ->filter(fn (array $row) => in_array($this->domainOf($row['entity_id'] ?? ''), $domains, true))
+            ->map(fn (array $row) => [
+                'entity_id' => (string) $row['entity_id'],
+                'name' => (string) ($row['attributes']['friendly_name'] ?? $row['entity_id']),
+                'domain' => $this->domainOf((string) $row['entity_id']),
+                'state' => (string) ($row['state'] ?? ''),
+            ])
+            ->sortBy('name')
+            ->values();
+    }
+
+    /**
+     * Call any service, for the features that need one HA does not model.
+     *
+     * Not reachable from the wall: the callers are the announcer and the
+     * schedules, both of which pass a service chosen in /admin rather than
+     * one that came in over the wire.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function notify(string $service, array $data): void
+    {
+        [$domain, $name] = array_pad(explode('.', $service, 2), 2, null);
+
+        if (! filled($domain) || ! filled($name)) {
+            throw new HomeAssistantException("{$service} is not a service name.");
+        }
+
+        $this->client->post("/api/services/{$domain}/{$name}", $data);
+    }
+
     /** Replace the shared state cache — used by the websocket listener. */
     public function remember(array $rows): void
     {

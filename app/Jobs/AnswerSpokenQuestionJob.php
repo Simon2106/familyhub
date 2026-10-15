@@ -3,6 +3,8 @@
 namespace App\Jobs;
 
 use App\Models\Household;
+use App\Services\Announce\AnnouncePhrase;
+use App\Services\Announce\Announcer;
 use App\Services\Assistant\Contracts\Assistant;
 use App\Services\Speech\Contracts\SpeechToText;
 use App\Services\Speech\Contracts\TextToSpeech;
@@ -109,6 +111,30 @@ class AnswerSpokenQuestionJob implements ShouldQueue
          * the assistant, because answering a question with a timer is a far
          * worse failure than setting no timer.
          */
+        /*
+         * "Announce dinner's ready" never reaches the assistant either, and
+         * for the same reason the timer does not.
+         */
+        $heralds = app(AnnouncePhrase::class);
+
+        if ($heralds->looksLikeOne($said) && ($message = $heralds->message($said))) {
+            $result = app(Announcer::class)->announce($household, $message);
+
+            $spoken = $result['sent']
+                ? 'Told the house: '.$result['message']
+                : (string) $result['reason'];
+
+            $question->put(['status' => 'speaking', 'answer' => $spoken]);
+
+            if ($household->wallSpeaks() && ($mp3 = $voice->speak($spoken))) {
+                $question->storeAnswerAudio($mp3);
+            }
+
+            $question->put(['status' => 'done', 'announced' => $result['sent']]);
+
+            return;
+        }
+
         $parser = app(TimerParser::class);
 
         if ($parser->looksLikeOne($said)) {

@@ -392,6 +392,258 @@ class Household extends Model
         $this->putSettings(['school_pickup_hour' => max(0, min(23, $hour))]);
     }
 
+    /* --------------------------- Home Assistant -------------------------- */
+
+    /**
+     * Which person or device_tracker entity each member is.
+     *
+     * Keyed by member id. A member with no mapping is simply not tracked,
+     * and the wall treats them as in — the alternative is a household that
+     * maps one phone and watches everybody else vanish into the away row.
+     *
+     * @return array<int, string>
+     */
+    public function presenceEntities(): array
+    {
+        $saved = (array) ($this->settings['presence_entities'] ?? []);
+        $map = [];
+
+        foreach ($saved as $memberId => $entityId) {
+            if (is_numeric($memberId) && filled($entityId) && is_string($entityId)) {
+                $map[(int) $memberId] = $entityId;
+            }
+        }
+
+        return $map;
+    }
+
+    /** @param array<int|string, ?string> $map */
+    public function setPresenceEntities(array $map): void
+    {
+        $clean = [];
+
+        foreach ($map as $memberId => $entityId) {
+            if (is_numeric($memberId) && filled($entityId)) {
+                $clean[(int) $memberId] = trim((string) $entityId);
+            }
+        }
+
+        $this->putSettings(['presence_entities' => $clean]);
+    }
+
+    /**
+     * The entities the activity feed watches, and what to call them.
+     *
+     * Keyed by entity id: ['binary_sensor.back_door' => ['label' => 'Back
+     * door', 'category' => 'doors']]. Chosen one at a time in /admin,
+     * because a feed of everything Home Assistant knows about is a feed
+     * nobody reads.
+     *
+     * @return array<string, array{label: string, category: string}>
+     */
+    public function activityEntities(): array
+    {
+        $saved = (array) ($this->settings['activity_entities'] ?? []);
+        $clean = [];
+
+        foreach ($saved as $entityId => $config) {
+            if (! is_string($entityId) || ! is_array($config)) {
+                continue;
+            }
+
+            $category = (string) ($config['category'] ?? 'other');
+
+            $clean[$entityId] = [
+                'label' => filled($config['label'] ?? null) ? (string) $config['label'] : $entityId,
+                'category' => array_key_exists($category, ActivityEvent::CATEGORIES) ? $category : 'other',
+            ];
+        }
+
+        return $clean;
+    }
+
+    /** @param array<string, array{label: ?string, category: ?string}> $entities */
+    public function setActivityEntities(array $entities): void
+    {
+        $clean = [];
+
+        foreach ($entities as $entityId => $config) {
+            $entityId = trim((string) $entityId);
+
+            if ($entityId === '' || ! is_array($config)) {
+                continue;
+            }
+
+            $category = (string) ($config['category'] ?? 'other');
+
+            $clean[$entityId] = [
+                'label' => mb_substr(trim((string) ($config['label'] ?? '')) ?: $entityId, 0, 60),
+                'category' => array_key_exists($category, ActivityEvent::CATEGORIES) ? $category : 'other',
+            ];
+        }
+
+        $this->putSettings(['activity_entities' => $clean]);
+    }
+
+    /**
+     * When the feed stops mentioning lights and sockets.
+     *
+     * Null when the household has not asked for any. Somebody coming home at
+     * two in the morning is still worth a line; the landing light going on
+     * is not.
+     *
+     * @return array{start: string, end: string}|null
+     */
+    public function activityQuietHours(): ?array
+    {
+        $quiet = $this->settings['activity_quiet'] ?? null;
+
+        if (! is_array($quiet)) {
+            return null;
+        }
+
+        $valid = fn ($time) => is_string($time) && preg_match('/^([01]\\d|2[0-3]):[0-5]\\d$/', $time);
+
+        return $valid($quiet['start'] ?? null) && $valid($quiet['end'] ?? null)
+            ? ['start' => $quiet['start'], 'end' => $quiet['end']]
+            : null;
+    }
+
+    public function setActivityQuietHours(?string $start, ?string $end): void
+    {
+        $valid = fn ($time) => is_string($time) && preg_match('/^([01]\\d|2[0-3]):[0-5]\\d$/', (string) $time);
+
+        $this->putSettings([
+            'activity_quiet' => $valid($start) && $valid($end)
+                ? ['start' => $start, 'end' => $end]
+                : null,
+        ]);
+    }
+
+    /** What the wall offers as one-tap announcements. */
+    public const ANNOUNCE_DEFAULTS = [
+        "Dinner's ready",
+        'Time to leave in 5 minutes',
+        'Bedtime',
+        'Come downstairs',
+    ];
+
+    /** @return list<string> */
+    public function announcePresets(): array
+    {
+        $saved = (array) ($this->settings['announce_presets'] ?? []);
+
+        $clean = array_values(array_filter(array_map(
+            fn ($preset) => is_string($preset) ? mb_substr(trim($preset), 0, 120) : '',
+            $saved,
+        ), fn (string $preset) => $preset !== ''));
+
+        return $clean === [] ? self::ANNOUNCE_DEFAULTS : array_slice($clean, 0, 4);
+    }
+
+    /** @param list<string> $presets */
+    public function setAnnouncePresets(array $presets): void
+    {
+        $clean = array_values(array_filter(array_map(
+            fn ($preset) => mb_substr(trim((string) $preset), 0, 120),
+            $presets,
+        ), fn (string $preset) => $preset !== ''));
+
+        $this->putSettings(['announce_presets' => array_slice($clean, 0, 4)]);
+    }
+
+    /**
+     * Which Home Assistant service says it out loud, and on what.
+     *
+     * Nothing about either is guessable — the Alexa Media Player integration
+     * names a service per account and a device per Echo — so both are
+     * chosen in /admin and a household with neither simply gets the banner.
+     *
+     * @return array{service: ?string, targets: list<string>}
+     */
+    public function announceConfig(): array
+    {
+        $saved = (array) ($this->settings['announce'] ?? []);
+
+        $targets = array_values(array_filter(array_map(
+            fn ($target) => is_string($target) ? trim($target) : '',
+            (array) ($saved['targets'] ?? []),
+        ), fn (string $target) => $target !== ''));
+
+        return [
+            'service' => filled($saved['service'] ?? null) ? (string) $saved['service'] : null,
+            'targets' => $targets,
+        ];
+    }
+
+    /** @param list<string> $targets */
+    public function setAnnounceConfig(?string $service, array $targets): void
+    {
+        $this->putSettings(['announce' => [
+            'service' => filled($service) ? trim($service) : null,
+            'targets' => array_values(array_filter(array_map('trim', $targets))),
+        ]]);
+    }
+
+    /**
+     * The presence zones an mmWave sensor exposes.
+     *
+     * One binary_sensor per zone rather than a distance, which is how the
+     * FP2 and everything like it works. Optional lux, for a wall that wants
+     * to know how dark the room is.
+     *
+     * @return array{near: ?string, room: ?string, lux: ?string}
+     */
+    public function presenceZones(): array
+    {
+        $saved = (array) ($this->settings['presence_zones'] ?? []);
+
+        $at = fn (string $key) => filled($saved[$key] ?? null) ? (string) $saved[$key] : null;
+
+        return ['near' => $at('near'), 'room' => $at('room'), 'lux' => $at('lux')];
+    }
+
+    public function setPresenceZones(?string $near, ?string $room, ?string $lux): void
+    {
+        $this->putSettings(['presence_zones' => [
+            'near' => filled($near) ? trim($near) : null,
+            'room' => filled($room) ? trim($room) : null,
+            'lux' => filled($lux) ? trim($lux) : null,
+        ]]);
+    }
+
+    /** How long an empty room waits before the wall goes dark. */
+    public function deepSleepMinutes(): int
+    {
+        $minutes = $this->settings['deep_sleep_minutes'] ?? null;
+
+        return is_numeric($minutes) ? max(0, min(240, (int) $minutes)) : 10;
+    }
+
+    public function setDeepSleepMinutes(int $minutes): void
+    {
+        $this->putSettings(['deep_sleep_minutes' => max(0, min(240, $minutes))]);
+    }
+
+    /**
+     * Pretend somebody is there, for a wall whose sensor is not fitted yet.
+     *
+     * One of near, room, empty — or null for "use the real sensors".
+     */
+    public function simulatedPresence(): ?string
+    {
+        $pretend = $this->settings['presence_simulate'] ?? null;
+
+        return in_array($pretend, ['near', 'room', 'empty'], true) ? $pretend : null;
+    }
+
+    public function setSimulatedPresence(?string $pretend): void
+    {
+        $this->putSettings([
+            'presence_simulate' => in_array($pretend, ['near', 'room', 'empty'], true) ? $pretend : null,
+        ]);
+    }
+
     /** Whether a finished timer makes a noise. */
     public function timerChime(): bool
     {
