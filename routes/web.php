@@ -116,6 +116,18 @@ Route::livewire('/display', 'display.wall')
     ->name('display');
 
 /*
+| The wall's own style guide.
+|
+| Under /display rather than beside it, so the kiosk's "never leave the wall"
+| guard lets somebody reach it — and so the token that gates everything else
+| gates this too. Glass over a photograph cannot be judged from a swatch on a
+| laptop; it has to be looked at on the panel.
+*/
+Route::livewire('/display/style', 'display.style-guide')
+    ->middleware('display.token')
+    ->name('display.style');
+
+/*
 | The wall's microphone.
 |
 | Behind the same token as the display itself, and throttled: the kiosk asks a

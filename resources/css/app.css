@@ -30,6 +30,67 @@
 
     --font-note: 'Caveat', 'Bradley Hand', 'Segoe Print', 'Chalkboard SE', 'Comic Neue',
         'Comic Sans MS', ui-rounded, 'SF Pro Rounded', var(--font-sans);
+
+    /*
+     * One easing, one pair of durations.
+     *
+     * Everything that changes state uses these, so the whole screen moves
+     * like one object rather than like thirty components that each chose.
+     * Nothing bounces: an overshoot on a wall read in passing is a flinch.
+     */
+    --ease-wall: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --duration-quick: 220ms;   /* a tap, a tick, a chip */
+    --duration-settle: 360ms;  /* a card, a tab, a face */
+    --duration-face: 600ms;    /* one face giving way to another */
+
+    /*
+     * Concentric radii.
+     *
+     * A tile inset by 12px inside a 32px card wants 20px, or the two curves
+     * fight. --radius-inner is the sum to subtract from; anything nesting
+     * sets it for its children.
+     */
+    --radius-glass: 2rem;      /* 32px — the outer radius of a panel */
+    --radius-tile: 1.25rem;    /* 20px — a tile 12px inside one */
+    --radius-chip: 999px;
+}
+
+/*
+ * Liquid glass.
+ *
+ * A panel on the wall is a sheet of glass over whatever is behind it — a
+ * photograph, a gradient, the page's own ground — and it tints with it
+ * rather than covering it. Four layers, in order of how much they cost:
+ *
+ *   1. the blur and the tint, which do nearly all of the work;
+ *   2. a specular rim, one pixel of white catching the light top-left and
+ *      almost nothing bottom-right, plus a soft shadow underneath;
+ *   3. the radius, shared with whatever nests inside it;
+ *   4. an edge refraction — a displacement map applied to a 3px ring, so
+ *      what is behind the panel appears to bend at its border.
+ *
+ * The fourth is the only expensive one, and it is the first thing dropped:
+ * on prefers-reduced-motion, and on the /admin "lighter glass" switch for a
+ * household whose Pi has stopped keeping up.
+ *
+ * The blur is a fixed number and is never animated. Animating a backdrop
+ * filter on this hardware is how a wall drops to fifteen frames a second.
+ */
+:root {
+    --glass-tint: 255 255 255;
+    --glass-alpha: 0.18;
+    --glass-blur: 20px;
+    --glass-rim-bright: rgba(255, 255, 255, 0.6);
+    --glass-rim-dim: rgba(255, 255, 255, 0.1);
+    --glass-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+}
+
+.dark {
+    --glass-tint: 0 0 0;
+    --glass-alpha: 0.22;
+    --glass-rim-bright: rgba(255, 255, 255, 0.22);
+    --glass-rim-dim: rgba(255, 255, 255, 0.04);
+    --glass-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
 
 /*
@@ -413,6 +474,215 @@
         font-family: var(--font-display);
         font-feature-settings: 'tnum' 1;
         font-variant-numeric: tabular-nums;
+    }
+
+    /* ------------------------------- type ----------------------------- */
+
+    /*
+     * The wall's type scale, as five classes.
+     *
+     * Classes rather than theme variables: Tailwind drops a theme variable
+     * nothing uses as a utility, and these are mostly wanted as whole
+     * styles — a size, a weight, a tracking and a figure setting together —
+     * rather than as a size on its own. One class per role also means the
+     * sweep across thirty views reads as roles rather than as numbers.
+     *
+     * Read from one to three metres, so the smallest is 17px and there is
+     * nothing below it. On a phone 14px secondary text is fine; on a kitchen
+     * wall it is decoration.
+     *
+     * Tight tracking only at the large sizes — Inter is drawn loose for
+     * screens, and at 48px and up the default spacing reads as a gap.
+     */
+    .t-clock {
+        font-family: var(--font-display);
+        font-size: 10rem; /* 160px */
+        font-weight: 600;
+        line-height: 0.85;
+        letter-spacing: -0.02em;
+        font-feature-settings: 'tnum' 1;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .t-face {
+        font-family: var(--font-display);
+        font-size: 3rem; /* 48px */
+        font-weight: 600;
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+    }
+
+    .t-title {
+        font-size: 1.75rem; /* 28px */
+        font-weight: 600;
+        line-height: 1.2;
+        letter-spacing: -0.015em;
+    }
+
+    .t-body {
+        font-size: 1.375rem; /* 22px */
+        font-weight: 400;
+        line-height: 1.4;
+    }
+
+    .t-label {
+        font-size: 1.0625rem; /* 17px */
+        font-weight: 500;
+        line-height: 1.3;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        opacity: 0.7;
+    }
+
+    /*
+     * The same 17px, in sentence case.
+     *
+     * .t-label is a section header — uppercase, tracked, quiet. A paragraph
+     * of explanation is the same size and must not be any of those things;
+     * the first sweep put both through .t-label and turned every caption on
+     * the wall into shouting.
+     */
+    .t-small {
+        font-size: 1.0625rem; /* 17px */
+        font-weight: 400;
+        line-height: 1.45;
+    }
+
+    /* A number that changes must not shuffle its neighbours sideways. */
+    .t-num {
+        font-feature-settings: 'tnum' 1;
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* ------------------------------ glass ----------------------------- */
+
+    .glass {
+        position: relative;
+        border-radius: var(--radius-glass);
+        background: rgb(var(--glass-tint) / var(--glass-alpha));
+        -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%) brightness(1.05);
+        backdrop-filter: blur(var(--glass-blur)) saturate(160%) brightness(1.05);
+        /* No border. The rim is the border — a stroked one on top of a
+           specular highlight reads as two edges. */
+        box-shadow:
+            inset 1px 1px 0 var(--glass-rim-bright),
+            inset -1px -1px 0 var(--glass-rim-dim),
+            var(--glass-shadow);
+        /* What nests inside: the outer radius less a 12px inset. */
+        --radius-inner: var(--radius-tile);
+    }
+
+    /*
+     * Over a bright photograph the tint has to carry more of the load.
+     *
+     * Set by the wall after sampling the backdrop once per photograph —
+     * once, not per frame: this is a Pi, and a luminance sample every
+     * animation frame is a luminance sample that costs more than the
+     * effect is worth.
+     */
+    .glass[data-bright='1'] {
+        --glass-alpha: 0.32;
+    }
+
+    /*
+     * The edge refraction.
+     *
+     * A displacement map over a 3px inset ring, masked so only the ring is
+     * displaced — the panel's own text must never be, which is the whole
+     * reason this is a ring and not a filter on the element.
+     */
+    .glass::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        pointer-events: none;
+        -webkit-backdrop-filter: blur(1px) url('#glass-refraction');
+        backdrop-filter: blur(1px) url('#glass-refraction');
+        /* Ring only: opaque at the very edge, transparent 3px in. */
+        -webkit-mask:
+            linear-gradient(#000 0 0) content-box exclude,
+            linear-gradient(#000 0 0);
+        mask:
+            linear-gradient(#000 0 0) content-box exclude,
+            linear-gradient(#000 0 0);
+        padding: 3px;
+    }
+
+    /* The first thing dropped when the wall is struggling, and the first
+       thing dropped for anybody who asked for less movement. */
+    .lite-glass .glass::before,
+    .glass--plain::before {
+        display: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .glass::before {
+            display: none;
+        }
+    }
+
+    /* Text on glass. One weight step up and a hairline shadow, because the
+       thing behind it may be a white shirt or a dark hedge. */
+    .on-glass {
+        text-shadow: 0 1px 0 rgba(0, 0, 0, 0.15);
+    }
+
+    /* ------------------------------ motion ---------------------------- */
+
+    /*
+     * Everything that changes state animates, with one easing and two
+     * durations, so the screen moves like one object.
+     */
+    .motion-quick {
+        transition-timing-function: var(--ease-wall);
+        transition-duration: var(--duration-quick);
+    }
+
+    .motion-settle {
+        transition-timing-function: var(--ease-wall);
+        transition-duration: var(--duration-settle);
+    }
+
+    /* A pressed sheet of glass compresses and brightens, and lets go. */
+    .press {
+        transition: transform var(--duration-quick) var(--ease-wall),
+                    filter var(--duration-quick) var(--ease-wall);
+    }
+
+    .press:active {
+        transform: scale(0.96);
+        filter: brightness(1.12);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .press,
+        .motion-quick,
+        .motion-settle {
+            transition-duration: 1ms;
+        }
+
+        .press:active {
+            transform: none;
+        }
+    }
+
+    /*
+     * The moving blob behind the active tab.
+     *
+     * One element that slides and stretches between items rather than a
+     * fade in one place and out of another: the eye follows a thing that
+     * travels, and loses a thing that blinks.
+     */
+    .blob {
+        transition: transform var(--duration-settle) var(--ease-wall),
+                    width var(--duration-settle) var(--ease-wall);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .blob {
+            transition-duration: 1ms;
+        }
     }
 
     .note-rail {

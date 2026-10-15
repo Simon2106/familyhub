@@ -16,6 +16,7 @@ import { startEcho, watchConnection } from './echo';
 import { createScreenOff } from './screen-off';
 import { createUpdater } from './updater';
 import { chime } from './chime';
+import { sampler, tintPanels } from './glass';
 import { RESYNC_MS, adopt, bannerFor, formatted as formattedTime, newlyFinished, secondsLeft } from './timers';
 
 /* -------------------------------------------------------------------------
@@ -45,6 +46,22 @@ window.familyhubDrift = { driftAt, roomFor };
 
 // Shared with the handful of places that draw a countdown outside the strip.
 window.familyhubTimers = { formatted: formattedTime, secondsLeft };
+
+/*
+ * Glass over a photograph.
+ *
+ * Called when the photograph changes, never per frame: a luminance sample
+ * every animation frame costs a Pi more than the effect is worth. Panels
+ * over a bright part of the picture take a heavier tint so their text stays
+ * readable over a white shirt.
+ */
+window.familyhubGlass = (image, frameEl) => {
+    if (!image || !image.complete || !image.naturalWidth) return 0;
+
+    const frame = (frameEl ?? document.documentElement).getBoundingClientRect();
+
+    return tintPanels(document.querySelectorAll('.glass'), frame, sampler(image));
+};
 
 // The clock and the schedule must not drift while the tab is backgrounded.
 document.addEventListener('visibilitychange', () => {
@@ -1005,6 +1022,57 @@ document.addEventListener('alpine:init', () => {
             window.dispatchEvent(new CustomEvent('cook-timer', {
                 detail: { minutes, name },
             }));
+        },
+    }));
+});
+
+/* -------------------------------------------------------------------------
+ * The travelling blob behind the active tab
+ *
+ * A fade out of one place and in at another is two events, which the eye
+ * reads as a blink. One shape that slides and stretches is one event, which
+ * it follows. Measured from the live buttons rather than from anything the
+ * server said, so a row that reflows — a seventh tab, a longer word, a
+ * different zoom — needs no help.
+ * ---------------------------------------------------------------------- */
+
+document.addEventListener('alpine:init', () => {
+    window.Alpine.data('tabBlob', (model) => ({
+        blob: { x: 0, w: 0 },
+
+        init() {
+            // After the first paint: before it, every button is zero wide
+            // and the blob would start life in the corner and fly out.
+            requestAnimationFrame(() => this.place(false));
+
+            this.$watch(model, () => this.place(true));
+
+            // A row that reflows — a rotated panel, a changed font — moves
+            // the blob with it rather than leaving it behind.
+            this.observer = new ResizeObserver(() => this.place(false));
+            this.observer.observe(this.$el);
+        },
+
+        destroy() {
+            this.observer?.disconnect();
+        },
+
+        place(animate) {
+            const active = this.$el.querySelector(`[data-tab="${this[model]}"]`);
+
+            if (!active) return;
+
+            const row = this.$el.getBoundingClientRect();
+            const box = active.getBoundingClientRect();
+
+            // Placed without a transition the first time, so the blob does
+            // not slide in from nowhere when the wall boots.
+            if (!animate) {
+                this.$refs.blob.style.transition = 'none';
+                requestAnimationFrame(() => (this.$refs.blob.style.transition = ''));
+            }
+
+            this.blob = { x: Math.round(box.left - row.left), w: Math.round(box.width) };
         },
     }));
 });

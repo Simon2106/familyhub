@@ -63,7 +63,14 @@
             })();
         </script>
     </head>
-    <body class="lock-scroll no-select bg-slate-100 dark:bg-slate-950">
+    <body class="lock-scroll no-select bg-slate-100 dark:bg-slate-950 {{ $household->liteGlass() ? 'lite-glass' : '' }}">
+        {{-- The map the glass edges refract through. Once per page, hidden,
+             and not rendered at all when the household has asked for the
+             lighter glass — the ring that would use it is off too. --}}
+        @unless ($household->liteGlass())
+            <x-glass-filter />
+        @endunless
+
         {{ $slot }}
     </body>
 </html>
