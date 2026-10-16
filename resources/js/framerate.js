@@ -30,10 +30,15 @@ export const SETTLE_MS = 4000;
 export function remedyFor(fps, budget = BUDGET) {
     if (fps >= budget) return 'none';
 
-    // Well under: the ring alone will not buy it back.
-    if (fps < budget * 0.7) return 'plain';
+    // Well under: nothing short of flat surfaces will buy it back.
+    if (fps < budget * 0.6) return 'plain';
 
-    return 'lite';
+    // Under, but not by much: the ring goes with the blur.
+    if (fps < budget * 0.85) return 'lite';
+
+    // Just under. The blur is the cheapest thing to soften and the last
+    // the eye notices — 18px still reads as glass.
+    return 'soft';
 }
 
 /**
@@ -71,6 +76,9 @@ export function measure({ now, raf, duration = SAMPLE_MS }) {
  * glass stops being glass.
  */
 export function apply(remedy, root) {
+    // In the order the design brief set them out: the blur comes down
+    // first, then the refraction ring, then the saturation.
+    if (remedy !== 'none') root.classList.add('soft-glass');
     if (remedy === 'lite' || remedy === 'plain') root.classList.add('lite-glass');
     if (remedy === 'plain') root.classList.add('plain-glass');
 

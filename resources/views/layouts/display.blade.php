@@ -21,6 +21,11 @@
         data-screen-off-end="{{ $screenOff['end'] }}"
     @endif
     data-timezone="{{ $household->displayTimezone() }}"
+    {{-- The wall is glass over a deep purple ground at every hour, so every
+         component it inherits wants its dark variant. The dark-mode
+         schedule still runs for the phone; here it is a no-op. --}}
+    class="dark"
+    data-always-dark
     data-kiosk
 >
     <head>

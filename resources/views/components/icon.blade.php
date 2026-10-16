@@ -75,6 +75,17 @@
         'play' => '<path d="M7.5 4.8v14.4L19 12z"/>',
         'close' => '<path d="M6 6l12 12M18 6 6 18"/>',
         'plus' => '<path d="M12 5v14M5 12h14"/>',
+        /* --------------------------- the wall face ------------------------ */
+        /* The header's sun. Filled rather than stroked: at 44px over a dark
+           ground an outline sun reads as a cog, and the design's is solid. */
+        'sun-bright' => '<circle cx="12" cy="12" r="4.6" fill="currentColor" stroke="none"/><path d="M12 1.8v2.6M12 19.6v2.6M3.8 12H1.2M22.8 12h-2.6M5.6 5.6 3.8 3.8M20.2 20.2l-1.8-1.8M18.4 5.6l1.8-1.8M3.8 20.2l1.8-1.8" stroke-width="2.1"/>',
+
+        'monitor' => '<rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8.5 21h7M12 17v4"/>',
+        'help-circle' => '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.3 2.4c-.6.2-.9.8-.9 1.4v.4"/><path d="M12 17h.01"/>',
+        'search' => '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>',
+        'toggle' => '<rect x="2.5" y="7" width="19" height="10" rx="5"/><circle cx="8" cy="12" r="2.6"/>',
+        'bars' => '<path d="M6 19.5v-7M10.5 19.5v-12M15 19.5v-9M19.5 19.5v-15"/>',
+
         'megaphone' => '<path d="M4 9.5v5a1.5 1.5 0 0 0 1.5 1.5H8l9 4.5V5L8 9.5H5.5A1.5 1.5 0 0 0 4 11z"/><path d="M8 16v3.5a1.5 1.5 0 0 0 3 0V17"/><path d="M20 10.5v3"/>',
         'activity' => '<path d="M3 12h4l3-7 4 14 3-7h4"/>',
 

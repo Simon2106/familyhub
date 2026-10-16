@@ -8,15 +8,22 @@ test('a wall that is keeping up gives nothing up', () => {
     assert.equal(remedyFor(BUDGET), 'none');
 });
 
-test('a wall just under the budget loses the ring first', () => {
-    // The ring is the expensive layer; the brief says it goes first.
-    assert.equal(remedyFor(BUDGET - 1), 'lite');
-    assert.equal(remedyFor(42), 'lite');
+test('a wall just under the budget softens the blur first', () => {
+    // 28px to 18px is the cheapest ten pixels on the screen, and at 18 it
+    // still reads as glass. The design brief puts it first for that reason.
+    assert.equal(remedyFor(BUDGET - 1), 'soft');
+    assert.equal(remedyFor(45), 'soft');
+});
+
+test('further under, the refraction ring goes as well', () => {
+    assert.equal(remedyFor(40), 'lite');
+    assert.equal(remedyFor(32), 'lite');
 });
 
 test('a wall well under loses the saturation too', () => {
-    // Below about seventy per cent of the budget the ring alone will not
-    // buy it back, and half a remedy is a wall still dropping frames.
+    // Below about sixty per cent of the budget nothing short of flat
+    // surfaces will buy it back, and half a remedy is a wall still
+    // dropping frames.
     assert.equal(remedyFor(20), 'plain');
     assert.equal(remedyFor(10), 'plain');
 });
@@ -25,12 +32,16 @@ test('the remedies are cumulative on the document', () => {
     const classes = new Set();
     const root = { classList: { add: (c) => classes.add(c) } };
 
+    apply('soft', root);
+    assert.deepEqual([...classes], ['soft-glass']);
+
+    classes.clear();
     apply('lite', root);
-    assert.deepEqual([...classes], ['lite-glass']);
+    assert.deepEqual([...classes].sort(), ['lite-glass', 'soft-glass']);
 
     classes.clear();
     apply('plain', root);
-    assert.deepEqual([...classes].sort(), ['lite-glass', 'plain-glass']);
+    assert.deepEqual([...classes].sort(), ['lite-glass', 'plain-glass', 'soft-glass']);
 
     classes.clear();
     apply('none', root);
@@ -71,6 +82,6 @@ test('it settles before it measures, and reports both numbers', async () => {
 
     assert.ok(waited >= 1000, 'It waited for the page to settle.');
     assert.equal(result.fps, 45);
-    assert.equal(result.remedy, 'lite');
-    assert.deepEqual([...classes], ['lite-glass']);
+    assert.equal(result.remedy, 'soft');
+    assert.deepEqual([...classes], ['soft-glass']);
 });

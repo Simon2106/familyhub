@@ -90,6 +90,232 @@ new #[Layout('layouts::display')] class extends Component
             ->filter(fn (array $items) => $items !== []);
     }
 
+    /**
+     * The Home face's people, in the shape the layout wants.
+     *
+     * Built here rather than in the view because the view is shared with
+     * the static reference at /display/style/home — the thing that was
+     * measured against the design is the thing that ships, and it can only
+     * be that if it takes the same array either way.
+     *
+     * @return list<array<string, mixed>>
+     */
+    #[Computed]
+    public function faceColumns(): array
+    {
+        $today = $this->todayDate;
+        $tz = $this->household()->displayTimezone();
+        $chores = $this->choresByDate[$today] ?? collect();
+        $events = ($this->days[0]['events_by_member'] ?? collect());
+
+        foreach ($this->days as $day) {
+            if ($day['date'] === $today) {
+                $events = $day['events_by_member'];
+
+                break;
+            }
+        }
+
+        return $this->members->map(fn (\App\Models\Member $member) => [
+            'slug' => \Illuminate\Support\Str::slug($member->name),
+            'name' => $member->name,
+            'colour' => $member->colour ?: '#8B5CF6',
+            'away' => in_array($member->id, $this->awayIds, true),
+            'needs' => $member->neededOn($this->today),
+            'chores' => ($chores[$member->id] ?? collect())
+                ->map(fn ($slot) => $slot->chore->title)
+                ->values()->toBase()->all(),
+            'events' => ($events[$member->id] ?? collect())
+                ->map(fn (Event $event) => $this->faceEvent($event, $tz))
+                ->values()->toBase()->all(),
+        ])->values()->toBase()->all();
+    }
+
+    /** @return list<array<string, mixed>> */
+    #[Computed]
+    public function faceHouseholdEvents(): array
+    {
+        $tz = $this->household()->displayTimezone();
+        $today = $this->todayDate;
+
+        foreach ($this->days as $day) {
+            if ($day['date'] !== $today) {
+                continue;
+            }
+
+            return ($day['events_by_member'][self::HOUSEHOLD] ?? collect())
+                ->map(fn (Event $event) => $this->faceEvent($event, $tz) + [
+                    'colour' => $event->members->first()?->colour ?: '#F2458F',
+                ])
+                ->values()->toBase()->all();
+        }
+
+        return [];
+    }
+
+    /** @return array<string, mixed> */
+    protected function faceEvent(Event $event, string $tz): array
+    {
+        return [
+            'when' => $event->all_day ? 'All day' : $event->start_at->timezone($tz)->format('H:i'),
+            'title' => $event->title,
+            'subtitle' => $event->location,
+        ];
+    }
+
+    /**
+     * The TODAY rail: everything on today, whoever it belongs to.
+     *
+     * @return list<array<string, mixed>>
+     */
+    #[Computed]
+    public function faceToday(): array
+    {
+        $tz = $this->household()->displayTimezone();
+        $today = $this->todayDate;
+
+        foreach ($this->days as $day) {
+            if ($day['date'] !== $today) {
+                continue;
+            }
+
+            return $day['events']->map(function (Event $event) use ($tz) {
+                $who = $event->members->pluck('name')->join(', ') ?: 'Household';
+
+                return [
+                    'when' => $event->all_day ? 'All day' : $event->start_at->timezone($tz)->format('H:i'),
+                    'title' => $event->title,
+                    'subtitle' => trim($who.($event->location ? ' · '.$event->location : '')),
+                    'colour' => $event->members->first()?->colour ?: '#F2458F',
+                ];
+            })->values()->toBase()->all();
+        }
+
+        return [];
+    }
+
+    /**
+     * The week strip: seven days, with a dot per member who has something on.
+     *
+     * @return list<array<int, mixed>>
+     */
+    #[Computed]
+    public function faceWeek(): array
+    {
+        return collect($this->week)->map(function (array $day) {
+            $dots = $day['events']
+                ->flatMap(fn (Event $event) => $event->members->pluck('colour'))
+                ->filter()
+                ->unique()
+                ->take(3)
+                ->values()
+                ->toBase()
+                ->all();
+
+            return [
+                $day['carbon']->format('D'),
+                (int) $day['carbon']->format('j'),
+                $dots,
+                $day['is_today'],
+                $day['date'],
+            ];
+        })->values()->toBase()->all();
+    }
+
+    /** @return list<string> */
+    #[Computed]
+    public function faceTodos(): array
+    {
+        return ChecklistItem::query()
+            ->whereHas('checklist', fn ($q) => $q
+                ->where('household_id', $this->household()->id)
+                ->where('is_home_list', true))
+            ->open()
+            ->surfaced()
+            ->inDueOrder()
+            ->limit(3)
+            ->pluck('title')
+            ->toBase()
+            ->all();
+    }
+
+    /**
+     * The household's running concerns, for the Home face's own column.
+     *
+     * The bins, what the family is counting down to, and the last day of
+     * term. All three were chips along the old header; the new design has
+     * no header to hang them off, and dropping three features to match a
+     * mockup is not what "rebuild the Home face" meant.
+     *
+     * @return list<array<string, mixed>>
+     */
+    #[Computed]
+    public function faceNotices(): array
+    {
+        $notices = [];
+
+        if ($this->nextBins->isNotEmpty() && ! $this->loneChild) {
+            $on = $this->nextBins->first()->on;
+            $when = $on->isSameDay($this->today)
+                ? 'today'
+                : ($on->isSameDay($this->today->addDay()) ? 'tonight' : $on->format('D'));
+
+            $notices[] = [
+                'label' => $this->nextBins->map(fn ($bin) => $bin->label())->join(' + '),
+                'detail' => $when,
+                'dots' => $this->nextBins->map(fn ($bin) => $bin->colour())->values()->toBase()->all(),
+            ];
+        }
+
+        foreach ($this->schoolTurningPoints as $point) {
+            $notices[] = [
+                'label' => $point['label'].($point['finishes'] ? ' · finishes '.$point['finishes'] : ''),
+                // The school's code travels with it: a household with two
+                // schools needs to know whose last day of term this is.
+                'detail' => $point['code'].' · '.($point['on']->isSameDay($this->today)
+                    ? 'today'
+                    : ($point['on']->isSameDay($this->today->addDay()) ? 'tomorrow' : $point['on']->format('D'))),
+            ];
+        }
+
+        foreach ($this->countdowns as $entry) {
+            $notices[] = [
+                'label' => $entry->sentence(),
+                'colour' => $entry->isToday() ? $entry->colour() : null,
+            ];
+        }
+
+        return array_slice($notices, 0, 5);
+    }
+
+    /** The clock as the face first paints it; Alpine takes over per second. */
+    #[Computed]
+    public function nowClock(): string
+    {
+        return $this->household()->nowLocal()->format('H:i');
+    }
+
+    /** "Mostly sunny · 15°/9° · 100% rain", or nothing at all. */
+    #[Computed]
+    public function weatherSummary(): ?string
+    {
+        $forecast = $this->weather;
+
+        if (! $forecast) {
+            return null;
+        }
+
+        $parts = array_filter([
+            $forecast->description(),
+            $forecast->high !== null && $forecast->low !== null
+                ? $forecast->round($forecast->high).'°/'.$forecast->round($forecast->low).'°'
+                : null,
+            $forecast->rainChance !== null ? round($forecast->rainChance).'% rain' : null,
+        ]);
+
+        return $parts === [] ? null : implode(' · ', $parts);
+    }
+
     /** A child in on their own, which changes what the face leads with. */
     #[Computed]
     public function loneChild(): ?\App\Models\Member
@@ -724,7 +950,7 @@ new #[Layout('layouts::display')] class extends Component
 @endphp
 
 <div
-    class="app-shell flex flex-col text-slate-900 dark:text-slate-100"
+    class="wall wall-ground app-shell flex flex-col"
     wire:poll.60s
     x-data="{
         /* --- local state: never round-trips to the server --- */
@@ -1295,19 +1521,18 @@ new #[Layout('layouts::display')] class extends Component
     x-on:cooking-started.window="cooking = true; idle = false"
     x-on:cooking-ended.window="cooking = false; wake()"
 >
-    {{-- ============================= HEADER ============================= --}}
-    <header class="flex shrink-0 items-center justify-between gap-6 px-10 pt-6 pb-4">
+    {{-- The header lives inside the Home face now. Every other tab gets
+         this compact one, so the chrome stays consistent without the clock
+         taking a quarter of a screen that is showing a shopping list. --}}
+    <header x-show="!(tab === 'home' && face !== 'evening' && view === 'day')" x-cloak
+            class="flex shrink-0 items-center justify-between gap-6 px-9 pt-6 pb-4">
         <div class="flex items-center gap-4">
-
-            {{-- The headline the face leads with — "Good morning",
-                 "Tonight" — and the way to change the face by hand. Top
-                 left, which is where a screen is read from. --}}
             <button type="button" x-on:click="facePicker = ! facePicker"
-                    class="press flex shrink-0 items-center gap-3 rounded-full px-4 py-1 text-left"
+                    class="wall-press flex shrink-0 items-center gap-3 rounded-full px-4 py-1 text-left"
                     :class="faceOverride ? 'bg-blue-600/15' : ''"
                     aria-label="Change what the wall is showing">
-                <span class="t-face" x-text="@js($this->faceGreetings)[face]"></span>
-                <span x-show="faceOverride" x-cloak class="t-label">held</span>
+                <span style="font-size: var(--wall-date);" x-text="@js($this->faceGreetings)[face]"></span>
+                <span x-show="faceOverride" x-cloak class="wall-label">held</span>
             </button>
 
             <div x-show="facePicker" x-cloak class="relative">
@@ -1315,138 +1540,57 @@ new #[Layout('layouts::display')] class extends Component
                      x-on:click.outside="facePicker = false">
                     @foreach (\App\Services\Display\WallFace::LABELS as $key => $label)
                         <button type="button" x-on:click="pickFace('{{ $key }}')"
-                                class="touch-target rounded-xl px-5 text-left text-lg font-medium"
-                                :class="face === '{{ $key }}' ? 'bg-blue-600 text-white' : ''">
+                                class="wall-press touch-target rounded-[14px] px-5 text-left"
+                                style="font-size: var(--wall-body);"
+                                :class="face === '{{ $key }}' ? 'bg-[#2F7CF6]' : ''">
                             {{ $label }}
                         </button>
                     @endforeach
                     <button type="button" x-on:click="clearFace()" x-show="faceOverride" x-cloak
-                            class="touch-target rounded-xl px-5 text-left text-lg opacity-70">
+                            class="wall-press touch-target rounded-[14px] px-5 text-left text-white/70"
+                            style="font-size: var(--wall-body);">
                         Back to the clock
                     </button>
                 </div>
             </div>
-
-            <div x-show="view === 'week' && face !== 'evening'">
-                <p class="text-xl font-semibold">This week</p>
-                <p class="text-sm text-slate-500 dark:text-slate-400">
-                    {{ $week[0]['carbon']->format('j M') }} – {{ $week[6]['carbon']->format('j M') }}
-                </p>
-            </div>
-
-            <div x-show="view === 'day' && face !== 'evening'" x-cloak>
-                <p class="text-xl font-semibold"
-                   x-text="selected && new Date(selected + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long' })"></p>
-                <p class="text-sm text-slate-500 dark:text-slate-400"
-                   x-text="selected && new Date(selected + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })"></p>
-            </div>
-
-            {{-- The last day of term and the first day back. Worth a line for
-                 three days either side and silence the rest of the year. --}}
-            @foreach ($this->schoolTurningPoints as $point)
-                <div class="hidden min-w-0 items-baseline gap-2 rounded-xl px-3 py-1 sm:flex" wire:key="turn-{{ $point['code'] }}-{{ $point['on']->toDateString() }}">
-                    <span class="rounded-lg px-1.5 text-sm font-bold text-white" style="background-color: #0d9488;">{{ $point['code'] }}</span>
-                    <span class="truncate text-lg font-semibold">{{ $point['label'] }}</span>
-                    @if ($point['finishes'])
-                        {{-- The half day nobody remembers until they are still
-                             at work at one o'clock. --}}
-                        <span class="shrink-0 text-lg font-bold text-amber-600 dark:text-amber-400">
-                            finishes {{ $point['finishes'] }}
-                        </span>
-                    @endif
-                    <span class="text-sm text-slate-500 dark:text-slate-400">
-                        {{ $point['on']->isSameDay($this->today) ? 'today' : ($point['on']->isSameDay($this->today->addDay()) ? 'tomorrow' : $point['on']->format('D')) }}
-                    </span>
-                </div>
-            @endforeach
-
-            {{-- What the household is counting the days to. Beside the clock
-                 because it is the other thing people look at on their way
-                 past, and because it is the only part of the header that is
-                 good news. --}}
-            <x-countdown-strip :entries="$this->countdowns" class="hidden xl:flex" />
-
-            {{-- Bins, when they are close enough to matter. Beside the clock
-                 because it is a thing you check on your way past. --}}
-            @if ($this->nextBins->isNotEmpty() && ! $this->loneChild)
-                @php
-                    $binDay = $this->nextBins->first()->on;
-                    $isToday = $binDay->isSameDay($this->today);
-                    $isTomorrow = $binDay->isSameDay($this->today->addDay());
-                    // Loud on the two days it can still be acted on, quiet the
-                    // rest of the fortnight. A badge that always shouts is a
-                    // badge nobody reads by Thursday.
-                    $urgent = $isToday || $isTomorrow;
-                    $when = $isToday ? 'today' : ($isTomorrow ? 'tonight' : $binDay->format('D'));
-                @endphp
-
-                <div class="hidden shrink-0 items-center gap-2.5 rounded-full px-4 py-1.5 sm:flex
-                            {{ $urgent ? 'text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800' }}"
-                     @if ($urgent) style="background-color: {{ $this->nextBins->first()->colour() }};" @endif>
-
-                    {{-- The colours first: from across a kitchen the dots are
-                         read before any of the words are.
-
-                         Backed by a dark chip when the pill is coloured, or a
-                         yellow food bin on a yellow pill disappears into it. --}}
-                    <span class="flex shrink-0 items-center gap-1 rounded-full {{ $urgent ? 'bg-black/25 px-1.5 py-1' : '' }}"
-                          aria-hidden="true">
-                        @foreach ($this->nextBins as $bin)
-                            <span class="size-3.5 rounded-full {{ $urgent ? '' : 'ring-2 ring-white dark:ring-slate-800' }}"
-                                  style="background-color: {{ $bin->colour() }};"></span>
-                        @endforeach
-                    </span>
-
-                    <span class="truncate font-bold {{ $urgent ? 'text-lg' : 'text-base text-slate-700 dark:text-slate-200' }}">
-                        {{ $this->nextBins->map(fn ($bin) => $bin->label())->join(' + ') }}
-                    </span>
-
-                    <span class="shrink-0 font-bold {{ $urgent ? 'text-lg text-white/85' : 'text-base text-slate-500 dark:text-slate-400' }}">
-                        {{ $when }}
-                    </span>
-                </div>
-            @endif
-
-            {{-- The question actually asked in a kitchen, answered without
-                 anyone having to change tab. --}}
-            @php $tonight = $this->dinners[$this->todayDate] ?? null; @endphp
-
-            @if ($tonight)
-                {{-- Not on the evening face: that face's whole left column is
-                     this, and the same words twice on one screen reads as a
-                     mistake. --}}
-                <button type="button" x-on:click="tab = 'meals'" x-show="face !== 'evening'"
-                        class="press hidden min-w-0 items-baseline gap-2 rounded-full px-4 py-1 text-left sm:flex">
-                    <span class="text-sm font-semibold tracking-wide text-slate-400 uppercase">Tonight</span>
-                    <span class="truncate text-lg font-semibold">{{ $tonight->title }}</span>
-                </button>
-            @endif
         </div>
 
         <div class="flex items-center gap-6">
-            {{-- Shouting up the stairs, without the stairs. --}}
             <livewire:display.announce />
 
-            {{-- Clock and weather, top right, together: the two things
-                 somebody checks without breaking stride. --}}
-            <span class="t-clock text-[2.75rem] leading-none" x-text="clock">&nbsp;</span>
+            <span class="leading-none" style="font-size: 44px; font-weight: 300;" x-text="clock">&nbsp;</span>
 
-            <x-weather-tile :forecast="$this->weather" class="hidden sm:flex" />
+            @if ($this->weather)
+                <span class="flex items-center gap-3">
+                    <x-icon :name="$this->weather->icon()" class="size-8 shrink-0 text-[#F5B800]" />
+                    <span style="font-size: var(--wall-date); font-weight: 300;">{{ $this->weather->round($this->weather->temperature) }}&deg;</span>
+                </span>
+            @endif
 
-            {{-- Ask out loud. Only where there is something to listen with:
-                 without a key this is a button that can only disappoint.
+            <button type="button" x-on:click="searching = true"
+                    class="wall-press grid touch-target shrink-0 place-items-center rounded-full"
+                    aria-label="Search">
+                <x-icon name="search" class="size-7 text-white/85" />
+            </button>
+        </div>
+    </header>
 
-                 The dialog lives in here with the button rather than beside
-                 the search one, so the two share a single Alpine scope. It is
-                 fixed-positioned, so where it sits in the document does not
-                 decide where it lands on the screen. --}}
+    {{-- Asking out loud. The dialog travels with the button so the two
+         share one Alpine scope, and the Home face's action bar reaches it
+         by event rather than by growing a microphone of its own. --}}
+    <div class="absolute top-6 right-[150px] z-30">
             @if ($this->canListen)
-                <div x-data="wallMic({
+                <div x-show="!(tab === 'home' && face !== 'evening' && view === 'day')" x-cloak
+                     x-data="wallMic({
                         listen: @js(route('display.listen')),
                         speech: @js(Str::beforeLast(route('display.speech', ['id' => 'x']), '/x')),
                      })">
+                    {{-- Opened by the action bar's "Ask a question" as well
+                         as by its own button, so the Home face can offer it
+                         without a second microphone on screen. --}}
                     <button type="button" x-on:click="press()"
-                            class="grid touch-target shrink-0 place-items-center rounded-2xl transition-colors"
+                            x-on:wall-listen.window="press()"
+                            class="wall-press grid touch-target shrink-0 place-items-center rounded-2xl transition-colors"
                             :class="{
                                 'text-slate-400': state === 'idle',
                                 'text-rose-500': state === 'listening',
@@ -1518,32 +1662,7 @@ new #[Layout('layouts::display')] class extends Component
                     </div>
                 </div>
             @endif
-
-            <button type="button" x-on:click="searching = true"
-                class="grid touch-target shrink-0 place-items-center rounded-2xl text-slate-400"
-                aria-label="Search">
-            <svg class="size-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="11" cy="11" r="7" />
-                <path d="m20 20-3.5-3.5" />
-            </svg>
-        </button>
-
-        <div class="text-right">
-            <p class="text-sm font-medium text-slate-500 dark:text-slate-400"
-               title="Build {{ \App\Support\BuildVersion::current() }}"
-               data-build-version="{{ \App\Support\BuildVersion::current() }}">{{ $this->household()->name }}</p>
-            <button
-                type="button"
-                x-show="! onToday"
-                x-cloak
-                x-on:click="showToday()"
-                class="touch-target -mr-2 rounded-lg px-3 text-sm font-semibold text-blue-600 dark:text-blue-400"
-            >
-                Back to today
-            </button>
-            </div>
-        </div>
-    </header>
+    </div>
 
     {{-- Timers, pinned above everything on every tab. The one thing a
          kitchen timer must never do is be somewhere else when it rings. --}}
@@ -1561,8 +1680,32 @@ new #[Layout('layouts::display')] class extends Component
         </div>
 
         {{-- ---------------------------- HOME ---------------------------- --}}
-        {{-- The day face, and what sits behind the night one. --}}
-        <div x-show="tab === 'home' && face !== 'evening'" class="flex h-full min-h-0 flex-col gap-3">
+        {{-- The day face, and what sits behind the night one.
+
+             The new face is the day view; the week, the month and the
+             timeline are the same screens they were, reached from the strip
+             in its top right. --}}
+        <div x-show="tab === 'home' && face !== 'evening' && view === 'day'" x-cloak class="h-full min-h-0">
+            <x-wall.face
+                :household="$this->household()->name"
+                :clock="$this->nowClock"
+                :date="$this->today->format('l, j F')"
+                :temperature="$this->weather ? $this->weather->round($this->weather->temperature).'°' : null"
+                :weather="$this->weatherSummary"
+                :weather-icon="$this->weather?->icon() ?? 'sun'"
+                :people="$this->faceColumns"
+                :days="$this->faceWeek"
+                :household-events="$this->faceHouseholdEvents"
+                :household-count="count($this->faceHouseholdEvents) ?: null"
+                :today-lines="$this->faceToday"
+                :todos="$this->faceTodos"
+                :notices="$this->faceNotices"
+                :can-listen="$this->canListen"
+                :live="true"
+            />
+        </div>
+
+        <div x-show="tab === 'home' && face !== 'evening' && view !== 'day'" x-cloak class="flex h-full min-h-0 flex-col gap-3">
           {{-- What the house has been doing. One line; tap for the day. --}}
           <div class="shrink-0">
               <livewire:display.activity />
@@ -2290,26 +2433,21 @@ new #[Layout('layouts::display')] class extends Component
     <livewire:kids.pin />
 
     {{-- ============================ TAB BAR ============================= --}}
-    {{-- The tab bar, floating rather than bolted to the bottom edge: a
-         pill of glass with the room's own colour in it, and one blob that
-         travels between the tabs rather than a fade that blinks. --}}
-    <div class="pointer-events-none flex shrink-0 justify-center px-10 pb-5 pt-2">
-        <x-glass shape="pill" class="pointer-events-auto p-1.5">
-            <x-display.tab-bar
-                :tabs="[
-                    ['home', 'Home', 'house'],
-                    ['review', 'Review', 'inbox'],
-                    ['meals', 'Meals', 'cutlery'],
-                    ['lists', 'Lists', 'list'],
-                    ['home-devices', 'Switches', 'light'],
-                    ['photos', 'Photos', 'photo'],
-                    ['timers', 'Timers', 'timer'],
-                    ['activity', 'Activity', 'activity'],
-                ]"
-                :badges="['review' => $this->reviewCount]"
-            />
-        </x-glass>
-    </div>
+    {{-- The tab bar. Floating glass, one block that travels, and the
+         same component the static reference uses. --}}
+    <x-wall.tab-bar
+        :tabs="[
+            ['home', 'Home', 'house'],
+            ['review', 'Review', 'inbox'],
+            ['meals', 'Meals', 'cutlery'],
+            ['lists', 'Lists', 'list'],
+            ['home-devices', 'Switches', 'toggle'],
+            ['photos', 'Photos', 'photo'],
+            ['timers', 'Timers', 'timer'],
+            ['activity', 'Activity', 'bars'],
+        ]"
+        :badges="['review' => $this->reviewCount]"
+    />
 
     {{-- ========================== SCREENSAVER =========================== --}}
     {{-- Any touch wakes it, wherever it lands: on a dark screen there is

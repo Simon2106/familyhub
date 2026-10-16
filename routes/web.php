@@ -129,6 +129,17 @@ Route::livewire('/display/style', 'display.style-guide')
     ->name('display.style');
 
 /*
+| The Home face, static, with the mockup's own sample content.
+|
+| Built first and compared side by side with design/home-mockup.png, and
+| kept afterwards: a static reference is the only honest way to tell a
+| layout regression from a data one.
+*/
+Route::livewire('/display/style/home', 'display.mock')
+    ->middleware('display.token')
+    ->name('display.style.home');
+
+/*
 | The wall's microphone.
 |
 | Behind the same token as the display itself, and throttled: the kiosk asks a

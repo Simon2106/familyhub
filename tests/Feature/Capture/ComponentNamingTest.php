@@ -35,6 +35,7 @@ class ComponentNamingTest extends TestCase
             ['display.activity'],
             ['display.announce'],
             ['display.style-guide'],
+            ['display.mock'],
             ['phone.event-editor'],
             ['admin.calendars'],
             ['admin.house'],

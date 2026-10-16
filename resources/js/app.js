@@ -32,6 +32,16 @@ function applyDarkModeSchedule() {
 
     if (!start || !end) return;
 
+    // The wall is a dark surface all day now — glass over a deep purple
+    // ground — so the schedule has nothing to say about it. Left to run,
+    // it would put every inherited tab into its light variant at nine in
+    // the morning and stand a white card on a near-black screen.
+    if (root.dataset.alwaysDark !== undefined) {
+        root.classList.add('dark');
+
+        return;
+    }
+
     root.classList.toggle('dark', isDarkNow(start, end));
 }
 
@@ -1100,7 +1110,15 @@ document.addEventListener('alpine:init', () => {
                 requestAnimationFrame(() => (this.$refs.blob.style.transition = ''));
             }
 
-            this.blob = { x: Math.round(box.left - row.left), w: Math.round(box.width) };
+            // A fixed-width block centred on the tab, where the bar asks for
+            // one; otherwise the blob is the tab's own width. The wall's bar
+            // wants a 100px block under a 122px cell, which a full-width
+            // blob would not give.
+            const fixed = Number(this.$el.dataset.blobWidth || 0);
+            const width = fixed > 0 ? fixed : Math.round(box.width);
+            const left = Math.round(box.left - row.left + (box.width - width) / 2);
+
+            this.blob = { x: left, w: width };
         },
     }));
 });

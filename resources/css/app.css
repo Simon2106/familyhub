@@ -80,9 +80,11 @@
     --glass-tint: 255 255 255;
     --glass-alpha: 0.18;
     --glass-blur: 20px;
+    --glass-saturate: 160%;
     --glass-rim-bright: rgba(255, 255, 255, 0.6);
     --glass-rim-dim: rgba(255, 255, 255, 0.1);
     --glass-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+    --glass-border: transparent;
 }
 
 .dark {
@@ -91,6 +93,62 @@
     --glass-rim-bright: rgba(255, 255, 255, 0.22);
     --glass-rim-dim: rgba(255, 255, 255, 0.04);
     --glass-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+/*
+ * The wall's own glass.
+ *
+ * Darker and bluer than the app's, because it is always over the same deep
+ * purple backdrop rather than over a white page or a photograph. One tint
+ * rather than a light and a dark variant: the wall has one ground.
+ *
+ * Scoped to the display layout so the phone and /admin keep the adaptive
+ * glass from the earlier pass and nothing else has to change.
+ */
+.wall {
+    --glass-tint: 10 8 24;
+    --glass-alpha: 0.42;
+    --glass-blur: 28px;
+    --glass-saturate: 140%;
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-rim-bright: rgba(255, 255, 255, 0.08);
+    --glass-rim-dim: transparent;
+    --glass-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+
+    /* Concentric: cards 20, the tiles and chips inside them 16. */
+    --radius-glass: 20px;
+    --radius-tile: 16px;
+
+    /*
+     * The type scale, in one place.
+     *
+     * The brief's list, measured against the mockup and corrected in two
+     * places. The clock at 220px would draw digits a fifth wider than the
+     * design shows; it is 182. The household name at 30px came out a
+     * quarter short of the artwork; it is 36. Everything else matched.
+     *
+     * One size looks wrong and is not: tabular figures are wider than the
+     * proportional ones the mockup was rendered with, so "15°" at the
+     * specified 52px measures wider here than in the image. Tabular is the
+     * explicit requirement — a temperature that shuffles its neighbours
+     * sideways when it ticks over is the thing it prevents.
+     */
+    --wall-clock: 174px;
+    --wall-name: 36px;
+    --wall-date: 34px;
+    --wall-temp: 52px;
+    --wall-weather: 20px;
+    --wall-member: 22px;
+    --wall-body: 20px;
+    --wall-chip: 17px;
+    --wall-tab: 17px;
+    --wall-label: 13px;
+    --wall-pill-day: 15px;
+    --wall-pill-num: 22px;
+
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
 }
 
 /*
@@ -671,12 +729,13 @@
         position: relative;
         border-radius: var(--radius-glass);
         background: rgb(var(--glass-tint) / var(--glass-alpha));
-        -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%) brightness(1.05);
-        backdrop-filter: blur(var(--glass-blur)) saturate(160%) brightness(1.05);
-        /* No border. The rim is the border — a stroked one on top of a
-           specular highlight reads as two edges. */
+        -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(1.05);
+        backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(1.05);
+        /* A hairline where the surface wants one — the wall's does, the
+           app's does not, so it is a variable rather than a decision. */
+        border: 1px solid var(--glass-border);
         box-shadow:
-            inset 1px 1px 0 var(--glass-rim-bright),
+            inset 0 1px 0 var(--glass-rim-bright),
             inset -1px -1px 0 var(--glass-rim-dim),
             var(--glass-shadow);
         /* What nests inside: the outer radius less a 12px inset. */
@@ -745,8 +804,18 @@
         display: none;
     }
 
-    /* The second thing, and the last worth losing before glass stops being
-       glass. Set by the wall itself when the ring was not enough. */
+    /*
+     * The first thing to give when the wall is not keeping up.
+     *
+     * 28px to 18px is the cheapest ten pixels on the screen: a backdrop
+     * blur costs roughly with its radius, and at 18 it still reads as
+     * glass. Set by the wall itself after it measures its own frame rate.
+     */
+    .soft-glass {
+        --glass-blur: 18px;
+    }
+
+    /* The last thing worth losing before glass stops being glass. */
     .plain-glass .glass {
         -webkit-backdrop-filter: blur(var(--glass-blur));
         backdrop-filter: blur(var(--glass-blur));
@@ -762,6 +831,102 @@
        thing behind it may be a white shirt or a dark hedge. */
     .on-glass {
         text-shadow: 0 1px 0 rgba(0, 0, 0, 0.15);
+    }
+
+    /* --------------------------- the wall face ------------------------ */
+
+    /*
+     * The backdrop the whole wall sits on.
+     *
+     * The artwork is 1920x1745 against a 1920x1080 screen, so cover crops
+     * most of a vertical third away. Centre would take it from the middle;
+     * 35% keeps the bright purple ridge roughly where the mockup has it.
+     */
+    .wall-ground {
+        background-image: url('/images/wall-bg.png');
+        background-size: cover;
+        background-position: center 35%;
+        background-repeat: no-repeat;
+        background-color: #120a20;
+    }
+
+    /* Secondary and label text on the wall's glass. */
+    .wall-dim {
+        color: rgb(255 255 255 / 0.65);
+    }
+
+    .wall-label {
+        font-size: var(--wall-label);
+        font-weight: 500;
+        line-height: 1.2;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgb(255 255 255 / 0.7);
+    }
+
+    /*
+     * The clock, with the light falling down it.
+     *
+     * A gradient fill rather than a flat white: at this size a solid block
+     * of white is the brightest thing in a dark kitchen by a long way, and
+     * the fade to a cool blue takes the glare off the bottom half without
+     * losing any of the legibility at the top.
+     */
+    .wall-clock {
+        font-size: var(--wall-clock);
+        font-weight: 300;
+        line-height: 0.82;
+        letter-spacing: -0.02em;
+        /* Pulled left by the tabular "1"'s side bearing. A full-width
+           figure slot leaves blank space to the left of a 1 that a
+           proportional one does not, and at this size that is twenty-odd
+           pixels of the clock not starting where the design starts it. */
+        margin-left: -22px;
+        background-image: linear-gradient(180deg, #ffffff 0%, #cfe0ff 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+    }
+
+    @supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+        .wall-clock {
+            color: #eaf1ff;
+        }
+    }
+
+    /* A tap has to be felt on a panel nobody gets haptics from. */
+    .wall-press {
+        transition: transform 120ms var(--ease-wall);
+    }
+
+    .wall-press:active {
+        transform: scale(0.97);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .wall-press {
+            transition: none;
+        }
+
+        .wall-press:active {
+            transform: none;
+        }
+    }
+
+    /* Content that changes under somebody's eyes rather than blinking. */
+    .wall-fade {
+        animation: wall-fade-in 220ms var(--ease-wall);
+    }
+
+    @keyframes wall-fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .wall-fade {
+            animation: none;
+        }
     }
 
     /* ------------------------------ motion ---------------------------- */
