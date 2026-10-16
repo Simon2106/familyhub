@@ -396,9 +396,12 @@ new class extends Component
                         @if ($eventId)
                             {{-- A reminder about this one only. Makes an ordinary
                                  rule scoped to a single event — see notify.remind-me. --}}
+                            {{-- Both in the one handler: a wire:click beside
+                                 an x-on:click the server re-renders stops
+                                 firing after the first morph, and this
+                                 expression changes with every event opened. --}}
                             <button type="button"
-                                    wire:click="$set('open', false)"
-                                    x-on:click="$dispatch('remind-me', { event: {{ $eventId }} })"
+                                    x-on:click="$dispatch('remind-me', { event: {{ $eventId }} }); $wire.set('open', false)"
                                     class="touch-target rounded-xl px-4 font-semibold text-blue-600 dark:text-blue-400">
                                 Remind me
                             </button>

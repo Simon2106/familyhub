@@ -41,6 +41,19 @@ new class extends Component
     /** @var array<int, array{text: string, at: int}> */
     public array $notes = [];
 
+    /**
+     * The same, for groups.
+     *
+     * Separate arrays rather than one, because a tile id and a group id are
+     * both small integers from different tables and would collide.
+     *
+     * @var array<int, array{state: string, at: int}>
+     */
+    public array $expectingGroups = [];
+
+    /** @var array<int, array{text: string, at: int}> */
+    public array $groupNotes = [];
+
     /** How long a light gets to do as it is told before we stop believing. */
     public const SETTLE_SECONDS = 5;
 
@@ -131,9 +144,24 @@ new class extends Component
         return $this->configured ? app(SwitchBoard::class)->groups($this->household()) : collect();
     }
 
-    /** on | off | mixed | unknown, per group. */
+    /**
+     * on | off | mixed | unknown, per group — what we asked for while we
+     * still believe it, exactly as a tile does.
+     */
     #[Computed]
     public function groupStates(): array
+    {
+        return $this->groups
+            ->mapWithKeys(fn (SwitchGroup $group) => [
+                $group->id => $this->expectingGroups[$group->id]['state']
+                    ?? $this->trueGroupStates[$group->id],
+            ])
+            ->all();
+    }
+
+    /** What Home Assistant actually says, which is what we reconcile against. */
+    #[Computed]
+    public function trueGroupStates(): array
     {
         $states = $this->reading['states'];
 
@@ -148,10 +176,26 @@ new class extends Component
     {
         $this->error = null;
 
+        // Decided from the tile somebody is looking at, not from a read: see
+        // SwitchBoard::press().
+        $showing = $this->groupStates[$id] ?? null;
+
         try {
-            app(SwitchBoard::class)->press($this->findGroup($id), $this->reading['states']);
+            $outcome = app(SwitchBoard::class)->press($this->findGroup($id), $this->reading['states'], $showing);
+
+            if (in_array($outcome, ['on', 'off'], true)) {
+                unset($this->groupNotes[$id]);
+
+                $this->expectingGroups[$id] = ['state' => $outcome, 'at' => now()->timestamp];
+            } else {
+                // Cancelled, or a countdown started. Neither is a state to be
+                // optimistic about.
+                unset($this->expectingGroups[$id]);
+            }
         } catch (HomeAssistantException $e) {
             $this->error = $e->getMessage();
+
+            unset($this->expectingGroups[$id]);
         }
 
         $this->forgetHome();
@@ -160,6 +204,8 @@ new class extends Component
     public function cancelGroup(int $id): void
     {
         app(SwitchBoard::class)->cancel($this->findGroup($id));
+
+        unset($this->expectingGroups[$id]);
 
         $this->forgetHome();
     }
@@ -180,6 +226,10 @@ new class extends Component
         } catch (HomeAssistantException $e) {
             $this->error = $e->getMessage();
         }
+
+        // One member moved, so whatever we were expecting the whole group to
+        // settle on is no longer what we asked for.
+        unset($this->expectingGroups[$id]);
 
         $this->forgetHome();
     }
@@ -222,7 +272,7 @@ new class extends Component
     protected function forgetHome(): void
     {
         unset($this->reading, $this->states, $this->problem, $this->sections,
-            $this->nowPlaying, $this->groups, $this->groupStates);
+            $this->nowPlaying, $this->groups, $this->groupStates, $this->trueGroupStates);
     }
 
     /** @return Collection<int, HomeTile> */
@@ -339,6 +389,48 @@ new class extends Component
         foreach ($this->notes as $tileId => $note) {
             if ($now - $note['at'] >= self::NOTE_SECONDS) {
                 unset($this->notes[$tileId]);
+            }
+        }
+
+        $this->reconcileGroups($now);
+    }
+
+    /**
+     * The same for groups, kept apart so a household with no groups never
+     * loads any: with nothing expected there is nothing to compare, and
+     * touching $this->groups would be a query on every poll.
+     */
+    protected function reconcileGroups(int $now): void
+    {
+        if ($this->expectingGroups === [] && $this->groupNotes === []) {
+            return;
+        }
+
+        foreach ($this->expectingGroups as $groupId => $expectation) {
+            $actual = $this->trueGroupStates[$groupId] ?? null;
+
+            if ($actual === null) {
+                unset($this->expectingGroups[$groupId]);
+
+                continue;
+            }
+
+            if ($actual === $expectation['state']) {
+                unset($this->expectingGroups[$groupId]);
+
+                continue;
+            }
+
+            if ($now - $expectation['at'] >= self::SETTLE_SECONDS) {
+                unset($this->expectingGroups[$groupId]);
+
+                $this->groupNotes[$groupId] = ['text' => 'Didn\'t respond', 'at' => $now];
+            }
+        }
+
+        foreach ($this->groupNotes as $groupId => $note) {
+            if ($now - $note['at'] >= self::NOTE_SECONDS) {
+                unset($this->groupNotes[$groupId]);
             }
         }
     }
@@ -606,6 +698,8 @@ new class extends Component
                         $state = $this->groupStates[$group->id] ?? 'unknown';
                         $left = $group->secondsLeft();
                         $waiting = $group->hasPending();
+                        $groupNote = $this->groupNotes[$group->id]['text'] ?? null;
+                        $groupPending = isset($this->expectingGroups[$group->id]);
                     @endphp
 
                     <div wire:key="group-{{ $group->id }}"
@@ -635,13 +729,15 @@ new class extends Component
                                 x-on:pointercancel="clearTimeout(timer); spent = true"
                                 x-on:pointerleave="clearTimeout(timer); spent = true"
                                 class="flex min-h-16 w-full items-center gap-3 text-left"
-                                @disabled($state === 'unknown' && ! $waiting)>
+                                @disabled($state === 'unknown' && ! $waiting && ! $groupPending)>
                             <x-icon name="switch" class="size-6 shrink-0 {{ $state === 'on' ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400' }}" />
 
                             <span class="min-w-0 flex-1">
                                 <span class="block truncate font-semibold">{{ $group->name }}</span>
                                 <span class="block truncate text-sm {{ $waiting ? 'font-semibold text-blue-700 dark:text-blue-300' : 'text-slate-500 dark:text-slate-400' }}">
-                                    @if ($waiting)
+                                    @if ($groupNote)
+                                        {{ $groupNote }}
+                                    @elseif ($waiting)
                                         {{ ucfirst($group->pending_direction) }} in
                                         <span x-data="{ left: {{ $left }} }"
                                               x-init="setInterval(() => left > 0 && left--, 1000)"
@@ -777,10 +873,20 @@ new class extends Component
                                  have one. Covers and thermostats get buttons
                                  instead, because "toggle" is not what anyone
                                  means by a blind. --}}
+                            {{-- One handler, which calls both. A wire:click
+                                 beside an x-on:click the server re-renders
+                                 works exactly once: the first press changes
+                                 this expression, the morph re-initialises the
+                                 element's Alpine directives, and Livewire's
+                                 own listener is not among the ones it puts
+                                 back. Alpine still flipped the tile, so every
+                                 tap after the first looked like it had worked
+                                 and reached nothing. The group button below
+                                 was already built this way, for a different
+                                 reason and to the same shape. --}}
                             @if (in_array($tile->domain, ['light', 'switch', 'scene', 'script'], true))
                                 <button type="button"
-                                        x-on:click="flip({{ $this->isSwitchableTile($tile) ? '! '.($on ? 'true' : 'false') : 'null' }})"
-                                        wire:click="press({{ $tile->id }})"
+                                        x-on:click="flip({{ $this->isSwitchableTile($tile) ? '! '.($on ? 'true' : 'false') : 'null' }}); $wire.press({{ $tile->id }})"
                                         class="flex min-h-16 w-full items-center gap-3 text-left"
                                         @disabled($missing)>
                                     <x-ha-icon :domain="$tile->domain" class="text-2xl leading-none" />
@@ -818,8 +924,7 @@ new class extends Component
                                     <div class="grid grid-cols-3 gap-1">
                                         @foreach (['open' => 'Open', 'stop' => 'Stop', 'close' => 'Close'] as $action => $label)
                                             <button type="button"
-                                                    @if ($action !== 'stop') x-on:click="flip({{ $action === 'open' ? 'true' : 'false' }})" @endif
-                                                    wire:click="move({{ $tile->id }}, '{{ $action }}')"
+                                                    x-on:click="@if ($action !== 'stop') flip({{ $action === 'open' ? 'true' : 'false' }}); @endif $wire.move({{ $tile->id }}, '{{ $action }}')"
                                                     class="touch-target rounded-xl bg-slate-100 text-sm font-semibold dark:bg-slate-800"
                                                     @disabled($missing)>{{ $label }}</button>
                                         @endforeach

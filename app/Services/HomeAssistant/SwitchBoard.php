@@ -70,9 +70,20 @@ class SwitchBoard
      * Mixed counts as on, so the tap turns everything off — which is what
      * somebody reaching for a tile that says "2 of 3 on" means by it.
      *
+     * $showing is what the wall is currently drawing, which is not always
+     * what a read of Home Assistant says. A group is switched with an
+     * absolute turn_on or turn_off, so the direction has to be decided
+     * against the tile somebody is looking at: Home Assistant answers a
+     * service call before the lamps have obeyed it, and a read taken in that
+     * window reports the state from before the tap — and is then cached.
+     * Deciding from that read meant the second tap sent the same command
+     * again, and the group only ever switched once. A tile toggles, so it
+     * never had this; a group cannot, because a group of three has no toggle.
+     *
      * @param  Collection<string, EntityState>  $states
+     * @param  ?string  $showing  on | off | mixed | unknown, if it is known
      */
-    public function press(SwitchGroup $group, Collection $states): string
+    public function press(SwitchGroup $group, Collection $states, ?string $showing = null): string
     {
         // A tap while a countdown is running cancels it. The way out of a
         // mis-tap is the same tap, as everywhere else on the wall.
@@ -82,7 +93,7 @@ class SwitchBoard
             return 'cancelled';
         }
 
-        $direction = $this->stateOf($group, $states) === 'off' ? 'on' : 'off';
+        $direction = ($showing ?? $this->stateOf($group, $states)) === 'off' ? 'on' : 'off';
 
         if ($group->isInstant($direction)) {
             $this->apply($group, $direction);
