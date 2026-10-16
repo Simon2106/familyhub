@@ -85,8 +85,11 @@
                     $cells = array_values(array_filter([
                         ['icon' => 'monitor', 'label' => 'Change what the|wall is showing', 'click' => $live ? 'facePicker = ! facePicker' : null],
                         ['icon' => 'megaphone', 'label' => 'Announce|something to the house', 'click' => $live ? '$dispatch(\'wall-announce\')' : null],
+                        // A microphone rather than the design's question
+                        // mark: this cell is the wall's microphone, and the
+                        // only one on this face — a "?" reads as help.
                         $canListen
-                            ? ['icon' => 'help-circle', 'label' => 'Ask|a question', 'click' => $live ? '$dispatch(\'wall-listen\')' : null]
+                            ? ['icon' => 'mic', 'label' => 'Ask|a question', 'click' => $live ? '$dispatch(\'wall-listen\')' : null]
                             : null,
                         ['icon' => 'search', 'label' => 'Search', 'click' => $live ? 'searching = true' : null],
                     ]));

@@ -1567,6 +1567,97 @@ new #[Layout('layouts::display')] class extends Component
                 </span>
             @endif
 
+    @if ($this->canListen)
+        <div x-data="wallMic({
+                listen: @js(route('display.listen')),
+                speech: @js(Str::beforeLast(route('display.speech', ['id' => 'x']), '/x')),
+             })">
+            {{-- Opened by the action bar's "Ask a question" as well
+                 as by its own button, so the Home face can offer it
+                 without a second microphone on screen. --}}
+            <button type="button" x-on:click="press()"
+                    x-on:wall-listen.window="press()"
+                    class="wall-press grid touch-target shrink-0 place-items-center rounded-2xl transition-colors"
+                    :class="{
+                        'text-slate-400': state === 'idle',
+                        'text-rose-500': state === 'listening',
+                        'text-blue-500': state === 'thinking',
+                        'text-emerald-500': state === 'speaking',
+                        'text-amber-500': state === 'failed',
+                    }"
+                    :aria-label="state === 'listening' ? 'Stop listening' : 'Ask a question'">
+                <span class="relative grid place-items-center">
+                    {{-- A ring while it listens, a slow pulse while it
+                         thinks. Subtle on purpose: this sits in a
+                         header somebody walks past all day. --}}
+                    <span x-show="state === 'listening'" x-cloak
+                          class="absolute inline-flex size-11 animate-ping rounded-full bg-rose-500/30"></span>
+                    <span x-show="state === 'thinking' || state === 'speaking'" x-cloak
+                          class="absolute inline-flex size-11 animate-pulse rounded-full bg-current opacity-10"></span>
+
+                    <svg class="relative size-7" fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="9" y="3" width="6" height="11" rx="3" />
+                        <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+                    </svg>
+                </span>
+            </button>
+
+            {{-- What was asked and what came back. Dismissed by a tap
+                 anywhere or by thirty seconds of nobody doing
+                 anything: nobody walks back to a wall to close a
+                 dialog. --}}
+            {{-- Teleported to the body. The button belongs in
+                 whichever header is showing, and on the Home face
+                 that header is display:none — which took the dialog
+                 down with it, so "Ask a question" in the action bar
+                 opened nothing at all. Moved out, the dialog keeps
+                 this scope and stops caring where the button is. --}}
+            <template x-teleport="body">
+            <div x-show="open" x-cloak x-on:keydown.escape.window="dismiss()">
+                <x-modal close-on="tapped()" label="Asking" width="max-w-2xl">
+                    <div class="p-6" x-on:click="tapped()">
+                        <p class="text-sm font-semibold tracking-wide text-slate-400 uppercase"
+                           x-text="{
+                               listening: 'Listening…',
+                               thinking: 'Thinking…',
+                               speaking: 'Answering',
+                               failed: 'Sorry',
+                               idle: 'Answered',
+                           }[state]"></p>
+
+                        {{-- The question first, so it is obvious what
+                             was heard. Half of what goes wrong here is
+                             a misheard word, and showing it turns a
+                             baffling answer into an obvious one. --}}
+                        <p x-show="transcript" x-cloak x-text="transcript"
+                           class="mt-3 text-2xl font-semibold"></p>
+
+                        <p x-show="state === 'listening' && ! transcript" x-cloak
+                           class="mt-3 text-2xl font-semibold text-slate-400">Go ahead…</p>
+
+                        {{-- The dialog covers the mic button the
+                             moment it opens, so "tap again to stop"
+                             has to mean anywhere. --}}
+                        <p x-show="state === 'listening'" x-cloak
+                           class="mt-2 text-sm text-slate-400">Tap anywhere when you have finished.</p>
+
+                        <p x-show="answer" x-cloak x-text="answer"
+                           class="mt-4 text-3xl leading-snug whitespace-pre-line"></p>
+
+                        <p x-show="error" x-cloak x-text="error"
+                           class="mt-4 text-2xl text-amber-600 dark:text-amber-400"></p>
+
+                        <p class="mt-6 text-sm text-slate-400" x-show="state !== 'listening'" x-cloak>
+                            Read-only — it looks things up, it never changes anything. Tap to close.
+                        </p>
+                    </div>
+                </x-modal>
+            </div>
+            </template>
+        </div>
+    @endif
+
             <button type="button" x-on:click="searching = true"
                     class="wall-press grid touch-target shrink-0 place-items-center rounded-full"
                     aria-label="Search">
@@ -1574,95 +1665,6 @@ new #[Layout('layouts::display')] class extends Component
             </button>
         </div>
     </header>
-
-    {{-- Asking out loud. The dialog travels with the button so the two
-         share one Alpine scope, and the Home face's action bar reaches it
-         by event rather than by growing a microphone of its own. --}}
-    <div class="absolute top-6 right-[150px] z-30">
-            @if ($this->canListen)
-                <div x-show="!(tab === 'home' && face !== 'evening' && view === 'day')" x-cloak
-                     x-data="wallMic({
-                        listen: @js(route('display.listen')),
-                        speech: @js(Str::beforeLast(route('display.speech', ['id' => 'x']), '/x')),
-                     })">
-                    {{-- Opened by the action bar's "Ask a question" as well
-                         as by its own button, so the Home face can offer it
-                         without a second microphone on screen. --}}
-                    <button type="button" x-on:click="press()"
-                            x-on:wall-listen.window="press()"
-                            class="wall-press grid touch-target shrink-0 place-items-center rounded-2xl transition-colors"
-                            :class="{
-                                'text-slate-400': state === 'idle',
-                                'text-rose-500': state === 'listening',
-                                'text-blue-500': state === 'thinking',
-                                'text-emerald-500': state === 'speaking',
-                                'text-amber-500': state === 'failed',
-                            }"
-                            :aria-label="state === 'listening' ? 'Stop listening' : 'Ask a question'">
-                        <span class="relative grid place-items-center">
-                            {{-- A ring while it listens, a slow pulse while it
-                                 thinks. Subtle on purpose: this sits in a
-                                 header somebody walks past all day. --}}
-                            <span x-show="state === 'listening'" x-cloak
-                                  class="absolute inline-flex size-11 animate-ping rounded-full bg-rose-500/30"></span>
-                            <span x-show="state === 'thinking' || state === 'speaking'" x-cloak
-                                  class="absolute inline-flex size-11 animate-pulse rounded-full bg-current opacity-10"></span>
-
-                            <svg class="relative size-7" fill="none" stroke="currentColor" stroke-width="2"
-                                 stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
-                                <rect x="9" y="3" width="6" height="11" rx="3" />
-                                <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
-                            </svg>
-                        </span>
-                    </button>
-
-                    {{-- What was asked and what came back. Dismissed by a tap
-                         anywhere or by thirty seconds of nobody doing
-                         anything: nobody walks back to a wall to close a
-                         dialog. --}}
-                    <div x-show="open" x-cloak x-on:keydown.escape.window="dismiss()">
-                        <x-modal close-on="tapped()" label="Asking" width="max-w-2xl">
-                            <div class="p-6" x-on:click="tapped()">
-                                <p class="text-sm font-semibold tracking-wide text-slate-400 uppercase"
-                                   x-text="{
-                                       listening: 'Listening…',
-                                       thinking: 'Thinking…',
-                                       speaking: 'Answering',
-                                       failed: 'Sorry',
-                                       idle: 'Answered',
-                                   }[state]"></p>
-
-                                {{-- The question first, so it is obvious what
-                                     was heard. Half of what goes wrong here is
-                                     a misheard word, and showing it turns a
-                                     baffling answer into an obvious one. --}}
-                                <p x-show="transcript" x-cloak x-text="transcript"
-                                   class="mt-3 text-2xl font-semibold"></p>
-
-                                <p x-show="state === 'listening' && ! transcript" x-cloak
-                                   class="mt-3 text-2xl font-semibold text-slate-400">Go ahead…</p>
-
-                                {{-- The dialog covers the mic button the
-                                     moment it opens, so "tap again to stop"
-                                     has to mean anywhere. --}}
-                                <p x-show="state === 'listening'" x-cloak
-                                   class="mt-2 text-sm text-slate-400">Tap anywhere when you have finished.</p>
-
-                                <p x-show="answer" x-cloak x-text="answer"
-                                   class="mt-4 text-3xl leading-snug whitespace-pre-line"></p>
-
-                                <p x-show="error" x-cloak x-text="error"
-                                   class="mt-4 text-2xl text-amber-600 dark:text-amber-400"></p>
-
-                                <p class="mt-6 text-sm text-slate-400" x-show="state !== 'listening'" x-cloak>
-                                    Read-only — it looks things up, it never changes anything. Tap to close.
-                                </p>
-                            </div>
-                        </x-modal>
-                    </div>
-                </div>
-            @endif
-    </div>
 
     {{-- Timers, pinned above everything on every tab. The one thing a
          kitchen timer must never do is be somewhere else when it rings. --}}

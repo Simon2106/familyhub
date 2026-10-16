@@ -182,6 +182,51 @@ class HomeFaceTest extends TestCase
         $this->assertStringContainsString('a question', $this->wall());
     }
 
+    /**
+     * The microphone has to be somewhere, and reachable.
+     *
+     * It was absolutely positioned at a guessed offset, which put it on
+     * top of the weather icon on every tab but Home — and on Home the
+     * whole block was hidden, dialog included, so the action bar's "Ask a
+     * question" opened nothing at all.
+     */
+    #[Test]
+    public function the_microphone_sits_in_the_header_rather_than_on_top_of_it(): void
+    {
+        $ears = new FakeSpeechToText;
+        $ears->configured = true;
+        $this->app->instance(SpeechToText::class, $ears);
+
+        $html = $this->wall();
+
+        // In the flow of the compact header, not floated over it.
+        $this->assertStringNotContainsString('absolute top-6 right-[150px]', $html);
+
+        // And its dialog is teleported out, so a hidden header cannot take
+        // it down too.
+        $this->assertMatchesRegularExpression(
+            '/x-teleport="body".*?aria-label="Asking"/s',
+            $html,
+            'The asking dialog must escape the header it is declared in.',
+        );
+    }
+
+    #[Test]
+    public function the_ask_cell_is_a_microphone(): void
+    {
+        // It is the wall's microphone and the only one on this face; a
+        // question mark reads as help.
+        $ears = new FakeSpeechToText;
+        $ears->configured = true;
+        $this->app->instance(SpeechToText::class, $ears);
+
+        $this->assertMatchesRegularExpression(
+            '/<rect x="9" y="3" width="6" height="11" rx="3"\/>/',
+            $this->wall(),
+            'The Ask cell should draw a microphone.',
+        );
+    }
+
     /* ------------------------------ chrome ------------------------------ */
 
     #[Test]
