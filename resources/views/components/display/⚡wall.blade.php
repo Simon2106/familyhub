@@ -117,13 +117,17 @@ new #[Layout('layouts::display')] class extends Component
         }
 
         return $this->members->map(fn (\App\Models\Member $member) => [
+            'id' => $member->id,
             'slug' => \Illuminate\Support\Str::slug($member->name),
             'name' => $member->name,
             'colour' => $member->colour ?: '#8B5CF6',
+            // Only a child's column opens a day view; that is what it did
+            // before the rebuild, and my-day is a child's screen.
+            'child' => (bool) $member->is_child,
             'away' => in_array($member->id, $this->awayIds, true),
             'needs' => $member->neededOn($this->today),
             'chores' => ($chores[$member->id] ?? collect())
-                ->map(fn ($slot) => $slot->chore->title)
+                ->map(fn ($slot) => ['title' => $slot->chore->title, 'done' => $slot->isDone()])
                 ->values()->toBase()->all(),
             'events' => ($events[$member->id] ?? collect())
                 ->map(fn (Event $event) => $this->faceEvent($event, $tz))
@@ -886,8 +890,17 @@ new #[Layout('layouts::display')] class extends Component
     {
         $tz = $this->household()->displayTimezone();
 
-        return app(EventWindow::class)
-            ->between($this->household(), $from, $to)
+        // Read out of the days already loaded rather than asking the
+        // calendar again. $days covers three weeks from the start of this
+        // one, so today and tomorrow are both in it — and the screensaver
+        // was costing two more occurrence queries per render to fetch
+        // events the grid above it had already fetched.
+        return collect($this->days)
+            ->filter(fn (array $day) => $day['carbon'] >= $from->startOfDay() && $day['carbon'] <= $to)
+            ->flatMap(fn (array $day) => $day['events'])
+            ->unique(fn (Event $event) => $event->occurrence_id ?? $event->id)
+            ->filter(fn (Event $event) => $event->start_at < $to && $event->end_at > $from->startOfDay())
+            ->values()
             ->map(function (Event $event) use ($tz) {
                 $members = $event->members;
 
@@ -1703,14 +1716,27 @@ new #[Layout('layouts::display')] class extends Component
                 :todos="$this->faceTodos"
                 :notices="$this->faceNotices"
                 :can-listen="$this->canListen"
+                :today="$this->todayDate"
                 :live="true"
-            />
+            >
+                {{-- The real components, in the design's slots. They bring
+                     their own buttons and, more to the point, the dialogs
+                     behind them — which is what the rebuilt face was
+                     missing. --}}
+                <x-slot:notes>
+                    <livewire:notes.board :on-wall="true" />
+                </x-slot:notes>
+
+                <x-slot:todo-panel>
+                    <livewire:todos.panel />
+                </x-slot:todo-panel>
+            </x-wall.face>
         </div>
 
         <div x-show="tab === 'home' && face !== 'evening' && view !== 'day'" x-cloak class="flex h-full min-h-0 flex-col gap-3">
           {{-- What the house has been doing. One line; tap for the day. --}}
           <div class="shrink-0">
-              <livewire:display.activity />
+              <livewire:display.activity lazy />
           </div>
           <div class="grid min-h-0 flex-1 gap-6 lg:grid-cols-5">
 
@@ -1795,7 +1821,7 @@ new #[Layout('layouts::display')] class extends Component
                                      adult's column already is their view. --}}
                                 <button type="button"
                                         @if ($member->is_child)
-                                            wire:click="$dispatch('show-my-day', { member: {{ $member->id }} })"
+                                            x-on:click="window.Livewire.dispatch('show-my-day', { member: {{ $member->id }} })"
                                         @else
                                             x-on:click="showToday()"
                                         @endif
@@ -2012,7 +2038,7 @@ new #[Layout('layouts::display')] class extends Component
                                          tabindex="0"
                                          aria-label="{{ $member->name }}'s day"
                                          x-on:click="$event.target.closest('button, a, input, label')
-                                             || $wire.dispatch('show-my-day', { member: {{ $member->id }}, date: '{{ $day['date'] }}' })"
+                                             || window.Livewire.dispatch('show-my-day', { member: {{ $member->id }}, date: '{{ $day['date'] }}' })"
                                      @endif>
                                     <div class="flex items-center gap-2 px-3 py-2" style="background-color: {{ $member->colour }}1a;">
                                         @php $awayAt = collect($this->away)->firstWhere('member.id', $member->id); @endphp
@@ -2022,7 +2048,7 @@ new #[Layout('layouts::display')] class extends Component
                                         @if ($member->is_child)
                                             <button
                                                 type="button"
-                                                wire:click="$dispatch('show-my-day', { member: {{ $member->id }}, date: '{{ $day['date'] }}' })"
+                                                x-on:click="window.Livewire.dispatch('show-my-day', { member: {{ $member->id }}, date: '{{ $day['date'] }}' })"
                                                 {{-- The avatar stays 36px; the button around it is a
                                                      touch target, because this is a wall nobody has a
                                                      mouse for. --}}
@@ -2054,7 +2080,7 @@ new #[Layout('layouts::display')] class extends Component
 
                                         @if ($running)
                                             <button type="button"
-                                                    wire:click="$dispatch('show-my-day', { member: {{ $member->id }}, date: '{{ $day['date'] }}' })"
+                                                    x-on:click="window.Livewire.dispatch('show-my-day', { member: {{ $member->id }}, date: '{{ $day['date'] }}' })"
                                                     class="ml-auto shrink-0 rounded-full px-2 py-0.5 text-xs font-bold text-white"
                                                     style="background-color: {{ $member->colour }};">
                                                 {{ $running->allDone() ? 'all done' : $running->routine->label().' '.$running->summary() }}
@@ -2351,9 +2377,16 @@ new #[Layout('layouts::display')] class extends Component
                      is not theirs to do anything about, and a list of jobs
                      they cannot act on is a list that teaches them to stop
                      reading the wall. --}}
+                {{-- lazy: this branch is the week, month and timeline
+                     views, which are in the DOM but hidden while the Home
+                     face is showing. Without it the wall paid to render a
+                     second to-do panel and a second notes board on every
+                     single tick of the poll, for markup nobody was looking
+                     at. Livewire loads them when they first come into
+                     view, which is when somebody switches. --}}
                 @unless ($this->loneChild)
                     <div class="glass flex max-h-[40%] min-h-0 shrink-0 flex-col p-4">
-                        <livewire:todos.panel />
+                        <livewire:todos.panel lazy />
                     </div>
                 @endunless
             </section>
@@ -2362,7 +2395,7 @@ new #[Layout('layouts::display')] class extends Component
           {{-- The fridge door, across the foot of Home. Takes no room at all
                when there is nothing on it, which is most weeks. --}}
           <div class="shrink-0">
-              <livewire:notes.board :on-wall="true" />
+              <livewire:notes.board :on-wall="true" lazy />
           </div>
         </div>
 

@@ -6,22 +6,22 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 
 /**
- * Shrink the avatar artwork the kiosk actually needs.
+ * Shrink the wall artwork to what the kiosk actually needs.
  *
- * The originals are ~1250px and about a megabyte each. The wall draws them
- * at 72px, and a Pi on a kitchen wall should not be downloading five
- * megabytes of PNG to do it — so this writes 144px and 288px webp beside
- * them and the views serve those.
+ * The avatars arrive ~1250px and about a megabyte each, and the wall draws
+ * them at 72px. The background arrives as a two-megabyte PNG for a panel
+ * that shows 1920x1080 of it. A Pi in a kitchen should not be decoding
+ * seven megabytes of image to paint one screen.
  *
- * Run once, and again whenever somebody drops a new face in. The outputs
+ * Run once, and again whenever somebody drops new artwork in. The outputs
  * are committed: a kiosk that has to run an image pipeline before it can
  * draw a face is a kiosk that shows nothing on a fresh deploy.
  */
-class BuildAvatars extends Command
+class BuildWallImages extends Command
 {
-    protected $signature = 'familyhub:build-avatars {--force : Rebuild even where the webp is newer}';
+    protected $signature = 'familyhub:build-images {--force : Rebuild even where the webp is newer}';
 
-    protected $description = 'Resize the avatar artwork to the sizes the wall serves';
+    protected $description = 'Shrink the wall artwork to the sizes the kiosk actually serves';
 
     /** What the wall draws, and the same again for a 2x panel. */
     public const SIZES = [144, 288];
@@ -61,9 +61,50 @@ class BuildAvatars extends Command
             }
         }
 
+        $built += $this->background();
+
         $this->components->info($built === 0 ? 'Everything was already built.' : "Built {$built}.");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * The wall's backdrop, as a webp.
+     *
+     * Kept at its full 1920 width: the CSS covers with it, so the whole
+     * width is used at 1920x1080 and cropping it to the visible band would
+     * break any other shape of screen. The saving is the format, not the
+     * pixels — a PNG of a smooth purple gradient is about ten times the
+     * size of the same thing as a webp.
+     */
+    protected function background(): int
+    {
+        $source = public_path('images/wall-bg.png');
+        $target = public_path('images/wall-bg.webp');
+
+        if (! File::exists($source)) {
+            return 0;
+        }
+
+        if (! $this->option('force') && File::exists($target) && File::lastModified($target) >= File::lastModified($source)) {
+            return 0;
+        }
+
+        $image = imagecreatefrompng($source);
+
+        if ($image === false) {
+            throw new \RuntimeException("Could not read {$source}.");
+        }
+
+        imagewebp($image, $target, self::QUALITY);
+        imagedestroy($image);
+
+        $this->components->twoColumnDetail(
+            basename($target),
+            $this->human((int) File::size($source)).' → '.$this->human((int) File::size($target)),
+        );
+
+        return 1;
     }
 
     /**

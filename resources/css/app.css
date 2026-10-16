@@ -812,7 +812,23 @@
      * glass. Set by the wall itself after it measures its own frame rate.
      */
     .soft-glass {
-        --glass-blur: 18px;
+        --glass-blur: 16px;
+    }
+
+    /*
+     * The many-small-panels case.
+     *
+     * Five member columns and seven day pills are twelve separate backdrop
+     * filters, each compositing its own slice of the background. They are
+     * also the smallest surfaces on the wall, where the blur does the least
+     * work — so when the panel is struggling they go flat and the four big
+     * cards keep their glass. A slightly heavier tint stands in for it, or
+     * a flat panel over a bright ridge stops being readable.
+     */
+    .lite-glass .glass-small {
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+        background: rgb(var(--glass-tint) / 0.62);
     }
 
     /* The last thing worth losing before glass stops being glass. */
@@ -843,7 +859,9 @@
      * 35% keeps the bright purple ridge roughly where the mockup has it.
      */
     .wall-ground {
-        background-image: url('/images/wall-bg.png');
+        /* webp, not the PNG it arrived as: the same picture is 22KB
+           rather than 1.9MB, which is a decode the Pi does on every load. */
+        background-image: url('/images/wall-bg.webp');
         background-size: cover;
         background-position: center 35%;
         background-repeat: no-repeat;

@@ -24,12 +24,19 @@
 
     {{-- Mon 12 … Sun 18 --}}
     @foreach ($days as $day)
-        @php [$name, $number, $dots] = [$day[0], $day[1], $day[2]]; $isToday = $day[3] ?? false; @endphp
+        @php
+            [$name, $number, $dots] = [$day[0], $day[1], $day[2]];
+            $isToday = $day[3] ?? false;
+            // The date is the fifth element. It used to be read as
+            // $day['date'] off a list, which is always null — so every day
+            // pill called pickDay('') and nothing moved.
+            $date = $day[4] ?? null;
+        @endphp
 
         <button type="button"
-                @if ($live) x-on:click="pickDay('{{ $day['date'] ?? '' }}')" @endif
+                @if ($live && $date) x-on:click="pickDay(@js($date))" @endif
                 wire:key="day-{{ $name }}-{{ $number }}"
-                class="wall-press grid w-[69px] shrink-0 place-items-center rounded-[20px] {{ $isToday ? 'bg-[#2F7CF6]' : 'glass' }}">
+                class="wall-press grid w-[69px] shrink-0 place-items-center rounded-[20px] {{ $isToday ? 'bg-[#2F7CF6]' : 'glass glass-small' }}">
             <span class="text-center leading-tight">
                 <span class="block {{ $isToday ? 'text-white/85' : 'text-white/70' }}" style="font-size: var(--wall-pill-day);">{{ $name }}</span>
                 <span class="block font-semibold" style="font-size: var(--wall-pill-num);">{{ $number }}</span>

@@ -255,7 +255,7 @@ class HomeFaceTest extends TestCase
         // megabytes of PNG to show four faces.
         $avatars = glob(public_path('images/avatars/*-144.webp'));
 
-        $this->assertNotEmpty($avatars, 'Run familyhub:build-avatars.');
+        $this->assertNotEmpty($avatars, 'Run familyhub:build-images.');
 
         foreach ($avatars as $avatar) {
             $this->assertLessThan(
@@ -266,6 +266,25 @@ class HomeFaceTest extends TestCase
         }
 
         $this->assertStringContainsString('-144.webp', $this->reference());
+    }
+
+    #[Test]
+    public function the_backdrop_served_is_the_webp_rather_than_the_png(): void
+    {
+        // A two-megabyte PNG of a smooth gradient is a decode the Pi does
+        // on every single load, for a picture that is 22KB as a webp.
+        $this->assertFileExists(public_path('images/wall-bg.webp'));
+
+        $this->assertLessThan(
+            200_000,
+            filesize(public_path('images/wall-bg.webp')),
+            'The wall backdrop is too big for a kiosk to be fetching.',
+        );
+
+        $css = file_get_contents(__DIR__.'/../../../resources/css/app.css');
+
+        $this->assertStringContainsString('wall-bg.webp', $css);
+        $this->assertStringNotContainsString('wall-bg.png', $css);
     }
 
     #[Test]

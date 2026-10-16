@@ -37,6 +37,17 @@ class WhosHome
     /** Whether the warning about an unreadable HA has been said this request. */
     protected bool $complained = false;
 
+    /**
+     * This instance's answer, keyed by household.
+     *
+     * The wall asks three times in one render — ordered(), away() and
+     * loneChild() — and without this each one re-queried every member and
+     * re-read Home Assistant. One render, one answer.
+     *
+     * @var array<string, Collection<int, array<string, mixed>>>
+     */
+    protected array $answered = [];
+
     public function __construct(protected HomeAssistant $ha) {}
 
     /**
@@ -51,6 +62,15 @@ class WhosHome
      */
     public function all(Household $household, ?CarbonImmutable $now = null): Collection
     {
+        // Memoised per instance, which is per render: three callers asking
+        // the same question of the same household get one set of queries.
+        // Keyed by the minute, so a long-lived instance still moves on.
+        $key = $household->id.'@'.($now?->format('YmdHi') ?? CarbonImmutable::now()->format('YmdHi'));
+
+        if (isset($this->answered[$key])) {
+            return $this->answered[$key];
+        }
+
         $now ??= CarbonImmutable::now();
         $map = $household->presenceEntities();
 
@@ -105,7 +125,7 @@ class WhosHome
             Cache::put(self::SEEN_KEY, $seen, now()->addHours(self::SEEN_TTL_HOURS));
         }
 
-        return $people->values();
+        return $this->answered[$key] = $people->values();
     }
 
     /**

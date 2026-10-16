@@ -41,6 +41,14 @@ new class extends Component
         return app(Announcer::class)->speaks($this->household());
     }
 
+    /**
+     * Open the picker.
+     *
+     * Also reachable by event, because the Home face's action bar is the
+     * control there rather than this component's own button — and without
+     * the listener that cell did nothing at all.
+     */
+    #[On('wall-announce')]
     public function open(): void
     {
         $this->picking = true;
@@ -105,7 +113,11 @@ new class extends Component
         </span>
     </button>
 
+    {{-- Teleported, for the same reason the asking dialog is: on the Home
+         face this component sits in a header that is display:none, and a
+         dialog inside a hidden element is a dialog nobody ever sees. --}}
     @if ($picking)
+        <template x-teleport="body">
         <x-modal close-on="$wire.close()" label="Announce" width="max-w-3xl">
             <div class="p-6">
                 <h2 class="t-title">Say it to the house</h2>
@@ -135,16 +147,20 @@ new class extends Component
                 </button>
             </div>
         </x-modal>
+        </template>
     @endif
 
     @if ($problem)
-        <div class="fixed inset-x-0 top-0 z-[85] bg-amber-400 px-10 py-4 text-slate-900" role="status">
-            <p class="t-body font-medium">{{ $problem }}</p>
-        </div>
+        <template x-teleport="body">
+            <div class="fixed inset-x-0 top-0 z-[85] bg-amber-400 px-10 py-4 text-slate-900" role="status">
+                <p class="t-body font-medium">{{ $problem }}</p>
+            </div>
+        </template>
     @endif
 
     {{-- The banner. Twenty seconds, then it takes itself away. --}}
     @if ($banner)
+        <template x-teleport="body">
         <div class="fixed inset-x-0 top-0 z-[85] flex items-center gap-6 bg-blue-600 px-10 py-7 text-white"
              role="status"
              x-data="{ }"
@@ -157,5 +173,6 @@ new class extends Component
                 OK
             </button>
         </div>
+        </template>
     @endif
 </div>

@@ -89,7 +89,63 @@ class AnnounceTest extends TestCase
 
         $this->assertTrue($result['sent'], 'The banner is the point of the feature too.');
         $this->assertFalse($result['spoken']);
-        $this->assertStringContainsString('No Alexa is set up', (string) $result['reason']);
+        $this->assertStringContainsString('No Alexa service is set up', (string) $result['reason']);
+    }
+
+    /**
+     * A service on its own is enough.
+     *
+     * Alexa Media Player exposes one service per device, plus
+     * notify.alexa_media_everywhere, and for those the service is the
+     * target. Demanding a target as well is why the wall said no Alexa was
+     * set up on a house that had one — and why it never called HA at all.
+     */
+    #[Test]
+    public function a_service_with_no_targets_still_speaks(): void
+    {
+        $this->household->setAnnounceConfig('notify.alexa_media_everywhere', []);
+
+        $result = $this->announcer()->announce($this->household->fresh(), "Dinner's ready");
+
+        $this->assertTrue($result['spoken'], (string) $result['reason']);
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), '/api/services/notify/alexa_media_everywhere')
+                && $request['message'] === "Dinner's ready"
+                && $request['data']['type'] === 'announce'
+                // No target key at all: a per-device service already knows
+                // which device it is and refuses one.
+                && ! array_key_exists('target', $request->data());
+        });
+    }
+
+    #[Test]
+    public function a_per_device_service_is_called_by_name(): void
+    {
+        $this->household->setAnnounceConfig('notify.alexa_media_kitchen_echo_show_8_3rd_gen', []);
+
+        $this->assertTrue($this->announcer()->announce($this->household->fresh(), 'Bedtime')['spoken']);
+
+        Http::assertSent(fn ($request) => str_contains(
+            $request->url(),
+            '/api/services/notify/alexa_media_kitchen_echo_show_8_3rd_gen',
+        ));
+    }
+
+    #[Test]
+    public function why_it_failed_comes_back_rather_than_only_reaching_the_log(): void
+    {
+        // "It did nothing" is the whole complaint; /admin has to be able
+        // to say what HA said.
+        $this->setUpAlexa();
+
+        $this->haIsDown = true;
+
+        $result = $this->announcer()->announce($this->household->fresh(), 'Bedtime');
+
+        $this->assertFalse($result['spoken']);
+        $this->assertStringContainsString('notify.alexa_media', (string) $result['reason']);
+        $this->assertStringContainsString('500', (string) $result['reason']);
     }
 
     #[Test]
@@ -172,6 +228,31 @@ class AnnounceTest extends TestCase
         $this->household->setAnnouncePresets([]);
 
         $this->assertSame(Household::ANNOUNCE_DEFAULTS, $this->household->fresh()->announcePresets());
+    }
+
+    #[Test]
+    public function admin_lists_the_notify_services_home_assistant_offers(): void
+    {
+        // Nobody can be expected to type
+        // notify.alexa_media_kitchen_echo_show_8_3rd_gen from memory.
+        Http::fake([
+            '*/api/services' => Http::response([
+                ['domain' => 'notify', 'services' => [
+                    'persistent_notification' => [],
+                    'alexa_media_everywhere' => [],
+                    'alexa_media_kitchen_echo_show_8_3rd_gen' => [],
+                ]],
+            ]),
+        ]);
+
+        $services = (new HomeAssistant(new Client))->notifyServices()->pluck('service')->all();
+
+        $this->assertContains('notify.alexa_media_everywhere', $services);
+        $this->assertContains('notify.alexa_media_kitchen_echo_show_8_3rd_gen', $services);
+
+        // The Alexa ones first: a list headed by persistent_notification
+        // looks like a list with nothing useful in it.
+        $this->assertStringStartsWith('notify.alexa', $services[0]);
     }
 
     /* ------------------------------ hearing ------------------------------ */

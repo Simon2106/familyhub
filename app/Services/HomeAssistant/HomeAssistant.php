@@ -6,6 +6,7 @@ use App\Exceptions\HomeAssistantException;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -325,6 +326,36 @@ class HomeAssistant
         }
 
         $this->client->post("/api/services/{$domain}/{$name}", $data);
+    }
+
+    /**
+     * The notify services Home Assistant offers.
+     *
+     * Services are not entities, so they are not in /api/states — they
+     * come from /api/services, which answers with one entry per domain.
+     * Alexa Media Player registers one per device plus an "everywhere"
+     * one, and nobody can be expected to type
+     * notify.alexa_media_kitchen_echo_show_8_3rd_gen correctly from memory.
+     *
+     * @return Collection<int, array{service: string, name: string}>
+     */
+    public function notifyServices(): Collection
+    {
+        $domains = $this->client->get('/api/services');
+
+        $notify = collect($domains)->firstWhere('domain', 'notify');
+
+        return collect($notify['services'] ?? [])
+            ->map(fn ($meta, string $name) => [
+                'service' => 'notify.'.$name,
+                'name' => (string) ($meta['name'] ?? Str::of($name)->replace('_', ' ')->title()),
+            ])
+            ->values()
+            // The ones a household actually wants first: a list with
+            // notify.persistent_notification at the top is a list that
+            // looks like it has nothing useful in it.
+            ->sortBy(fn (array $row) => [str_contains($row['service'], 'alexa') ? 0 : 1, $row['service']])
+            ->values();
     }
 
     /** Replace the shared state cache — used by the websocket listener. */

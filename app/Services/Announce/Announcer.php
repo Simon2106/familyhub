@@ -41,12 +41,18 @@ class Announcer
 
     public function __construct(protected HomeAssistant $ha) {}
 
-    /** Whether an Echo will actually say it, as opposed to the wall alone. */
+    /**
+     * Whether an Echo will actually say it, as opposed to the wall alone.
+     *
+     * A service is all it takes. Alexa Media Player exposes one service
+     * per device — notify.alexa_media_kitchen_echo_show_8_3rd_gen — plus
+     * notify.alexa_media_everywhere, and for those the service *is* the
+     * target. Requiring a target as well is why this said no Alexa was set
+     * up on a house that had one, and why the wall never called HA at all.
+     */
     public function speaks(Household $household): bool
     {
-        $config = $household->announceConfig();
-
-        return filled($config['service']) && $config['targets'] !== [];
+        return filled($household->announceConfig()['service']);
     }
 
     /**
@@ -75,16 +81,9 @@ class Announcer
 
         Cache::put(self::RATE_KEY, $now->getTimestamp(), now()->addMinutes(5));
 
-        $spoken = $this->speak($household, $message);
+        $why = $this->speak($household, $message);
 
-        $result = $this->result(
-            true,
-            $spoken,
-            $message,
-            $who,
-            $now,
-            $spoken ? null : 'Shown on the wall. No Alexa is set up, so nothing was said out loud.',
-        );
+        $result = $this->result(true, $why === null, $message, $who, $now, $why);
 
         $this->remember($result);
 
@@ -107,26 +106,48 @@ class Announcer
      * on the wall, and a kitchen screen that throws because a speaker is
      * unplugged is worse than one that says it quietly.
      */
-    protected function speak(Household $household, string $message): bool
+    /**
+     * Hand it to Home Assistant.
+     *
+     * The payload is what the Alexa Media Player integration wants: the
+     * words, and data.type = announce to make an Echo chime and speak
+     * rather than light its ring. A target is sent only where one was
+     * chosen — a per-device service rejects one, because it already knows
+     * which device it is.
+     *
+     * Returns the reason it failed, or null when it worked. The reason is
+     * carried back rather than only logged: "it did nothing" is the whole
+     * complaint, and /admin has to be able to say why.
+     */
+    protected function speak(Household $household, string $message): ?string
     {
-        if (! $this->speaks($household) || ! $this->ha->isConfigured()) {
-            return false;
-        }
-
         $config = $household->announceConfig();
 
+        if (! filled($config['service'])) {
+            return 'Shown on the wall. No Alexa service is set up, so nothing was said out loud.';
+        }
+
+        if (! $this->ha->isConfigured()) {
+            return 'Shown on the wall. Home Assistant is not connected — set HA_URL and HA_TOKEN.';
+        }
+
+        $payload = ['message' => $message, 'data' => ['type' => 'announce']];
+
+        if ($config['targets'] !== []) {
+            $payload['target'] = $config['targets'];
+        }
+
         try {
-            $this->ha->notify($config['service'], [
-                'message' => $message,
-                'target' => $config['targets'],
-                'data' => ['type' => 'announce'],
+            $this->ha->notify($config['service'], $payload);
+
+            return null;
+        } catch (Throwable $e) {
+            Log::warning('An announcement could not be spoken', [
+                'service' => $config['service'],
+                'error' => $e->getMessage(),
             ]);
 
-            return true;
-        } catch (Throwable $e) {
-            Log::warning('An announcement could not be spoken', ['error' => $e->getMessage()]);
-
-            return false;
+            return 'Shown on the wall. '.$config['service'].' did not answer: '.$e->getMessage();
         }
     }
 

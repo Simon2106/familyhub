@@ -14,6 +14,8 @@
     'todayLines' => [],
     'todos' => [],
     'live' => false,
+    /** Today, for the handlers that need to say which day they mean. */
+    'today' => null,
     /** Without a speech key, asking is a button that can only disappoint. */
     'canListen' => true,
     /**
@@ -113,7 +115,41 @@
             <div class="grid gap-4"
                  style="grid-template-columns: repeat({{ max(2, count($people) + 1) }}, minmax(0, 1fr)); height: 486px;">
                 @foreach ($people as $person)
-                    <x-glass class="flex min-h-0 flex-col p-2.5" wire:key="col-{{ $person['slug'] ?? $loop->index }}">
+                    {{-- The whole column is the door for a child, header and
+                         body alike — an avatar alone is a 56px target on a
+                         wall nobody stands close to. The guard lets anything
+                         inside it that does its own thing have the tap
+                         first. Restored: the rebuild dropped it, and tapping
+                         a column stopped doing anything at all. --}}
+                    @php
+                        // Only a child's column opens a day view, as it did
+                        // before the rebuild. The handler goes on a plain
+                        // wrapper rather than on the component tag: Blade
+                        // would not compile <x-glass> with an attribute-bag
+                        // echo in it and silently left the opening tag as
+                        // text, which took the whole page down.
+                        $opensDay = $live && ($person['child'] ?? false);
+                    @endphp
+
+                    <div class="flex min-h-0 flex-col" wire:key="col-{{ $person['slug'] ?? $loop->index }}"
+                         @if ($opensDay)
+                             role="button"
+                             tabindex="0"
+                             aria-label="{{ $person['name'] }}'s day"
+                             data-opens-day="{{ $person['id'] }}"
+                             {{-- The guard lets a control inside the column
+                                  have the tap first. --}}
+                             {{-- Livewire.dispatch, not $wire.dispatch: the
+                                  second posts to this component and
+                                  re-renders the whole face — three weeks of
+                                  events and twenty child components — to
+                                  open one dialog. The first routes the event
+                                  client-side, so only the day view that
+                                  listens for it does any work. --}}
+                             x-on:click="$event.target.closest('button, a, input, label')
+                                 || window.Livewire.dispatch('show-my-day', { member: {{ (int) $person['id'] }}, date: @js($today) })"
+                         @endif>
+                    <x-glass class="glass-small flex min-h-0 flex-1 flex-col p-2.5 {{ $opensDay ? 'wall-press' : '' }}">
                         <header class="flex shrink-0 items-center gap-2">
                             <x-wall.avatar
                                 :slug="$person['slug'] ?? null"
@@ -127,12 +163,22 @@
                         </header>
 
                         <div class="mt-3 min-h-0 flex-1 space-y-2 overflow-hidden">
+                            {{-- A tick that is filled only when the job is
+                                 actually done. The rebuild drew every chore
+                                 with a green tick, which told a child their
+                                 morning was finished before they had
+                                 started it. --}}
                             @foreach ($person['chores'] ?? [] as $chore)
-                                <div class="flex items-center gap-1.5 rounded-[var(--radius-tile)] bg-white/[0.07] px-1.5 py-1.5">
-                                    <span class="grid size-5 shrink-0 place-items-center rounded-full bg-[#34C759]">
-                                        <x-icon name="check" class="size-3 text-white" />
+                                @php $done = is_array($chore) ? ($chore['done'] ?? false) : false; @endphp
+                                <div class="flex items-center gap-1.5 rounded-[var(--radius-tile)] bg-white/[0.07] px-1.5 py-1.5 {{ $done ? 'opacity-60' : '' }}">
+                                    <span class="grid size-5 shrink-0 place-items-center rounded-full {{ $done ? 'bg-[#34C759]' : 'border-2 border-white/30' }}">
+                                        @if ($done)
+                                            <x-icon name="check" class="size-3 text-white" />
+                                        @endif
                                     </span>
-                                    <span class="min-w-0 truncate text-white/90" style="font-size: 14px;">{{ $chore }}</span>
+                                    <span class="min-w-0 truncate text-white/90 {{ $done ? 'line-through' : '' }}" style="font-size: 14px;">
+                                        {{ is_array($chore) ? $chore['title'] : $chore }}
+                                    </span>
                                 </div>
                             @endforeach
 
@@ -145,6 +191,7 @@
                             @endif
                         </div>
                     </x-glass>
+                    </div>
                 @endforeach
 
                 {{-- The household's own column. A smaller disc than a face,
@@ -157,7 +204,7 @@
                         By the hour
                     </button>
 
-                    <x-glass class="flex min-h-0 flex-1 flex-col p-2">
+                    <x-glass class="glass-small flex min-h-0 flex-1 flex-col p-2">
                         {{-- A smaller disc than a face. That is what leaves
                              room for the word beside it in a column this
                              narrow, and it is what the design does too. --}}
@@ -207,18 +254,12 @@
                 </div>
             </div>
 
-            {{-- Add a note, under the people. --}}
-            <div class="mt-3">
-                <button type="button"
-                        @if ($live) x-on:click="$dispatch('add-note')" @endif
-                        class="wall-press grid place-items-center rounded-[20px] border-2 border-dashed border-white/25"
-                        style="width: 409px; height: 196px;">
-                    <span class="text-center">
-                        <x-icon name="plus" class="mx-auto size-9 text-white" />
-                        <span class="mt-1.5 block" style="font-size: var(--wall-member);">Add a note</span>
-                        <span class="mt-1 block text-white/60" style="font-size: var(--wall-chip);">e.g. Gran&rsquo;s here at 4</span>
-                    </span>
-                </button>
+            {{-- The fridge door. The real board, not a picture of one: the
+                 rebuild drew a dashed box that dispatched an event nothing
+                 listened for, so Add a note did nothing — and notes written
+                 anywhere else never appeared on the Home face at all. --}}
+            <div class="mt-3" style="width: 409px; min-height: 196px;">
+                {{ $notes ?? '' }}
             </div>
         </div>
 
@@ -260,24 +301,26 @@
                 </div>
             </x-glass>
 
-            {{-- TO DO --}}
-            <x-glass class="overflow-hidden p-5" style="height: 124px;">
-                <div class="flex items-start justify-between gap-4">
-                    <p class="wall-label">To do</p>
-                    <button type="button"
-                            @if ($live) x-on:click="$dispatch('add-todo')" @endif
-                            class="wall-press -mt-1.5 shrink-0" aria-label="Add something to do">
-                        <x-icon name="plus" class="size-7 text-white" />
-                    </button>
-                </div>
+            {{-- TO DO. The real panel where there is one — it brings its
+                 own label, its own + and, crucially, the dialog behind
+                 them. The static list is the static reference's. --}}
+            <x-glass class="wall-todos overflow-hidden p-5" style="height: 124px;">
+                @if ($todoPanel ?? null)
+                    {{ $todoPanel }}
+                @else
+                    <div class="flex items-start justify-between gap-4">
+                        <p class="wall-label">To do</p>
+                        <x-icon name="plus" class="size-7 shrink-0 text-white" />
+                    </div>
 
-                <div class="mt-2.5 space-y-1.5">
-                    @forelse ($todos as $todo)
-                        <p class="truncate" style="font-size: var(--wall-body);" wire:key="todo-{{ $loop->index }}">{{ $todo }}</p>
-                    @empty
-                        <p class="wall-dim" style="font-size: var(--wall-body);">Nothing to do.</p>
-                    @endforelse
-                </div>
+                    <div class="mt-2.5 space-y-1.5">
+                        @forelse ($todos as $todo)
+                            <p class="truncate" style="font-size: var(--wall-body);" wire:key="todo-{{ $loop->index }}">{{ $todo }}</p>
+                        @empty
+                            <p class="wall-dim" style="font-size: var(--wall-body);">Nothing to do.</p>
+                        @endforelse
+                    </div>
+                @endif
             </x-glass>
         </div>
     </div>

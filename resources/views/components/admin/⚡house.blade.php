@@ -71,6 +71,9 @@ new #[Layout('layouts::app')] class extends Component
 
     public ?string $saved = null;
 
+    /** Why the notify services could not be listed, if they could not. */
+    public ?string $serviceError = null;
+
     public function mount(): void
     {
         $household = $this->household();
@@ -163,6 +166,32 @@ new #[Layout('layouts::app')] class extends Component
     }
 
     /* ---------------------------- the state ---------------------------- */
+
+    /**
+     * The notify services HA offers, for the picker.
+     *
+     * Empty when HA cannot be reached, which turns the picker back into a
+     * text field — somebody who knows the service name can still type it,
+     * and a settings page that will not load because a Pi is off is worse
+     * than one that asks for typing.
+     *
+     * @return Collection<int, array{service: string, name: string}>
+     */
+    #[Computed]
+    public function notifyServices(): Collection
+    {
+        if (! $this->connected) {
+            return collect();
+        }
+
+        try {
+            return app(HomeAssistant::class)->notifyServices();
+        } catch (\Throwable $e) {
+            $this->serviceError = $e->getMessage();
+
+            return collect();
+        }
+    }
 
     #[Computed]
     public function presenceState(): array
@@ -288,7 +317,7 @@ new #[Layout('layouts::app')] class extends Component
         $household->setAnnouncePresets($this->presets);
         $household->setAnnounceConfig($this->announceService, $this->announceTargets);
 
-        unset($this->speaks);
+        unset($this->speaks, $this->notifyServices);
 
         $this->saved = 'Announcements saved.';
     }
@@ -593,14 +622,33 @@ new #[Layout('layouts::app')] class extends Component
 
         <label class="mt-4 block">
             <span class="block text-sm font-medium">Alexa notify service</span>
-            <input wire:model="announceService" type="text" placeholder="notify.alexa_media" class="{{ $field }}">
+            @if ($this->notifyServices->isNotEmpty())
+                <select wire:model="announceService" class="{{ $field }}">
+                    <option value="">The wall only — say nothing out loud</option>
+                    @foreach ($this->notifyServices as $service)
+                        <option value="{{ $service['service'] }}">{{ $service['service'] }}</option>
+                    @endforeach
+                </select>
+            @else
+                <input wire:model="announceService" type="text" placeholder="notify.alexa_media_everywhere" class="{{ $field }}">
+            @endif
             <span class="{{ $note }}">
-                From the Alexa Media Player integration. Leave blank for the wall only.
+                From the Alexa Media Player integration. One per Echo, plus an
+                &ldquo;everywhere&rdquo; one that speaks on all of them. Leave it blank for the
+                wall only.
+                @if ($this->serviceError)
+                    <span class="block text-red-600">Could not list them: {{ $this->serviceError }}</span>
+                @endif
             </span>
         </label>
 
         <div class="mt-3">
-            <span class="block text-sm font-medium">Speak on</span>
+            <span class="block text-sm font-medium">Speak on (optional)</span>
+            <span class="{{ $note }}">
+                Only needed for the generic <code>notify.alexa_media</code> service, which asks
+                which devices. A per-device service and the &ldquo;everywhere&rdquo; one already
+                know, and are refused if given a target.
+            </span>
             @foreach ($announceTargets as $at => $target)
                 <div class="mt-1 flex items-center gap-2" wire:key="target-{{ $at }}">
                     <input wire:model="announceTargets.{{ $at }}" type="text" class="{{ $field }} mt-0">
@@ -624,7 +672,19 @@ new #[Layout('layouts::app')] class extends Component
         </div>
 
         <p class="{{ $note }}">
-            {{ $this->speaks ? 'An Alexa is set up — announcements will be spoken.' : 'No Alexa is set up — announcements show on the wall only.' }}
+            @if (! $this->speaks)
+                No Alexa is set up — announcements show on the wall only.
+            @elseif (! $this->connected)
+                {{-- Configured is not the same as reachable, and saying
+                     "will be spoken" about a Pi that is off is how an
+                     announcement that does nothing looks like it worked. --}}
+                <span class="text-amber-700 dark:text-amber-400">
+                    {{ $announceService }} is set, but Home Assistant cannot be reached —
+                    nothing will be said out loud until it is.
+                </span>
+            @else
+                {{ $announceService }} is set up — announcements will be spoken.
+            @endif
         </p>
 
         @if ($this->announcements !== [])
