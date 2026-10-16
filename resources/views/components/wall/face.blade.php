@@ -258,7 +258,7 @@
                  rebuild drew a dashed box that dispatched an event nothing
                  listened for, so Add a note did nothing — and notes written
                  anywhere else never appeared on the Home face at all. --}}
-            <div class="mt-3" style="width: 409px; min-height: 196px;">
+            <div class="mt-3" style="width: 409px; height: 196px;">
                 {{ $notes ?? '' }}
             </div>
         </div>

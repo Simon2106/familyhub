@@ -1724,7 +1724,7 @@ new #[Layout('layouts::display')] class extends Component
                      behind them — which is what the rebuilt face was
                      missing. --}}
                 <x-slot:notes>
-                    <livewire:notes.board :on-wall="true" />
+                    <livewire:notes.board :on-wall="true" :narrow="true" />
                 </x-slot:notes>
 
                 <x-slot:todo-panel>

@@ -26,6 +26,16 @@ new class extends Component
     /** Drawn for the wall: bigger, fewer, and no editing in place. */
     public bool $onWall = false;
 
+    /**
+     * Whether the board is in the Home face's 409px slot.
+     *
+     * The wall rail sizes its post-its at 22% because it spans the whole
+     * screen and four fit across. Dropped into the face's slot that is
+     * ninety pixels, which is how "Add a note" came to be stacked one word
+     * per line. Narrow gives the slot its own proportions.
+     */
+    public bool $narrow = false;
+
     public string $body = '';
 
     public ?int $author = null;
@@ -44,9 +54,10 @@ new class extends Component
 
     public string $removingBody = '';
 
-    public function mount(bool $onWall = false): void
+    public function mount(bool $onWall = false, bool $narrow = false): void
     {
         $this->onWall = $onWall;
+        $this->narrow = $narrow;
     }
 
     public function household(): Household
@@ -87,11 +98,17 @@ new class extends Component
      * which is why this is a hint and no longer a count of what is missing.
      * The add control takes a place in the row, so four notes already
      * overflow.
+     *
+     * The Home face's rail is a quarter of that width and fits two, so the
+     * fade has to know which rail it is drawing or it never appears on the
+     * one that actually runs off the edge.
      */
     #[Computed]
     public function overflows(): bool
     {
-        return $this->onWall && $this->notes->count() >= Note::ACROSS_THE_WALL;
+        $across = $this->narrow ? 2 : Note::ACROSS_THE_WALL;
+
+        return $this->onWall && $this->notes->count() >= $across;
     }
 
     /** @return Collection<int, Member> */
@@ -215,15 +232,15 @@ new class extends Component
     }
 }; ?>
 
-<div class="min-h-0">
+<div class="min-h-0 {{ $narrow ? 'h-full' : '' }}">
     @if ($onWall)
         {{-- ------------------------------- WALL ------------------------- --}}
         {{-- Post-its on a rail. Four fit across; more than four scroll
              sideways under a finger, snapping so a swipe never leaves half
              a note showing. --}}
-        <div class="note-rail flex items-start gap-4 px-1 pb-1 {{ $this->overflows ? 'note-rail-fade' : '' }}">
+        <div class="note-rail flex gap-4 px-1 pb-1 {{ $narrow ? 'h-full items-stretch' : 'items-start' }} {{ $this->overflows ? 'note-rail-fade' : '' }}">
             @foreach ($this->notes as $index => $note)
-                <div class="shrink-0 basis-[22%]" wire:key="note-{{ $note->id }}">
+                <div class="shrink-0 {{ $narrow ? 'basis-[46%]' : 'basis-[22%]' }}" wire:key="note-{{ $note->id }}">
                     <button type="button"
                             x-data="{ held: false, spent: false, timer: null }"
                             x-on:pointerdown="held = false; spent = false;
@@ -232,17 +249,17 @@ new class extends Component
                                 if (! held && ! spent) { spent = true; $wire.edit({{ $note->id }}) }"
                             x-on:pointercancel="clearTimeout(timer); spent = true"
                             x-on:pointerleave="clearTimeout(timer); spent = true"
-                            class="note-paper flex aspect-[4/3] w-full flex-col rounded-sm p-5 text-left shadow-lg transition-transform"
+                            class="note-paper flex w-full flex-col rounded-sm text-left shadow-lg transition-transform {{ $narrow ? 'h-full p-3' : 'aspect-[4/3] p-5' }}"
                             style="background-color: {{ $note->paper() }};
                                    transform: rotate({{ $note->tilt($index) }}deg);
                                    box-shadow: 0 10px 18px -8px rgb(15 23 42 / 0.45);"
                             aria-label="{{ $note->body }} — tap to edit, press and hold to take down">
                         {{-- The fold along the top, so the paper reads as
                              paper rather than as a coloured box. --}}
-                        <span class="-mx-5 -mt-5 mb-3 h-3 rounded-t-sm"
+                        <span class="mb-2 h-3 rounded-t-sm {{ $narrow ? '-mx-3 -mt-3' : '-mx-5 -mt-5' }}"
                               style="background-color: {{ $note->paperEdge() }};" aria-hidden="true"></span>
 
-                        <span class="note-writing line-clamp-4 text-[2.5rem] text-slate-900">
+                        <span class="note-writing line-clamp-4 text-slate-900 {{ $narrow ? 'text-2xl' : 'text-[2.5rem]' }}">
                             {{ $note->body }}
                         </span>
 
@@ -258,14 +275,17 @@ new class extends Component
                 </div>
             @endforeach
 
-            {{-- The same size as a note, and sitting in the row with them. --}}
-            <div class="shrink-0 basis-[22%]">
+            {{-- The same size as a note, and sitting in the row with them.
+                 With nothing on the board it takes the whole slot, which is
+                 what the design draws: a wide dashed box, not a column of
+                 single words. --}}
+            <div class="shrink-0 {{ $narrow ? ($this->notes->isEmpty() ? 'grow basis-full' : 'basis-[46%]') : 'basis-[22%]' }}">
                 <button type="button" wire:click="compose"
-                        class="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 rounded-sm border-2 border-dashed border-slate-300 text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                    <span class="text-5xl leading-none" aria-hidden="true">+</span>
-                    <span class="text-xl font-medium">Add a note</span>
+                        class="flex w-full flex-col items-center justify-center gap-2 rounded-[20px] border-2 border-dashed border-white/25 text-slate-500 dark:text-slate-400 {{ $narrow ? 'h-full' : 'aspect-[4/3] rounded-sm border-slate-300 dark:border-slate-700' }}">
+                    <span class="leading-none {{ $narrow ? 'text-4xl' : 'text-5xl' }}" aria-hidden="true">+</span>
+                    <span class="font-medium {{ $narrow ? 'text-[22px]' : 'text-xl' }}">Add a note</span>
                     @if ($this->notes->isEmpty())
-                        <span class="px-4 text-center text-base text-slate-400">e.g. Gran’s here at 4</span>
+                        <span class="px-4 text-center {{ $narrow ? 'text-[17px] text-white/60' : 'text-base text-slate-400' }}">e.g. Gran’s here at 4</span>
                     @endif
                 </button>
             </div>
