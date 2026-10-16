@@ -818,7 +818,31 @@
      * cannot be changed apart.
      */
     .wall-clock-saver {
-        font-size: 320px;
+        /*
+         * Inter rather than whatever the sans stack resolves to. Instrument
+         * Sans is named in --font-sans but no @font-face serves it, so the
+         * face is the device's choice — which is one thing on a Mac and
+         * another on the Pi. Inter is in this repo, so a clock this size is
+         * the same clock everywhere.
+         */
+        font-family: var(--font-display);
+        font-size: 300px;
+        font-weight: 300;
+        letter-spacing: -0.045em;
+        line-height: 0.78;
+
+        /*
+         * Tall and narrow. A lock-screen clock is a condensed cut, and Inter
+         * has no width axis in the subset served here, so the proportion
+         * comes from a transform. scaleY on text is cheap — composited, not
+         * a reflow — and at this size it reads as a typeface rather than as
+         * a squash. On the clipped element itself, never on an inner span:
+         * background-clip clips to the element's own text box, so a
+         * transform on a child moves the painted glyphs out of a clip that
+         * stayed where it was and the numerals come out hollow.
+         */
+        transform: scale(0.85, 1.34);
+        transform-origin: left bottom;
 
         /* Over a photograph rather than over the wall's own ground, so it
            needs more separation than the dashboard's does. The scrim under
