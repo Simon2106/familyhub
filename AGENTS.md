@@ -61,6 +61,23 @@ conventions. The points most easily got wrong:
   40M** — Postmark posts attachments base64-encoded inside the JSON body, up to
   35MB. Attachment limits are layered (see README § Attachment size, end to end);
   anything too large to send is stored and named, never silently dropped.
+- **Never put `wire:click` and `x-on:click` on the same element.** The pair
+  fires once: the first press re-renders the Alpine expression, the morph
+  re-initialises that element's Alpine directives, and Livewire's own click
+  listener is not among the ones it puts back. Alpine keeps working, so the
+  tile still flips and the tap looks fine while reaching nothing — the switch
+  tiles turned a light on once and then did nothing for the rest of the day.
+  Put both in the one Alpine handler and call `$wire.method()`.
+  `tests/Feature/Display/ClickHandlerTest.php` renders the wall and the
+  switches and fails on any element carrying both.
+- **Home Assistant answers before the lamps obey.** A read taken straight
+  after a service call reports the state from before it, and that answer is
+  then cached for `HA_CACHE_SECONDS`. Anything absolute — a group's
+  `turn_on`/`turn_off`, as opposed to a tile's relative `toggle` — must decide
+  its direction from what the wall is showing, not from a fresh read, or the
+  second tap repeats the first. The panel holds that optimism per tile and per
+  group and gives up on it after five seconds.
+
 - **A Livewire method must not share a name with a public property** — the
   property shadows it client-side and `$wire.name()` silently does nothing.
   `tests/Feature/Capture/ComponentNamingTest.php` guards this.
