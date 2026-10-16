@@ -29,7 +29,6 @@ class ComponentNamingTest extends TestCase
             ['capture.review'],
             ['todos.panel'],
             ['display.lists'],
-            ['display.morning'],
             ['display.evening'],
             ['display.timers'],
             ['display.timer-board'],

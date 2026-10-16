@@ -19,8 +19,6 @@ use Carbon\CarbonImmutable;
  */
 class WallFace
 {
-    public const MORNING = 'morning';
-
     public const DAY = 'day';
 
     public const EVENING = 'evening';
@@ -28,10 +26,9 @@ class WallFace
     public const NIGHT = 'night';
 
     /** In the order they happen, which is the order the resolver walks. */
-    public const ORDER = [self::MORNING, self::DAY, self::EVENING, self::NIGHT];
+    public const ORDER = [self::DAY, self::EVENING, self::NIGHT];
 
     public const LABELS = [
-        self::MORNING => 'Morning',
         self::DAY => 'Day',
         self::EVENING => 'Evening',
         self::NIGHT => 'Night',
@@ -39,15 +36,13 @@ class WallFace
 
     /** The greeting each face leads with, top left. */
     public const GREETINGS = [
-        self::MORNING => 'Good morning',
         self::DAY => 'Today',
         self::EVENING => 'Tonight',
         self::NIGHT => 'Good night',
     ];
 
     public const DEFAULTS = [
-        self::MORNING => '06:00',
-        self::DAY => '09:00',
+        self::DAY => '06:30',
         self::EVENING => '17:00',
         self::NIGHT => '21:00',
     ];
@@ -55,9 +50,10 @@ class WallFace
     /**
      * The face for a moment.
      *
-     * Morning is a weekday thing: nobody needs a PE kit reminder on a
-     * Saturday, and a weekend lie-in that is interrupted by a routine board
-     * is a face somebody turns off. Weekends start on Day instead.
+     * There was a morning face once — a sparser board of routines and what
+     * had to go in a bag. It was removed: the household wanted the full day
+     * grid from the moment they came downstairs, which is what the day face
+     * already is. Day now starts at half six.
      */
     public function at(Household $household, ?CarbonImmutable $now = null): string
     {
@@ -67,16 +63,12 @@ class WallFace
         $face = self::NIGHT;
 
         // Walk forward through the day; the last boundary passed wins. Before
-        // the morning boundary it is still last night, which is why this
-        // starts on night rather than on the first face.
+        // the first boundary it is still last night, which is why this starts
+        // on night rather than on the first face.
         foreach (self::ORDER as $candidate) {
             if ($this->minutesOf($now->format('H:i')) >= $this->minutesOf($times[$candidate])) {
                 $face = $candidate;
             }
-        }
-
-        if ($face === self::MORNING && $now->isWeekend()) {
-            return self::DAY;
         }
 
         return $face;

@@ -72,6 +72,24 @@ new #[Layout('layouts::display')] class extends Component
         return $this->away->pluck('member.id')->all();
     }
 
+    /**
+     * What each child needs in a bag today.
+     *
+     * This was the morning face's one genuinely morning-shaped thing. The
+     * morning face is gone — the household wanted the full grid from the
+     * moment they came downstairs — so it lives in the day columns now,
+     * where it is in front of somebody at breakfast either way.
+     *
+     * @return \Illuminate\Support\Collection<int, list<string>>
+     */
+    #[Computed]
+    public function neededToday(): Collection
+    {
+        return $this->members
+            ->mapWithKeys(fn (\App\Models\Member $member) => [$member->id => $member->neededOn($this->today)])
+            ->filter(fn (array $items) => $items !== []);
+    }
+
     /** A child in on their own, which changes what the face leads with. */
     #[Computed]
     public function loneChild(): ?\App\Models\Member
@@ -751,6 +769,10 @@ new #[Layout('layouts::display')] class extends Component
         faceOverride: null,
         faceOverrodeAt: null,
         facePicker: false,
+        /* When the screen was last touched. The night face is a full-screen
+           layer over the header, so without this there is no way back off
+           it from a wall that has no keyboard. */
+        wokeAt: 0,
         nightDim: @js($wall['nightDim']),
 
         /* Cooking holds the screen: a screensaver over step four is a
@@ -1106,7 +1128,13 @@ new #[Layout('layouts::display')] class extends Component
             this.faceOverrodeAt = this.naturalFace();
             this.face = face;
             this.facePicker = false;
-            this.wake();
+
+            /* Not wake(): somebody who has just chosen Night wants to see
+               it, and wake() is what puts it away again. The tap that
+               opened the picker already reset the idle timer. */
+            this.wokeAt = 0;
+            clearTimeout(this.nightTimer);
+            this.armIdleTimer();
         },
 
         clearFace() {
@@ -1123,8 +1151,35 @@ new #[Layout('layouts::display')] class extends Component
          * nothing else; waiting out the idle timer to get there is a wall
          * showing a chore board to an empty room.
          */
+        /*
+         * How long a touch holds the night face off.
+         *
+         * The ordinary idle period, or a minute, whichever is longer — a
+         * household that has turned the screensaver off entirely still has
+         * to be able to put the night face away.
+         */
+        get wakeWindow() {
+            return Math.max(this.idleMs || 0, 60_000);
+        },
+
+        get recentlyWoken() {
+            return this.wokeAt > 0 && Date.now() - this.wokeAt < this.wakeWindow;
+        },
+
+        /*
+         * The night face covers the whole screen, header and all.
+         *
+         * So it has to yield to a hand on the glass, or the only way out of
+         * it is an SSH session — which is exactly what happened the first
+         * time: choosing Night from the switcher at nine in the morning
+         * stranded the wall until five in the afternoon.
+         */
         get nightly() {
-            return this.face === 'night' && this.tab === 'home' && !this.searching && !this.cooking;
+            return this.face === 'night'
+                && !this.recentlyWoken
+                && this.tab === 'home'
+                && !this.searching
+                && !this.cooking;
         },
 
         get showingSaver() {
@@ -1209,8 +1264,25 @@ new #[Layout('layouts::display')] class extends Component
         wake() {
             /* A hand on the screen beats every sensor in the house. */
             this.touchedAt = Date.now();
+            this.wokeAt = Date.now();
             this.asleep = false;
             this.idle = false;
+
+            /* Somebody tapping their way out of a face they chose by hand
+               is somebody who wants it gone, not held until the clock
+               happens to move on. */
+            if (this.faceOverride === 'night') {
+                this.faceOverride = null;
+                this.faceOverrodeAt = null;
+                this.applyFace();
+            }
+
+            /* Nothing else re-evaluates when the window simply runs out —
+               the idle timer does it when there is one, and this is for
+               when there is not. */
+            clearTimeout(this.nightTimer);
+            this.nightTimer = setTimeout(() => (this.wokeAt = 0), this.wakeWindow);
+
             this.armIdleTimer();
         },
 
@@ -1255,14 +1327,14 @@ new #[Layout('layouts::display')] class extends Component
                 </div>
             </div>
 
-            <div x-show="view === 'week' && face === 'day'">
+            <div x-show="view === 'week' && face !== 'evening'">
                 <p class="text-xl font-semibold">This week</p>
                 <p class="text-sm text-slate-500 dark:text-slate-400">
                     {{ $week[0]['carbon']->format('j M') }} – {{ $week[6]['carbon']->format('j M') }}
                 </p>
             </div>
 
-            <div x-show="view === 'day' && face === 'day'" x-cloak>
+            <div x-show="view === 'day' && face !== 'evening'" x-cloak>
                 <p class="text-xl font-semibold"
                    x-text="selected && new Date(selected + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long' })"></p>
                 <p class="text-sm text-slate-500 dark:text-slate-400"
@@ -1480,14 +1552,6 @@ new #[Layout('layouts::display')] class extends Component
     {{-- ============================== BODY ============================== --}}
     <div class="min-h-0 flex-1 px-10 pb-3">
 
-        {{-- ------------------------ MORNING FACE ------------------------ --}}
-        <div x-show="tab === 'home' && face === 'morning'" x-cloak
-             x-transition:enter="transition ease-out duration-[360ms]"
-             x-transition:enter-start="opacity-0 translate-y-3"
-             class="h-full min-h-0">
-            <livewire:display.morning />
-        </div>
-
         {{-- ------------------------ EVENING FACE ------------------------ --}}
         <div x-show="tab === 'home' && face === 'evening'" x-cloak
              x-transition:enter="transition ease-out duration-[360ms]"
@@ -1498,7 +1562,7 @@ new #[Layout('layouts::display')] class extends Component
 
         {{-- ---------------------------- HOME ---------------------------- --}}
         {{-- The day face, and what sits behind the night one. --}}
-        <div x-show="tab === 'home' && (face === 'day' || face === 'night')" class="flex h-full min-h-0 flex-col gap-3">
+        <div x-show="tab === 'home' && face !== 'evening'" class="flex h-full min-h-0 flex-col gap-3">
           {{-- What the house has been doing. One line; tap for the day. --}}
           <div class="shrink-0">
               <livewire:display.activity />
@@ -1856,6 +1920,20 @@ new #[Layout('layouts::display')] class extends Component
                                     </div>
 
                                     <div class="pane-scroll flex-1 space-y-2 p-2">
+                                        {{-- What has to go in a bag. Today's column only:
+                                             a timetable says Tuesday, not the 20th, and a
+                                             PE kit chip three weeks out is noise. --}}
+                                        @if ($day['is_today'] && ($needs = $this->neededToday[$member->id] ?? []))
+                                            <ul class="flex flex-wrap gap-1.5">
+                                                @foreach ($needs as $item)
+                                                    <li class="flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-sm font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
+                                                        <x-icon name="bag" class="size-4 shrink-0" />
+                                                        {{ $item }}
+                                                    </li>
+                                                @endforeach
+                                            </ul>
+                                        @endif
+
                                         @forelse ($memberEvents as $event)
                                             <div class="rounded-xl border-l-4 bg-slate-50 p-2.5 dark:bg-slate-800/60"
                                                  style="border-color: {{ $member->colour }};">
@@ -2311,8 +2389,15 @@ new #[Layout('layouts::display')] class extends Component
                          class="shrink-0 text-white drop-shadow will-change-transform"
                          :style="`transform: translate3d(${driftClock.x}px, ${driftClock.y}px, 0)`"
                          style="transition: transform 200ms linear;">
-                        <p class="display-digits text-[18rem] leading-[0.85] font-bold" x-text="clock"></p>
-                        <p class="display-face mt-4 text-3xl text-white/85"
+                        {{-- The photograph, seen through the numerals. The
+                             same image the screensaver is showing, aligned
+                             to it, so the digits read as a pane of glass
+                             laid over the picture rather than a sticker. --}}
+                        <p class="glass-clock text-[20rem]"
+                           :class="(showA ? slotA : slotB) ? '' : 'glass-clock--plain'"
+                           :style="`--glass-clock-image: url('${showA ? slotA : slotB}')`"
+                           x-text="clock"></p>
+                        <p class="display-face mt-10 text-3xl text-white/85"
                            x-text="now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz })"></p>
 
                         {{-- The caption of whichever photograph is showing. --}}
@@ -2389,8 +2474,8 @@ new #[Layout('layouts::display')] class extends Component
                  class="display-face absolute top-0 left-0 p-10 text-white will-change-transform"
                  :style="`transform: translate3d(${drift.x}px, ${drift.y}px, 0)`"
                  style="transition: transform 200ms linear;">
-                <p class="display-digits text-[18rem] leading-[0.85] font-bold" x-text="clock"></p>
-                <p class="display-face mt-4 text-3xl text-white/60"
+                <p class="glass-clock glass-clock--plain text-[20rem]" x-text="clock"></p>
+                <p class="display-face mt-10 text-3xl text-white/60"
                    x-text="now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz })"></p>
 
                 @if ($wall['style'] === 'today')

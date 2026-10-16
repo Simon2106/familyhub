@@ -9,7 +9,6 @@ use App\Services\Display\WallFace;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Once;
-use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -46,9 +45,7 @@ class WallFaceTest extends TestCase
     #[Test]
     public function the_hour_decides_which_face_the_wall_wears(): void
     {
-        // A Wednesday, so the morning face is in play.
-        $this->assertSame(WallFace::MORNING, $this->faceAt('2026-10-14 06:00'));
-        $this->assertSame(WallFace::MORNING, $this->faceAt('2026-10-14 08:59'));
+        $this->assertSame(WallFace::DAY, $this->faceAt('2026-10-14 06:30'));
         $this->assertSame(WallFace::DAY, $this->faceAt('2026-10-14 09:00'));
         $this->assertSame(WallFace::DAY, $this->faceAt('2026-10-14 16:59'));
         $this->assertSame(WallFace::EVENING, $this->faceAt('2026-10-14 17:00'));
@@ -61,26 +58,32 @@ class WallFaceTest extends TestCase
         // Before the first boundary of the day there is no boundary passed
         // at all, and the honest answer is that it is still night.
         $this->assertSame(WallFace::NIGHT, $this->faceAt('2026-10-14 02:30'));
-        $this->assertSame(WallFace::NIGHT, $this->faceAt('2026-10-14 05:59'));
+        $this->assertSame(WallFace::NIGHT, $this->faceAt('2026-10-14 06:29'));
     }
 
     #[Test]
-    public function nobody_needs_a_pe_kit_reminder_on_a_saturday(): void
+    public function there_is_no_morning_face_any_more(): void
     {
-        // 17th and 18th October 2026 are a Saturday and a Sunday.
-        $this->assertSame(WallFace::DAY, $this->faceAt('2026-10-17 07:00'));
-        $this->assertSame(WallFace::DAY, $this->faceAt('2026-10-18 07:00'));
+        // There was one — a sparser board of routines and what had to go in
+        // a bag. The household wanted the full day grid from the moment they
+        // came downstairs, which is what the day face already is.
+        $this->assertSame([WallFace::DAY, WallFace::EVENING, WallFace::NIGHT], WallFace::ORDER);
+        $this->assertArrayNotHasKey('morning', WallFace::LABELS);
+        $this->assertSame('06:30', WallFace::DEFAULTS[WallFace::DAY]);
+    }
 
-        // The rest of the weekend's day still runs normally.
-        $this->assertSame(WallFace::EVENING, $this->faceAt('2026-10-17 18:00'));
-        $this->assertSame(WallFace::NIGHT, $this->faceAt('2026-10-17 23:00'));
+    #[Test]
+    public function the_weekend_is_no_different_from_a_weekday(): void
+    {
+        // It was, while there was a morning face to keep off a Saturday.
+        $this->assertSame(WallFace::DAY, $this->faceAt('2026-10-17 07:00'));
+        $this->assertSame(WallFace::DAY, $this->faceAt('2026-10-14 07:00'));
     }
 
     #[Test]
     public function the_boundaries_can_be_moved(): void
     {
         $this->household->setFaceTimes([
-            'morning' => '05:30',
             'day' => '10:00',
             'evening' => '18:30',
             'night' => '22:00',
@@ -88,8 +91,7 @@ class WallFaceTest extends TestCase
 
         Once::flush();
 
-        $this->assertSame(WallFace::MORNING, $this->faceAt('2026-10-14 05:30'));
-        $this->assertSame(WallFace::MORNING, $this->faceAt('2026-10-14 09:59'));
+        $this->assertSame(WallFace::NIGHT, $this->faceAt('2026-10-14 09:59'));
         $this->assertSame(WallFace::DAY, $this->faceAt('2026-10-14 10:00'));
         $this->assertSame(WallFace::EVENING, $this->faceAt('2026-10-14 18:30'));
         $this->assertSame(WallFace::NIGHT, $this->faceAt('2026-10-14 22:00'));
@@ -98,14 +100,13 @@ class WallFaceTest extends TestCase
     #[Test]
     public function rubbish_in_the_settings_falls_back_rather_than_breaking_the_wall(): void
     {
-        $this->household->setFaceTimes(['morning' => 'half seven', 'day' => '25:00', 'evening' => '', 'night' => '21:30']);
+        $this->household->setFaceTimes(['day' => '25:00', 'evening' => '', 'night' => '21:30']);
 
         Once::flush();
 
         $times = $this->household->fresh()->faceTimes();
 
-        $this->assertSame('06:00', $times['morning']);
-        $this->assertSame('09:00', $times['day']);
+        $this->assertSame('06:30', $times['day']);
         $this->assertSame('17:00', $times['evening']);
         $this->assertSame('21:30', $times['night'], 'A good one is still kept.');
     }
@@ -116,7 +117,7 @@ class WallFaceTest extends TestCase
         // Sent as minutes past midnight so the wall can decide for itself
         // every minute rather than waiting for the next poll.
         $this->assertSame(
-            ['morning' => 360, 'day' => 540, 'evening' => 1020, 'night' => 1260],
+            ['day' => 390, 'evening' => 1020, 'night' => 1260],
             app(WallFace::class)->boundaries($this->household),
         );
     }
@@ -131,14 +132,16 @@ class WallFaceTest extends TestCase
         $this->assertStringContainsString('faceBounds', $html);
         $this->assertStringContainsString('naturalFace', $html);
         // Every face has somewhere to render.
-        $this->assertStringContainsString("face === 'morning'", $html);
+        $this->assertStringContainsString("face !== 'evening'", $html);
         $this->assertStringContainsString("face === 'evening'", $html);
         $this->assertStringContainsString("face === 'night'", $html);
     }
 
     #[Test]
-    public function the_morning_face_shows_what_a_child_needs_in_a_bag(): void
+    public function the_day_columns_show_what_a_child_needs_in_a_bag(): void
     {
+        // This was the morning face's one genuinely morning-shaped thing.
+        // The face is gone; the chips moved rather than being lost.
         $child = Member::factory()->create([
             'household_id' => $this->household->id,
             'name' => 'Ellie',
@@ -149,10 +152,10 @@ class WallFaceTest extends TestCase
 
         $this->travelTo(CarbonImmutable::parse('2026-10-14 07:30', $this->household->displayTimezone()));
 
-        Livewire::test('display.morning')
-            ->assertSee('Needed today')
-            ->assertSee('PE kit')
-            ->assertSee('recorder');
+        $html = $this->withoutVite()->get('/display?token=wall-token')->assertOk()->getContent();
+
+        $this->assertStringContainsString('PE kit', $html);
+        $this->assertStringContainsString('recorder', $html);
     }
 
     #[Test]
@@ -165,7 +168,10 @@ class WallFaceTest extends TestCase
         // A Wednesday.
         $this->travelTo(CarbonImmutable::parse('2026-10-14 07:30', $this->household->displayTimezone()));
 
-        Livewire::test('display.morning')->assertDontSee('Swimming kit');
+        $this->assertStringNotContainsString(
+            'Swimming kit',
+            $this->withoutVite()->get('/display?token=wall-token')->getContent(),
+        );
     }
 
     #[Test]
@@ -179,6 +185,41 @@ class WallFaceTest extends TestCase
 
         $this->assertStringContainsString('nightDim', $html);
         $this->assertStringContainsString('0.7', $html);
+    }
+
+    /**
+     * There must always be a way off the night face.
+     *
+     * It is a full-screen layer over the header, so the face switcher is
+     * underneath it. Choosing Night from that switcher at nine in the
+     * morning stranded the wall until five in the afternoon — the override
+     * only cleared when the natural face changed, and no tap could reach
+     * anything. The same class of bug as the /admin link that needed an
+     * SSH session to undo.
+     */
+    #[Test]
+    public function a_tap_always_gets_you_off_the_night_face(): void
+    {
+        $wall = file_get_contents(
+            __DIR__.'/../../../resources/views/components/display/⚡wall.blade.php'
+        );
+
+        // A touch suppresses the night face for a while...
+        $this->assertStringContainsString('recentlyWoken', $wall);
+        $this->assertStringContainsString('wokeAt', $wall);
+
+        // ...and a night face chosen by hand is given up entirely.
+        $this->assertMatchesRegularExpression(
+            "/wake\(\)\s*\{.*?faceOverride === 'night'.*?faceOverride = null/s",
+            $wall,
+            'wake() must clear a manual night override.',
+        );
+
+        // And nightly must actually consult it, or none of that matters.
+        $this->assertMatchesRegularExpression(
+            '/get nightly\(\)\s*\{.*?!this\.recentlyWoken/s',
+            $wall,
+        );
     }
 
     #[Test]
