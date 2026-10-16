@@ -2514,7 +2514,7 @@ new #[Layout('layouts::display')] class extends Component
              from a browser, so this is the whole of what "off" can mean. --}}
         <div x-show="asleep" x-cloak x-transition.opacity.duration.600ms
              class="absolute inset-0 z-10 grid place-items-center bg-black">
-            <p class="t-clock text-white/15" x-text="clock"></p>
+            <p class="wall-clock wall-clock-dim" x-text="clock"></p>
         </div>
 
         {{-- The night dimmer. The panel's backlight cannot be driven from a
@@ -2562,15 +2562,11 @@ new #[Layout('layouts::display')] class extends Component
                          class="shrink-0 text-white drop-shadow will-change-transform"
                          :style="`transform: translate3d(${driftClock.x}px, ${driftClock.y}px, 0)`"
                          style="transition: transform 200ms linear;">
-                        {{-- The photograph, seen through the numerals. The
-                             same image the screensaver is showing, aligned
-                             to it, so the digits read as a pane of glass
-                             laid over the picture rather than a sticker. --}}
-                        <p class="glass-clock text-[20rem]"
-                           :class="(showA ? slotA : slotB) ? '' : 'glass-clock--plain'"
-                           :style="`--glass-clock-image: url('${showA ? slotA : slotB}')`"
-                           x-text="clock"></p>
-                        <p class="display-face mt-10 text-3xl text-white/85"
+                        {{-- The dashboard's clock, made large. The wall
+                             draws the time one way, whatever it happens to
+                             be showing behind it. --}}
+                        <p class="wall-clock wall-clock-saver" x-text="clock"></p>
+                        <p class="mt-10 text-3xl text-white/85"
                            x-text="now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz })"></p>
 
                         {{-- The caption of whichever photograph is showing. --}}
@@ -2647,8 +2643,8 @@ new #[Layout('layouts::display')] class extends Component
                  class="display-face absolute top-0 left-0 p-10 text-white will-change-transform"
                  :style="`transform: translate3d(${drift.x}px, ${drift.y}px, 0)`"
                  style="transition: transform 200ms linear;">
-                <p class="glass-clock glass-clock--plain text-[20rem]" x-text="clock"></p>
-                <p class="display-face mt-10 text-3xl text-white/60"
+                <p class="wall-clock wall-clock-saver" x-text="clock"></p>
+                <p class="mt-10 text-3xl text-white/60"
                    x-text="now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz })"></p>
 
                 @if ($wall['style'] === 'today')

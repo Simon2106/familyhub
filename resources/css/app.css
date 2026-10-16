@@ -612,117 +612,6 @@
         font-variant-numeric: tabular-nums;
     }
 
-    /* ------------------------- the glass clock ------------------------ */
-
-    /*
-     * Numerals you can see the photograph through.
-     *
-     * The trick is background-clip: text over a copy of the same photograph
-     * the screensaver is already showing, aligned to it and blurred — so
-     * what shows inside the strokes is the picture behind, softened and
-     * lifted, which is what glass does to what is behind it. The alignment
-     * matters: cover and centre on both, so the two copies sit on exactly
-     * the same pixels and the digits read as a pane rather than a sticker.
-     *
-     * Stretched rather than merely large. Apple's is a tall, narrow cut;
-     * Inter has no width axis in the subset served here, so the proportion
-     * comes from a transform. scaleY on text is cheap — it is a composited
-     * transform, not a reflow — and at this size the distortion reads as a
-     * typeface rather than as a squash.
-     */
-    .glass-clock {
-        font-family: var(--font-display);
-        font-weight: 700;
-        font-feature-settings: 'tnum' 1;
-        font-variant-numeric: tabular-nums;
-        letter-spacing: -0.05em;
-        line-height: 0.78;
-
-        /*
-         * The photograph, seen through the glyphs, with a wash of white
-         * over it — which is what makes it read as glass rather than as a
-         * hole cut in the picture.
-         *
-         * Zoomed well in rather than aligned to the picture behind. A
-         * pixel-aligned pass-through needs background-attachment: fixed,
-         * and a fixed background is resolved against the nearest
-         * transformed ancestor — which here is the block the drift
-         * translates, so it never stays put. Zooming is the honest
-         * alternative and closer to what thick glass actually does: what
-         * you see through it is magnified, not identical. Aligned at 100%
-         * it instead looked like a second tiny copy of the family had been
-         * pasted inside the numerals.
-         */
-        background-image:
-            linear-gradient(rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.30)),
-            var(--glass-clock-image, none);
-        /* Zoomed hard on purpose: at 190% each numeral showed a recognisable
-           face and read as a collage. At this magnification a glyph holds a
-           broad field of the picture's colour instead, which is what frosted
-           glass actually does to what is behind it — and it is a great deal
-           cheaper than blurring a backdrop on a Pi. */
-        background-size: auto, 520%;
-        background-position: center, center;
-        background-repeat: no-repeat;
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent;
-
-        /* A hairline of light along the edge of the pane. */
-        -webkit-text-stroke: 1.25px rgba(255, 255, 255, 0.45);
-
-        /* Just enough separation from a bright photograph. The lift is in
-           the gradient above; this is only the edge. */
-        filter: drop-shadow(0 2px 18px rgba(0, 0, 0, 0.35));
-    }
-
-    /*
-     * Tall and narrow, the way a smart display draws it.
-     *
-     * On the clipped element itself, not on an inner span. background-clip
-     * clips to the element's own text box, so a transform on a child moves
-     * the painted glyphs out of a clip that stayed where it was — the
-     * numerals came out hollow at the top, filled only where the two
-     * happened to still overlap. Transformed together, they stay together.
-     */
-    .glass-clock {
-        transform: scaleY(1.28);
-        transform-origin: left bottom;
-    }
-
-    /*
-     * No photograph behind it — the plain clock face, or a browser that
-     * will not clip a background to text.
-     *
-     * Falls back to frosted white rather than to nothing: transparent text
-     * with no backdrop is an invisible clock, which is the one thing a
-     * clock must never be.
-     */
-    .glass-clock--plain {
-        background-image: none;
-        color: rgba(255, 255, 255, 0.72);
-        -webkit-text-fill-color: rgba(255, 255, 255, 0.72);
-    }
-
-    /*
-     * A fixed background is the one part of this that can cost a slow
-     * compositor, so the lighter-glass setting takes the picture out of the
-     * numerals and leaves the shape.
-     */
-    .lite-glass .glass-clock {
-        background-image: none;
-        background-attachment: scroll;
-        color: rgba(255, 255, 255, 0.72);
-        -webkit-text-fill-color: rgba(255, 255, 255, 0.72);
-    }
-
-    @supports not ((-webkit-background-clip: text) or (background-clip: text)) {
-        .glass-clock {
-            color: rgba(255, 255, 255, 0.72);
-            -webkit-text-fill-color: rgba(255, 255, 255, 0.72);
-        }
-    }
-
     /* ------------------------------ glass ----------------------------- */
 
     .glass {
@@ -899,7 +788,7 @@
            figure slot leaves blank space to the left of a 1 that a
            proportional one does not, and at this size that is twenty-odd
            pixels of the clock not starting where the design starts it. */
-        margin-left: -22px;
+        margin-left: -0.126em;
         background-image: linear-gradient(180deg, #ffffff 0%, #cfe0ff 100%);
         -webkit-background-clip: text;
         background-clip: text;
@@ -910,6 +799,45 @@
         .wall-clock {
             color: #eaf1ff;
         }
+    }
+
+    /* ------------------------ the saver clock ------------------------ */
+
+    /*
+     * The screensaver's clock: the one on the dashboard, made large.
+     *
+     * It used to be its own thing — display face, bold, stretched, with the
+     * photograph showing through the numerals by way of background-clip.
+     * Handsome in isolation and nothing at all like the clock the same wall
+     * shows for the other sixteen hours of the day, which is the one the
+     * household has learned to read the time from. Same family, same light
+     * weight, same gradient; only the size is different, which is the whole
+     * of what a screensaver clock needs to be.
+     *
+     * Everything but the size is inherited from .wall-clock, so the two
+     * cannot be changed apart.
+     */
+    .wall-clock-saver {
+        font-size: 320px;
+
+        /* Over a photograph rather than over the wall's own ground, so it
+           needs more separation than the dashboard's does. The scrim under
+           it does most of the work; this is the edge. */
+        filter: drop-shadow(0 2px 18px rgba(0, 0, 0, 0.45));
+    }
+
+    /*
+     * The deep-sleep clock, on the black layer.
+     *
+     * The same shape as the other two and far dimmer on purpose: it has to
+     * be useless from the doorway and readable from a step away, because
+     * the panel's backlight cannot be turned down from a browser.
+     */
+    .wall-clock-dim {
+        font-size: 160px;
+        background-image: none;
+        color: rgba(255, 255, 255, 0.15);
+        -webkit-text-fill-color: rgba(255, 255, 255, 0.15);
     }
 
     /* A tap has to be felt on a panel nobody gets haptics from. */
